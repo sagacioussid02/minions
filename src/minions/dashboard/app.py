@@ -199,7 +199,7 @@ def _render_tree(agents: list[AgentSummary]) -> None:
 
     # When the toggle changes, force-update every expander's session-state key
     # so the change takes effect even after the user has manually opened/closed one.
-    _TREE_EXPANDER_KEYS = [
+    _tree_expander_keys = [
         "tree_exp_executive",
         "tree_exp_specialist",
         "tree_exp_audit",
@@ -207,10 +207,10 @@ def _render_tree(agents: list[AgentSummary]) -> None:
     ]
     # Build project keys dynamically
     project_keys = [f"tree_exp_proj_{p}" for p in sorted(project_agents)]
-    _TREE_EXPANDER_KEYS.extend(project_keys)
+    _tree_expander_keys.extend(project_keys)
 
     if expand_all != prev_expand_all:
-        for k in _TREE_EXPANDER_KEYS:
+        for k in _tree_expander_keys:
             st.session_state[k] = expand_all
 
     # Shared layers
@@ -226,7 +226,7 @@ def _render_tree(agents: list[AgentSummary]) -> None:
             f"**{layer_name}** — {len(members)} agents · "
             f"🟢 {active_count} active · ⚪ {stale_count} stale{live}",
             expanded=expand_all or running > 0,
-            key=_TREE_EXPANDER_KEYS[idx],
+            key=_tree_expander_keys[idx],
         ):
             for a in members:
                 _render_tree_row(a)
@@ -235,7 +235,7 @@ def _render_tree(agents: list[AgentSummary]) -> None:
         with st.expander(
             f"**Other shared** — {len(other_shared)} agents",
             expanded=expand_all,
-            key=_TREE_EXPANDER_KEYS[3],
+            key=_tree_expander_keys[3],
         ):
             for a in other_shared:
                 _render_tree_row(a)
