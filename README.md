@@ -6,6 +6,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
 
+> **Status: alpha, accepting contributions.** Browse [`good first issue`](https://github.com/sagacioussid02/minions/labels/good%20first%20issue) to start.
+
 `minions` runs a virtual engineering organization (Product Owners, Principals, Managers, Engineers, Auditors, Devil's Advocates) over your portfolio of GitHub repos. Each "agent" is a [CrewAI](https://github.com/joaomdmoura/crewAI) actor backed by a tier-appropriate Claude model (Opus / Sonnet / Haiku). The org plans sprints, opens PRs, audits its own work — but it can never merge to `main`, never read your `.env`, and never spend a dollar without your explicit approval.
 
 The whole system is built around **Decision Records**: a durable artifact every agent must produce when proposing anything non-trivial, gated by an approval queue that the operator (you) resolves via email magic-link, CLI, or Streamlit dashboard.
