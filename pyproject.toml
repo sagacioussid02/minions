@@ -1,0 +1,110 @@
+[project]
+name = "minions"
+version = "0.0.1"
+description = "Autonomous AI engineering organization for managing a portfolio of software projects."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Siddharth Shankar" }]
+keywords = ["ai", "agents", "autonomous", "crewai", "anthropic", "claude", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development",
+]
+
+[project.urls]
+Homepage = "https://github.com/sagacioussid02/minions"
+Repository = "https://github.com/sagacioussid02/minions"
+Issues = "https://github.com/sagacioussid02/minions/issues"
+
+dependencies = [
+    "anthropic>=0.40.0",
+    "crewai>=0.86.0",
+    "langgraph>=0.2.50",
+    "langchain-anthropic>=0.3.0",
+    "langfuse>=4.5.0",
+    "pydantic>=2.9.0",
+    "pyyaml>=6.0.2",
+    "rich>=13.9.0",
+    "typer>=0.13.0",
+    "boto3>=1.35.0",
+    "psycopg[binary]>=3.2.0",
+    "httpx>=0.27.0",
+    "streamlit>=1.40.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.7.0",
+    "mypy>=1.13.0",
+    "pre-commit>=4.0.0",
+    "types-PyYAML>=6.0.12",
+]
+
+[project.scripts]
+minions = "minions.__main__:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/minions"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "B", "UP", "C4", "T10", "T20", "PT", "RET", "SIM"]
+# Carried-forward cosmetic noise from the alpha codebase. Each is tracked as
+# a `good first issue`; remove from this list as PRs land.
+ignore = [
+    "PT006",   # pytest-parametrize-names-wrong-type
+    "PT011",   # pytest-raises-too-broad
+    "PT017",   # pytest-assert-in-except
+    "PT018",   # pytest-composite-assertion
+    "PT019",   # pytest-fixture-param-without-value
+    "SIM103",  # needless-bool
+    "SIM105",  # suppressible-exception
+    "SIM108",  # if-else-block-instead-of-if-exp
+    "SIM110",  # reimplemented-builtin
+    "SIM114",  # if-with-same-arms
+    "SIM117",  # multiple-with-statements
+    "SIM300",  # yoda-conditions
+    "RET504",  # unnecessary-assign
+    "C408",    # unnecessary-collection-call
+    "B007",    # unused-loop-control-variable
+    "B017",    # assert-raises-exception
+    "N818",    # error-suffix-on-exception-name
+    "E501",    # line-too-long (formatter handles most; rest is Markdown in strings)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "F841"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["crewai.*", "langgraph.*", "langchain_anthropic.*", "yaml.*", "pandas.*", "streamlit.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+pythonpath = ["src"]

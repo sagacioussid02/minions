@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+*.egg
+build/
+dist/
+wheels/
+.venv/
+venv/
+env/
+
+# Environment / secrets — agents must NEVER see these
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+**/credentials*
+
+# Caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Local data
+*.db
+*.sqlite
+data/
+
+# Claude Code internal
+.claude/
+CLAUDE.md

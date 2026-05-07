@@ -1,0 +1,16 @@
+# Minions dashboard theme — dark, dense, accent on cyan-teal.
+
+[theme]
+base = "dark"
+primaryColor = "#22d3ee"          # cyan-400 — accent for buttons, links, sliders
+backgroundColor = "#0b1220"        # slate-950 — main canvas
+secondaryBackgroundColor = "#111c2e" # slate-900-ish — sidebar, expanders
+textColor = "#e2e8f0"              # slate-200
+font = "sans serif"
+
+[client]
+toolbarMode = "minimal"            # hide the deploy/share buttons; this is local
+
+[server]
+headless = true
+runOnSave = true

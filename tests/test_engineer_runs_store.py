@@ -1,0 +1,71 @@
+"""Tests for src/minions/crews/engineer_runs_store.py."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from minions.crews.engineer import EngineerResult
+from minions.crews.engineer_runs_store import EngineerRunStore
+
+
+def _result(**kwargs) -> EngineerResult:
+    base = {
+        "decision_id": "dec-1",
+        "pr_url": "https://github.com/o/r/pull/1",
+        "pr_number": 1,
+        "branch_name": "minions/eng/x",
+        "files_changed": ["a.py"],
+        "files_rejected": [],
+        "operator_comment_posted": True,
+        "dry_run": False,
+    }
+    base.update(kwargs)
+    return EngineerResult(**base)
+
+
+def test_save_then_get_round_trip(tmp_path: Path) -> None:
+    store = EngineerRunStore(tmp_path / "engineer_runs.json")
+    record = store.save(_result(), project="demo_three")
+    assert record.decision_id == "dec-1"
+    assert record.project == "demo_three"
+    assert record.pr_url == "https://github.com/o/r/pull/1"
+
+    fetched = store.get("dec-1")
+    assert fetched is not None
+    assert fetched.pr_number == 1
+    assert fetched.files_changed == ["a.py"]
+
+
+def test_save_overwrites_same_decision_id(tmp_path: Path) -> None:
+    """A re-run of the same decision should replace the prior record."""
+    store = EngineerRunStore(tmp_path / "engineer_runs.json")
+    store.save(_result(branch_name="branch-1"), project="p")
+    store.save(_result(branch_name="branch-2"), project="p")
+    rec = store.get("dec-1")
+    assert rec is not None
+    assert rec.branch_name == "branch-2"
+    assert len(store.list_all()) == 1
+
+
+def test_get_missing_returns_none(tmp_path: Path) -> None:
+    store = EngineerRunStore(tmp_path / "engineer_runs.json")
+    assert store.get("nope") is None
+
+
+def test_list_by_project_filters(tmp_path: Path) -> None:
+    store = EngineerRunStore(tmp_path / "engineer_runs.json")
+    store.save(_result(decision_id="d1"), project="a")
+    store.save(_result(decision_id="d2"), project="a")
+    store.save(_result(decision_id="d3"), project="b")
+    assert {r.decision_id for r in store.list_by_project("a")} == {"d1", "d2"}
+    assert {r.decision_id for r in store.list_by_project("b")} == {"d3"}
+
+
+def test_corrupt_file_returns_empty(tmp_path: Path) -> None:
+    p = tmp_path / "engineer_runs.json"
+    p.write_text("{not json")
+    store = EngineerRunStore(p)
+    assert store.list_all() == []
+    # Subsequent save still works (overwrites the bad file).
+    store.save(_result(), project="p")
+    assert store.get("dec-1") is not None

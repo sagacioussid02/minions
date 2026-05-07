@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    # NOTE: pull_request runs in a sandboxed env. Repo secrets are NOT exposed
+    # to PRs from forks — that's intentional and a security guarantee. Never
+    # change this to pull_request_target without a thorough threat-model review.
+    branches: [main]
+
+# Default to least privilege. Override per-job if a step genuinely needs more.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: tests + lint + types
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@8d55fbecc275b1c35dbe060458839f8d30439ccf # v3
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Ruff lint
+        run: ruff check src tests
+
+      - name: Ruff format check
+        run: ruff format --check src tests
+
+      # Mypy is strict-mode aspirational. ~30 known errors at the OSS launch
+      # snapshot live in factory/store boundaries; tracked as `good first issue`.
+      # Promote to blocking once the backlog clears.
+      - name: Mypy (advisory)
+        continue-on-error: true
+        run: mypy src
+
+      - name: Pytest
+        run: pytest -q

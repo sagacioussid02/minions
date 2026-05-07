@@ -1,0 +1,26 @@
+version: 2
+updates:
+  # Python dependencies — weekly grouped PR.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/New_York
+    open-pull-requests-limit: 5
+    groups:
+      python-dev:
+        dependency-type: development
+      python-prod:
+        dependency-type: production
+
+  # GitHub Actions — pinned by SHA, Dependabot keeps them current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/New_York
+    open-pull-requests-limit: 5

@@ -1,0 +1,23 @@
+# Code ownership for review routing.
+#
+# Every file matched below requires a maintainer review on any PR — even when
+# other reviewers approve. These are the safety-critical layers of the system;
+# changes need explicit sign-off.
+
+# --- Safety contract -------------------------------------------------------
+src/minions/agents/safety.py             @sagacioussid02
+src/minions/github/client.py             @sagacioussid02
+src/minions/secrets.py                   @sagacioussid02
+src/minions/approval/tokens.py           @sagacioussid02
+src/minions/approval/service.py          @sagacioussid02
+src/minions/webhook/                     @sagacioussid02
+
+# --- CI / supply chain -----------------------------------------------------
+.github/                                 @sagacioussid02
+pyproject.toml                           @sagacioussid02
+LICENSE                                  @sagacioussid02
+SECURITY.md                              @sagacioussid02
+CODE_OF_CONDUCT.md                       @sagacioussid02
+
+# --- Default catch-all (lower priority than the patterns above) ------------
+*                                        @sagacioussid02

@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest a new capability
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      placeholder: When I'm doing X, I'd love to be able to ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety implications
+      options:
+        - label: This proposal does not weaken any of the four safety rules
+        - label: This proposal does not require reading `.env` from agent code paths
+        - label: This proposal does not require commits/merges to `main` from automation

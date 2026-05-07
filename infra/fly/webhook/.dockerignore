@@ -1,0 +1,17 @@
+# Keep the build context lean — webhook only needs src/ + pyproject.
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+data/
+tests/
+projects/
+openspec/
+config/
+infra/aws/
+.git/
+.github/

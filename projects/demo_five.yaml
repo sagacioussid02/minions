@@ -1,0 +1,47 @@
+name: demo_five
+description: Example project — replace with your own.
+
+source:
+  kind: github
+  path: ./demo_five
+  repo: your-org/demo_five
+  default_branch: main
+
+weekly_budget_usd: 1.00
+monthly_budget_usd: 4.00
+
+cadence_profile: v0_frugal
+
+delivery_targets:
+  scope: portfolio
+  share_weight: 0.3
+
+team:
+  intern: false
+  engineers: 1
+
+tier_overrides:
+  principal: sonnet
+  architect: sonnet
+  default: haiku
+
+auto_approve:
+  - class: dep_patch_with_green_ci
+    max_risk: low
+  - class: docs_only
+    max_risk: low
+  - class: lint_format_fix
+    max_risk: low
+
+never_auto_approve:
+  - class: secret_handling_change
+  - class: auth_change
+  - class: db_migration
+
+approval_channels:
+  email: true
+  github_pr: true
+
+agents: {}
+
+owner: you@example.com

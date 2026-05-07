@@ -1,0 +1,126 @@
+# =============================================================================
+# Portfolio configuration — this is the SHIPPED EXAMPLE.
+#
+# Replace owner: with your email and edit projects/*.yaml to point at your
+# own repositories. The minions/ tree ships with five demo manifests so
+# `pytest` and `minions check` work out of the box; delete or rename them
+# once you've added your real projects.
+# =============================================================================
+
+delivery_cadence:
+  option: A                       # A = portfolio-wide; B = per-project. See ARCHITECTURE.md.
+  features_per_week: 1
+  bugs_per_week: 2.3
+  tech_debt_per_week: 1
+  scope: portfolio
+
+# How the orchestrator allocates the portfolio's weekly slots across projects.
+# Each project's manifest sets `delivery_targets.share_weight`; weights are normalized.
+allocation:
+  policy: weighted_stochastic
+  no_fabrication: true            # empty slot reported in Friday digest if no real backlog item exists
+  carry_over: true                # unfilled slots roll into next week (capped at 2× weekly target)
+
+budget_envelope:
+  monthly_total_floor_usd: 15
+  monthly_total_ceiling_usd: 30
+  current_v0_target_usd: 14       # sum of active project monthly caps
+
+# Cadence profile presets — projects override via `cadence_profile` in their manifest.
+cadence_profiles:
+  v0_frugal:
+    weekly_planning: monday_09_local
+    weekly_digest: friday_16_local
+    daily_monitoring: 09_local
+    standups: disabled
+    on_demand: webhook
+  v1_balanced:
+    weekly_planning: monday_09_local
+    weekly_digest: friday_16_local
+    daily_monitoring: hourly
+    standups: daily_09_local
+    on_demand: webhook
+  v2_full:
+    weekly_planning: monday_09_local
+    weekly_digest: friday_16_local
+    daily_monitoring: hourly
+    standups: daily_09_local
+    on_demand: webhook_with_oncall
+
+# ===== Audit & Challenge function =====
+audit:
+  enabled: true
+  team:
+    chief_auditor: sonnet
+    process_auditor: haiku
+    code_auditor: sonnet
+    cost_auditor: haiku
+    devils_advocate: sonnet
+  reports_to: operator                       # not to executive layer; findings cannot be suppressed
+  write_access: false                        # read-only by design
+  sampling:
+    pr_code_audit: 0.25
+    pr_audit_risk_weighted: true
+    high_risk_decisions_devils_advocate: 1.0
+    procurement_cost_audit: 1.0
+    team_composition_process_audit: 1.0
+    sprint_process_audit_weekly: true
+  monthly_budget_usd: 2.00
+
+# ===== Dynamic team composition =====
+team_composition:
+  enabled: true
+  default_headcount_limits:
+    engineers: 8
+    senior_engineers: 4
+    qa: 3
+    architects: 2
+    total_team_size: 20
+  allowed_new_roles:
+    - qa_engineer
+    - test_architect
+    - performance_engineer
+    - data_engineer
+    - documentation_engineer
+  cost_coupled_approval: true
+
+role_definitions:
+  qa_engineer:
+    tier: haiku
+    tools: [test_runner, repo_read, pr_open, pr_comment]
+  test_architect:
+    tier: sonnet
+    tools: [test_runner, repo_read, pr_open, pr_comment, design_doc_write]
+  performance_engineer:
+    tier: sonnet
+    tools: [test_runner, repo_read, pr_open, pr_comment, profiler_read]
+  data_engineer:
+    tier: sonnet
+    tools: [repo_read, pr_open, pr_comment, sql_read]
+  documentation_engineer:
+    tier: haiku
+    tools: [repo_read, pr_open, pr_comment]
+
+# ===== Procurement =====
+# Defaults to disabled. Opt in only after wiring a real secret store + spending card.
+procurement:
+  enabled: true
+  monthly_budget_usd: 0                      # $0 — nothing buys until you raise this
+  delegated_signup_free_tier: false
+  delegated_card:
+    enabled: false
+    monthly_cap_usd: 0
+    provider: stripe_issuing
+  email_alias_template: "you+{vendor}@example.com"
+  secret_storage: aws_secrets_manager
+  tos_acceptance_authorized: false           # MUST stay false; per-vendor authorization only
+  quarterly_subscription_review: true
+
+# Optional display names for shared layers. Same shape as per-project `agents:`.
+named_agents:
+  # ceo: Cassia
+  # cto: Theo
+  # managing_director: Maeve
+
+owner: you@example.com
+locked_in_at: 2026-01-01
