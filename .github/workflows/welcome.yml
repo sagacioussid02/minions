@@ -1,0 +1,59 @@
+name: Welcome contributors
+
+# Posts a thank-you comment when a PR is merged. Uses pull_request_target so
+# the workflow has the write token needed to comment, even on PRs from forks.
+#
+# SAFETY:
+#   - We deliberately do NOT run actions/checkout, so we never execute PR code
+#     in a privileged context. This is the only safe pattern for
+#     pull_request_target.
+#   - Permissions are scoped to the absolute minimum (pull-requests: write).
+#   - Bot accounts (dependabot, etc.) are filtered out to avoid noise.
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  thanks:
+    name: Post thank-you on merged PR
+    runs-on: ubuntu-latest
+    if: >
+      github.event.pull_request.merged == true
+      && github.event.pull_request.user.type != 'Bot'
+      && github.event.pull_request.user.login != github.repository_owner
+
+    steps:
+      - name: Comment on the PR
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const author = pr.user.login;
+            const isFirstTime = pr.author_association === 'FIRST_TIME_CONTRIBUTOR'
+                             || pr.author_association === 'FIRST_TIMER';
+
+            const firstTimeIntro = isFirstTime
+              ? `🎉 Welcome aboard, @${author} — this is your first contribution to **minions**, and it just landed on \`main\`. Thank you!`
+              : `Thanks @${author} — merged!`;
+
+            const body = [
+              firstTimeIntro,
+              ``,
+              `If you'd like to keep going, here are a few suggestions:`,
+              `- 🟢 Pick another [\`good first issue\`](https://github.com/${context.repo.owner}/${context.repo.repo}/labels/good%20first%20issue)`,
+              `- 🔧 The [Engineer crew](https://github.com/${context.repo.owner}/${context.repo.repo}/labels/engineer-crew) is the next major area of work — open issues are scoped and ready`,
+              `- 💬 Drop ideas or questions in [Discussions](https://github.com/${context.repo.owner}/${context.repo.repo}/discussions)`,
+              ``,
+              `If anything in your contributor experience was rough — setup, docs, review feedback — please open an issue. Smoothing those edges is high-priority work.`,
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              body: body,
+            });
