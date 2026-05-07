@@ -17,11 +17,6 @@ classifiers = [
     "Topic :: Software Development",
 ]
 
-[project.urls]
-Homepage = "https://github.com/sagacioussid02/minions"
-Repository = "https://github.com/sagacioussid02/minions"
-Issues = "https://github.com/sagacioussid02/minions/issues"
-
 dependencies = [
     "anthropic>=0.40.0",
     "crewai>=0.86.0",
@@ -52,6 +47,11 @@ dev = [
 
 [project.scripts]
 minions = "minions.__main__:app"
+
+[project.urls]
+Homepage = "https://github.com/sagacioussid02/minions"
+Repository = "https://github.com/sagacioussid02/minions"
+Issues = "https://github.com/sagacioussid02/minions/issues"
 
 [build-system]
 requires = ["hatchling"]
