@@ -189,6 +189,7 @@ def _render_tree(agents: list[AgentSummary]) -> None:
 
     # Sidebar-style toggle: collapse all by default, or expand. Default expanded
     # because the whole point of the tree view is to *see* the hierarchy.
+    prev_expand_all = st.session_state.get("agents_tree_expand", True)
     expand_all = st.toggle(
         "Expand all",
         value=True,
@@ -196,8 +197,24 @@ def _render_tree(agents: list[AgentSummary]) -> None:
         help="Toggle off to collapse every layer",
     )
 
+    # When the toggle changes, force-update every expander's session-state key
+    # so the change takes effect even after the user has manually opened/closed one.
+    _tree_expander_keys = [
+        "tree_exp_executive",
+        "tree_exp_specialist",
+        "tree_exp_audit",
+        "tree_exp_other_shared",
+    ]
+    # Build project keys dynamically
+    project_keys = [f"tree_exp_proj_{p}" for p in sorted(project_agents)]
+    _tree_expander_keys.extend(project_keys)
+
+    if expand_all != prev_expand_all:
+        for k in _tree_expander_keys:
+            st.session_state[k] = expand_all
+
     # Shared layers
-    for layer_name in ["Executive", "Specialist", "Audit"]:
+    for idx, layer_name in enumerate(["Executive", "Specialist", "Audit"]):
         members = shared_layer_agents[layer_name]
         if not members:
             continue
@@ -209,19 +226,24 @@ def _render_tree(agents: list[AgentSummary]) -> None:
             f"**{layer_name}** — {len(members)} agents · "
             f"🟢 {active_count} active · ⚪ {stale_count} stale{live}",
             expanded=expand_all or running > 0,
+            key=_tree_expander_keys[idx],
         ):
             for a in members:
                 _render_tree_row(a)
 
     if other_shared:
-        with st.expander(f"**Other shared** — {len(other_shared)} agents", expanded=expand_all):
+        with st.expander(
+            f"**Other shared** — {len(other_shared)} agents",
+            expanded=expand_all,
+            key=_tree_expander_keys[3],
+        ):
             for a in other_shared:
                 _render_tree_row(a)
 
     st.divider()
 
     # Per-project crews
-    for project in sorted(project_agents):
+    for idx, project in enumerate(sorted(project_agents)):
         members = project_agents[project]
         running = sum(1 for m in members if m.running_now)
         active_count = sum(1 for m in members if m.status == "active")
@@ -233,6 +255,7 @@ def _render_tree(agents: list[AgentSummary]) -> None:
             f"🟢 {active_count} active · ⚪ {stale_count} stale · "
             f"7d ${cost_7d:.4f}{live}",
             expanded=expand_all or running > 0,
+            key=project_keys[idx],
         ):
             for a in sorted(members, key=lambda x: (x.role, x.primary_label)):
                 _render_tree_row(a)
