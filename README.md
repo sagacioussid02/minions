@@ -29,21 +29,72 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design.
 
 ---
 
-## Quickstart (60 seconds, no API keys needed)
+## Install
+
+The package is published to PyPI as **`minionscli`**. The CLI binary is `minions`.
+
+### As an end-user (just want to run it)
+
+```bash
+# Recommended: isolated install with uv (https://github.com/astral-sh/uv)
+uv tool install minionscli
+# or with pipx
+pipx install minionscli
+# or plain pip into a venv
+pip install minionscli
+```
+
+After install, the `minions` command is on your PATH. Verify:
+
+```bash
+minions --help
+minions check
+```
+
+### Bleeding edge from git (pre-PyPI release or unreleased fixes)
+
+```bash
+uv tool install git+https://github.com/sagacioussid02/minions
+# or
+pipx install git+https://github.com/sagacioussid02/minions
+```
+
+### As a contributor (editable install with tests)
 
 ```bash
 git clone https://github.com/sagacioussid02/minions
 cd minions
-uv pip install -e ".[dev]"            # or: pip install -e ".[dev]"
+uv pip install -e ".[dev]"   # or: pip install -e ".[dev]"
+pytest                        # ~3 seconds, all tests should pass
+```
 
-# Validate the shipped example portfolio + manifests:
+### Pre-built wheels (offline / air-gapped)
+
+Each tagged release attaches a built wheel + sdist to the GitHub Releases page. Download from https://github.com/sagacioussid02/minions/releases and:
+
+```bash
+pip install ./minionscli-*.whl
+```
+
+## Quickstart (60 seconds, no API keys needed)
+
+After install:
+
+```bash
+# 1. Validate the shipped example portfolio + manifests
 minions check
 
-# Print the org topology (no LLM calls, no money):
+# 2. Print the org topology (no LLM calls, no money)
 minions org
 
-# Dry-run the weekly planner (still no LLM calls):
+# 3. Dry-run the weekly planner (still no LLM calls)
 minions cron weekly                    # default is --dry-run
+
+# 4. Inspect what the planner submitted
+minions decisions list
+
+# 5. Open the operator dashboard
+minions dashboard                      # → http://localhost:8501
 ```
 
 You should see five demo projects (`Demo`, `demo_two`, …, `demo_five`) loaded, agents resolved per project, and a clean planning sweep that submits stub Decisions to the local JSON store.

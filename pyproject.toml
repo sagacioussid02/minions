@@ -1,7 +1,7 @@
 [project]
-name = "minions"
+name = "minionscli"
 version = "0.0.1"
-description = "Autonomous AI engineering organization for managing a portfolio of software projects."
+description = "Autonomous AI engineering organization for managing a portfolio of software projects (CLI)."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
