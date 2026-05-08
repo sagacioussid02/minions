@@ -1,0 +1,50 @@
+name: Release
+
+# On every git tag matching v*, build the wheel + sdist and attach them to the
+# GitHub Release. Optionally publish to PyPI when PYPI_API_TOKEN is set as a
+# repo secret (commented out below; uncomment after you've created the token
+# at https://pypi.org/manage/account/token/).
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write   # needed to upload assets to the Release
+
+jobs:
+  build:
+    name: Build wheel + sdist
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build
+        run: pip install --upgrade build
+
+      - name: Build distributions
+        run: python -m build
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2
+        with:
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+          generate_release_notes: true
+
+      # ----- Uncomment after creating a PyPI API token -----
+      #
+      # - name: Publish to PyPI
+      #   uses: pypa/gh-action-pypi-publish@release/v1
+      #   with:
+      #     password: ${{ secrets.PYPI_API_TOKEN }}
