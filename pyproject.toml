@@ -1,7 +1,7 @@
 [project]
-name = "minions"
+name = "minionscli"
 version = "0.0.1"
-description = "Autonomous AI engineering organization for managing a portfolio of software projects."
+description = "Autonomous AI engineering organization for managing a portfolio of software projects (CLI)."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
@@ -16,11 +16,6 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development",
 ]
-
-[project.urls]
-Homepage = "https://github.com/sagacioussid02/minions"
-Repository = "https://github.com/sagacioussid02/minions"
-Issues = "https://github.com/sagacioussid02/minions/issues"
 
 dependencies = [
     "anthropic>=0.40.0",
@@ -52,6 +47,11 @@ dev = [
 
 [project.scripts]
 minions = "minions.__main__:app"
+
+[project.urls]
+Homepage = "https://github.com/sagacioussid02/minions"
+Repository = "https://github.com/sagacioussid02/minions"
+Issues = "https://github.com/sagacioussid02/minions/issues"
 
 [build-system]
 requires = ["hatchling"]
