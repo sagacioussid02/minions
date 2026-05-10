@@ -12,6 +12,7 @@ Subgroups:
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -555,6 +556,11 @@ def plan(
 @decisions_app.command("list")
 def list_decisions(
     status: str = typer.Option("pending", help="pending|approved|rejected|all"),
+    json_out: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit matching Decision Records as JSON.",
+    ),
 ) -> None:
     """List Decision Records by status."""
     store = _store()
@@ -568,6 +574,16 @@ def list_decisions(
         except ValueError as e:
             rprint(f"[red]invalid status '{status}'[/red]")
             raise typer.Exit(1) from e
+
+    if json_out:
+        typer.echo(
+            json.dumps(
+                [d.model_dump(mode="json") for d in records],
+                indent=2,
+                default=str,
+            )
+        )
+        return
 
     if not records:
         rprint(f"[dim]no decisions matching status={status}[/dim]")
