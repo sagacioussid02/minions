@@ -1,0 +1,35 @@
+name: Execute approved decisions
+
+# Every 6h. Picks up approved Decisions whose engineer crew has not yet run
+# and opens draft PRs (capped per invocation). Stays the operator out of the
+# manual `minions implement` loop.
+
+on:
+  schedule:
+    - cron: '15 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Run without LLM calls / PR opens (default: false)'
+        required: false
+        type: boolean
+        default: false
+      max-runs:
+        description: 'Hard cap on engineer runs per invocation (default: 5)'
+        required: false
+        type: string
+        default: '5'
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  execute-approved:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: >-
+        ${{ inputs.dry-run
+            && format('cron execute-approved --max-runs {0}', inputs.max-runs || '5')
+            || format('cron execute-approved --no-dry-run --max-runs {0}', inputs.max-runs || '5') }}
+    secrets: inherit

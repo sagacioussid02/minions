@@ -42,6 +42,15 @@ class EngineerRunRecord(BaseModel):
     merged_at: datetime | None = None
     last_synced_at: datetime | None = None
 
+    # Populated by the PR follow-up sweep.
+    ci_conclusion: str | None = None  # "success" / "failure" / "pending" / None
+    ci_last_checked_at: datetime | None = None
+    followup_attempts: int = 0
+    last_followup_at: datetime | None = None
+
+    # Set once the QA crew has posted a review comment on the PR.
+    qa_review_posted_at: datetime | None = None
+
 
 class EngineerRunStore:
     """JSON file at ``data/local/engineer_runs.json`` keyed by decision_id."""
