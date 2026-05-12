@@ -79,6 +79,14 @@ FORBIDDEN_PATH_SUFFIXES: tuple[str, ...] = (
     ".pem",
     ".key",
 )
+# Files that LOOK forbidden by the `.env` prefix but are documentation templates
+# (no real secrets). Explicit allowlist — keep narrow.
+FORBIDDEN_PATH_ALLOWLIST: tuple[str, ...] = (
+    ".env.example",
+    ".env.sample",
+    ".env.template",
+    ".env.dist",
+)
 
 
 class FilePatch(BaseModel):
@@ -125,6 +133,10 @@ def is_forbidden_path(path: str) -> bool:
         p = p[2:]
     elif p.startswith("/"):
         p = p[1:]
+    # Allowlist wins over the `.env` prefix rule — these files are templates,
+    # not real secret stores.
+    if p in FORBIDDEN_PATH_ALLOWLIST:
+        return False
     if any(p.startswith(prefix) for prefix in FORBIDDEN_PATH_PREFIXES):
         return True
     if any(sub in p for sub in FORBIDDEN_PATH_SUBSTRINGS):
@@ -462,7 +474,11 @@ def _run_engineer_llm(
 
     from minions.crews.factory import make_crewai_agent
 
-    eng = make_crewai_agent(eng_min, api_key=api_key)
+    # Engineer output is whole-file JSON blobs (up to MAX_FILES_PER_PR files)
+    # plus the PR title/body. The default 4096 max_tokens truncates the
+    # structured payload mid-string for sprints with several files. Bump the
+    # cap so Anthropic returns the whole EngineerOutput.
+    eng = make_crewai_agent(eng_min, api_key=api_key, max_tokens=16384)
 
     context_files = _gather_context_files(github, base_branch)
     context_block = (

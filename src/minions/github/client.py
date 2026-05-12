@@ -255,6 +255,42 @@ class GitHubClient:
         r = self._request("GET", f"/repos/{self.repo}/pulls/{number}")
         return _normalize_pull_request(r.json())
 
+    def get_pr_check_status(self, number: int) -> tuple[str | None, str | None]:
+        """Return ``(conclusion, details_url)`` for the latest CI on a PR.
+
+        ``conclusion`` is one of ``"success"`` / ``"failure"`` / ``"pending"`` /
+        ``None`` (no checks configured yet). Aggregates across all check-runs on
+        the PR's head SHA: any failure wins; otherwise any in-flight check makes
+        it ``"pending"``; otherwise ``"success"`` when ≥1 check completed.
+        """
+        pr = self.get_pull_request(number)
+        if not pr.head_sha:
+            return None, None
+        r = self._request("GET", f"/repos/{self.repo}/commits/{pr.head_sha}/check-runs")
+        runs = r.json().get("check_runs", []) or []
+        if not runs:
+            return None, None
+
+        details_url: str | None = None
+        had_failure = False
+        had_pending = False
+        for run in runs:
+            status = (run.get("status") or "").lower()
+            concl = (run.get("conclusion") or "").lower() or None
+            if status != "completed":
+                had_pending = True
+                continue
+            if concl in {"failure", "timed_out", "cancelled", "action_required"}:
+                had_failure = True
+                if not details_url:
+                    details_url = run.get("html_url") or run.get("details_url")
+
+        if had_failure:
+            return "failure", details_url
+        if had_pending:
+            return "pending", None
+        return "success", None
+
     def list_pull_request_files(self, number: int, *, per_page: int = 30) -> list[dict[str, Any]]:
         """Return PR files: filename, status, additions, deletions, patch (when present).
 
@@ -310,6 +346,7 @@ def _normalize_pull_request(item: dict[str, Any]) -> PullRequest:
         body=item.get("body"),
         state=item.get("state") or "open",
         head=head_obj.get("ref", "") if isinstance(head_obj, dict) else "",
+        head_sha=head_obj.get("sha") if isinstance(head_obj, dict) else None,
         base=base_obj.get("ref", "") if isinstance(base_obj, dict) else "",
         draft=bool(item.get("draft", False)),
         html_url=item.get("html_url") or "",

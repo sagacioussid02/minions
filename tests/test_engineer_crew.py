@@ -56,6 +56,11 @@ def test_slugify(given, expected_prefix):
         ("src/main.py", False),
         ("docs/setup.md", False),
         ("package.json", False),
+        # Allowlist: env templates are not secrets — engineer crew may write them.
+        (".env.example", False),
+        (".env.sample", False),
+        (".env.template", False),
+        (".env.dist", False),
     ],
 )
 def test_is_forbidden_path(path, forbidden):

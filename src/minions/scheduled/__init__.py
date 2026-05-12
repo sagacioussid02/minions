@@ -17,7 +17,17 @@ from minions.scheduled.daily_monitor import (
     ProjectMonitorEntry,
     run_daily_monitor,
 )
+from minions.scheduled.execute_approved import (
+    ExecuteApprovedReport,
+    ExecuteOutcome,
+    run_execute_approved,
+)
 from minions.scheduled.friday_digest import FridayDigestReport, run_friday_digest
+from minions.scheduled.pr_followup import (
+    PRFollowupOutcome,
+    PRFollowupReport,
+    run_pr_followup,
+)
 from minions.scheduled.weekly_planning import (
     PlanningOutcome,
     WeeklyPlanningReport,
@@ -26,11 +36,17 @@ from minions.scheduled.weekly_planning import (
 
 __all__ = [
     "DailyMonitorReport",
+    "ExecuteApprovedReport",
+    "ExecuteOutcome",
     "FridayDigestReport",
+    "PRFollowupOutcome",
+    "PRFollowupReport",
     "PlanningOutcome",
     "ProjectMonitorEntry",
     "WeeklyPlanningReport",
     "run_daily_monitor",
+    "run_execute_approved",
     "run_friday_digest",
+    "run_pr_followup",
     "run_weekly_planning",
 ]

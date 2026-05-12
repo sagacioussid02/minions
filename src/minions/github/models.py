@@ -34,6 +34,7 @@ class PullRequest(BaseModel):
     body: str | None = None
     state: str
     head: str  # branch name
+    head_sha: str | None = None  # commit SHA of the PR head
     base: str
     draft: bool
     html_url: str
