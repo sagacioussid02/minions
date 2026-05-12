@@ -266,7 +266,18 @@ class GitHubClient:
         pr = self.get_pull_request(number)
         if not pr.head_sha:
             return None, None
-        r = self._request("GET", f"/repos/{self.repo}/commits/{pr.head_sha}/check-runs")
+        # Best-effort read. The head SHA can disappear from the repo (force-push,
+        # rebase, branch deleted before sweep) and the check-runs endpoint also
+        # 403s on some private-repo + token combinations. Either way, "unknown"
+        # is the right answer — the sweep should not error on a stale PR.
+        try:
+            r = self._request(
+                "GET", f"/repos/{self.repo}/commits/{pr.head_sha}/check-runs"
+            )
+        except GitHubError as e:
+            if e.status_code in {403, 404, 422}:
+                return None, None
+            raise
         runs = r.json().get("check_runs", []) or []
         if not runs:
             return None, None

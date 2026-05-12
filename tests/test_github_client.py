@@ -269,6 +269,57 @@ def test_github_error_includes_status_and_message():
     assert "404" in str(exc_info.value)
 
 
+def test_get_pr_check_status_swallows_stale_head_sha():
+    """A vanished head SHA (force-push / rebase) must NOT raise; return (None, None)."""
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path.endswith("/pulls/7"):
+            return httpx.Response(
+                200,
+                json={
+                    "number": 7,
+                    "title": "x",
+                    "state": "open",
+                    "draft": True,
+                    "html_url": "u",
+                    "head": {"ref": "feat", "sha": "deadbeef"},
+                    "base": {"ref": "main"},
+                },
+            )
+        if "/commits/deadbeef/check-runs" in req.url.path:
+            return httpx.Response(404, json={"message": "Not Found"})
+        return httpx.Response(500)
+
+    client = _client(handler)
+    conclusion, details = client.get_pr_check_status(7)
+    assert conclusion is None
+    assert details is None
+
+
+def test_get_pr_check_status_propagates_unexpected_errors():
+    """A 500 on check-runs is a real error and should still raise."""
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path.endswith("/pulls/7"):
+            return httpx.Response(
+                200,
+                json={
+                    "number": 7,
+                    "title": "x",
+                    "state": "open",
+                    "draft": True,
+                    "html_url": "u",
+                    "head": {"ref": "feat", "sha": "deadbeef"},
+                    "base": {"ref": "main"},
+                },
+            )
+        return httpx.Response(500, json={"message": "boom"})
+
+    client = _client(handler)
+    with pytest.raises(GitHubError):
+        client.get_pr_check_status(7)
+
+
 def test_github_error_on_network_failure():
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("simulated")
