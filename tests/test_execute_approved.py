@@ -17,7 +17,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PROJECTS_DIR = REPO_ROOT / "projects"
 
 
-def _decision(project: str, summary: str = "Real plan", status: DecisionStatus = DecisionStatus.APPROVED) -> Decision:
+def _decision(
+    project: str, summary: str = "Real plan", status: DecisionStatus = DecisionStatus.APPROVED
+) -> Decision:
     return Decision(
         project=project,
         type=DecisionType.FEATURE,
@@ -53,6 +55,7 @@ def _success_runner(pr_url: str = "https://example/pr/1"):
             files_rejected=[],
             dry_run=False,
         )
+
     return runner
 
 
@@ -171,10 +174,15 @@ def test_budget_breach_is_per_decision_not_fatal(tmp_path: Path) -> None:
     def runner(decision: Decision, *_a: Any, **_k: Any) -> EngineerResult:
         calls.append(decision.project)
         if decision.project == p1:
-            raise BudgetBreachError(BudgetState(
-                project=p1, monthly_cap_usd=10.0, month_to_date_usd=10.5,
-                fraction=1.05, state="breach",
-            ))
+            raise BudgetBreachError(
+                BudgetState(
+                    project=p1,
+                    monthly_cap_usd=10.0,
+                    month_to_date_usd=10.5,
+                    fraction=1.05,
+                    state="breach",
+                )
+            )
         return EngineerResult(decision_id=str(decision.id), pr_url="https://ok", dry_run=False)
 
     report = run_execute_approved(

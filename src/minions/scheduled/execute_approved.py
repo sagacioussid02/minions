@@ -113,50 +113,60 @@ def run_execute_approved(
             break
 
         if _is_dry_run_decision(decision):
-            outcomes.append(ExecuteOutcome(
-                decision_id=str(decision.id),
-                project=decision.project,
-                status="skipped",
-                reason="dry-run decision (no real plan)",
-            ))
+            outcomes.append(
+                ExecuteOutcome(
+                    decision_id=str(decision.id),
+                    project=decision.project,
+                    status="skipped",
+                    reason="dry-run decision (no real plan)",
+                )
+            )
             continue
 
         if engineer_runs_store.get(str(decision.id)) is not None:
-            outcomes.append(ExecuteOutcome(
-                decision_id=str(decision.id),
-                project=decision.project,
-                status="skipped",
-                reason="engineer run already exists",
-            ))
+            outcomes.append(
+                ExecuteOutcome(
+                    decision_id=str(decision.id),
+                    project=decision.project,
+                    status="skipped",
+                    reason="engineer run already exists",
+                )
+            )
             continue
 
         manifest = manifests.get(decision.project)
         if manifest is None:
-            outcomes.append(ExecuteOutcome(
-                decision_id=str(decision.id),
-                project=decision.project,
-                status="error",
-                reason=f"project {decision.project!r} not found in active manifests",
-            ))
+            outcomes.append(
+                ExecuteOutcome(
+                    decision_id=str(decision.id),
+                    project=decision.project,
+                    status="error",
+                    reason=f"project {decision.project!r} not found in active manifests",
+                )
+            )
             continue
 
         if manifest.source.kind != "github" or not manifest.source.repo:
-            outcomes.append(ExecuteOutcome(
-                decision_id=str(decision.id),
-                project=decision.project,
-                status="skipped",
-                reason=f"project source.kind={manifest.source.kind} not supported by engineer crew",
-            ))
+            outcomes.append(
+                ExecuteOutcome(
+                    decision_id=str(decision.id),
+                    project=decision.project,
+                    status="skipped",
+                    reason=f"project source.kind={manifest.source.kind} not supported by engineer crew",
+                )
+            )
             continue
 
         github = open_github_client(manifest)
         if github is None:
-            outcomes.append(ExecuteOutcome(
-                decision_id=str(decision.id),
-                project=decision.project,
-                status="error",
-                reason="failed to open GitHub client",
-            ))
+            outcomes.append(
+                ExecuteOutcome(
+                    decision_id=str(decision.id),
+                    project=decision.project,
+                    status="error",
+                    reason="failed to open GitHub client",
+                )
+            )
             continue
 
         try:
@@ -170,29 +180,35 @@ def run_execute_approved(
                     cost_log_path=cost_log_path,
                 )
         except BudgetBreachError as e:
-            outcomes.append(ExecuteOutcome(
-                decision_id=str(decision.id),
-                project=decision.project,
-                status="throttled",
-                reason=str(e),
-            ))
+            outcomes.append(
+                ExecuteOutcome(
+                    decision_id=str(decision.id),
+                    project=decision.project,
+                    status="throttled",
+                    reason=str(e),
+                )
+            )
             continue
         except Exception as e:  # noqa: BLE001 — surface every failure in the report
-            outcomes.append(ExecuteOutcome(
-                decision_id=str(decision.id),
-                project=decision.project,
-                status="error",
-                reason=f"{type(e).__name__}: {e}",
-            ))
+            outcomes.append(
+                ExecuteOutcome(
+                    decision_id=str(decision.id),
+                    project=decision.project,
+                    status="error",
+                    reason=f"{type(e).__name__}: {e}",
+                )
+            )
             continue
 
         if result.skipped:
-            outcomes.append(ExecuteOutcome(
-                decision_id=str(decision.id),
-                project=decision.project,
-                status="skipped",
-                reason=result.skip_reason or "engineer crew skipped",
-            ))
+            outcomes.append(
+                ExecuteOutcome(
+                    decision_id=str(decision.id),
+                    project=decision.project,
+                    status="skipped",
+                    reason=result.skip_reason or "engineer crew skipped",
+                )
+            )
             continue
 
         # Persist the engineer run + mark Decision EXECUTED. Mirror `minions
@@ -209,12 +225,14 @@ def run_execute_approved(
                 persisted.status = DecisionStatus.EXECUTED
                 store.save(persisted)
 
-        outcomes.append(ExecuteOutcome(
-            decision_id=str(decision.id),
-            project=decision.project,
-            status="executed",
-            pr_url=result.pr_url,
-        ))
+        outcomes.append(
+            ExecuteOutcome(
+                decision_id=str(decision.id),
+                project=decision.project,
+                status="executed",
+                pr_url=result.pr_url,
+            )
+        )
         successful += 1
 
     return ExecuteApprovedReport(

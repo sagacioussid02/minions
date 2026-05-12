@@ -6,8 +6,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from minions.approval.store import DecisionStore
 from minions.crews.engineer import EngineerResult
 from minions.crews.engineer_runs_store import EngineerRunRecord, EngineerRunStore
@@ -37,7 +35,7 @@ class _FakeGH:
         self.ci_for = ci_for
         self.comments: list[tuple[int, str]] = []
 
-    def __enter__(self) -> "_FakeGH":
+    def __enter__(self) -> _FakeGH:
         return self
 
     def __exit__(self, *_: Any) -> None:

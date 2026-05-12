@@ -8,7 +8,7 @@ from typing import Any
 
 from minions.approval.store import DecisionStore
 from minions.crews.engineer import EngineerResult
-from minions.crews.engineer_runs_store import EngineerRunRecord, EngineerRunStore
+from minions.crews.engineer_runs_store import EngineerRunStore
 from minions.crews.qa import QAReview, render_pr_comment, run_qa_review
 from minions.crews.security import attach_review, should_review
 from minions.models.decision import Decision, DecisionType, SecurityReview
@@ -45,9 +45,7 @@ def test_attach_review_noop_on_low_risk() -> None:
     d = _decision(risk="low")
     review = attach_review(
         d,
-        output_override=SecurityReview(
-            verdict="pass", concerns=[], reasoning="not applicable"
-        ),
+        output_override=SecurityReview(verdict="pass", concerns=[], reasoning="not applicable"),
     )
     assert review is None
     assert d.security_review is None
@@ -120,7 +118,7 @@ class _FakeGH:
         self.ci_for = ci_for
         self.comments: list[tuple[int, str]] = []
 
-    def __enter__(self) -> "_FakeGH":
+    def __enter__(self) -> _FakeGH:
         return self
 
     def __exit__(self, *_: Any) -> None:
@@ -170,9 +168,7 @@ def test_pr_followup_posts_qa_comment_on_success_ci(monkeypatch: Any, tmp_path: 
     gh = _FakeGH(ci_for={1: ("success", None)})
 
     # Stub the QA crew to return a fixed review without LLM calls.
-    fixed_review = QAReview(
-        test_coverage_score=8, concerns=["nit"], suggested_tests=["t1"]
-    )
+    fixed_review = QAReview(test_coverage_score=8, concerns=["nit"], suggested_tests=["t1"])
     monkeypatch.setattr(
         "minions.scheduled.pr_followup.run_qa_review",
         lambda *a, **kw: fixed_review,

@@ -266,9 +266,7 @@ class GitHubClient:
         pr = self.get_pull_request(number)
         if not pr.head_sha:
             return None, None
-        r = self._request(
-            "GET", f"/repos/{self.repo}/commits/{pr.head_sha}/check-runs"
-        )
+        r = self._request("GET", f"/repos/{self.repo}/commits/{pr.head_sha}/check-runs")
         runs = r.json().get("check_runs", []) or []
         if not runs:
             return None, None

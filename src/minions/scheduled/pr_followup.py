@@ -108,7 +108,7 @@ def run_pr_followup(
     store: DecisionStore,
     engineer_runs_store: EngineerRunStore,
     notifier: Notifier,
-    open_github_client: "Callable[[Manifest], GitHubClient | None]",
+    open_github_client: Callable[[Manifest], GitHubClient | None],
     max_attempts: int = 1,
     dry_run: bool = False,
     api_key: str | None = None,
@@ -131,13 +131,15 @@ def run_pr_followup(
 
         github = open_github_client(manifest)
         if github is None:
-            outcomes.append(PRFollowupOutcome(
-                decision_id=record.decision_id,
-                project=record.project,
-                pr_url=record.pr_url,
-                status="error",
-                reason="failed to open GitHub client",
-            ))
+            outcomes.append(
+                PRFollowupOutcome(
+                    decision_id=record.decision_id,
+                    project=record.project,
+                    pr_url=record.pr_url,
+                    status="error",
+                    reason="failed to open GitHub client",
+                )
+            )
             continue
 
         try:
@@ -174,25 +176,29 @@ def run_pr_followup(
                                 pass
 
                     engineer_runs_store.update(record)
-                    outcomes.append(PRFollowupOutcome(
-                        decision_id=record.decision_id,
-                        project=record.project,
-                        pr_url=record.pr_url,
-                        ci_conclusion=conclusion,
-                        status="ok",
-                    ))
+                    outcomes.append(
+                        PRFollowupOutcome(
+                            decision_id=record.decision_id,
+                            project=record.project,
+                            pr_url=record.pr_url,
+                            ci_conclusion=conclusion,
+                            status="ok",
+                        )
+                    )
                     continue
 
                 if record.followup_attempts >= max_attempts:
                     engineer_runs_store.update(record)
-                    outcomes.append(PRFollowupOutcome(
-                        decision_id=record.decision_id,
-                        project=record.project,
-                        pr_url=record.pr_url,
-                        ci_conclusion=conclusion,
-                        status="skipped",
-                        reason=f"followup_attempts={record.followup_attempts} ≥ max={max_attempts}",
-                    ))
+                    outcomes.append(
+                        PRFollowupOutcome(
+                            decision_id=record.decision_id,
+                            project=record.project,
+                            pr_url=record.pr_url,
+                            ci_conclusion=conclusion,
+                            status="skipped",
+                            reason=f"followup_attempts={record.followup_attempts} ≥ max={max_attempts}",
+                        )
+                    )
                     continue
 
                 # File the fix Decision (auto-approved). execute-approved picks it up.
@@ -213,15 +219,17 @@ def run_pr_followup(
                 )
 
                 if dry_run:
-                    outcomes.append(PRFollowupOutcome(
-                        decision_id=record.decision_id,
-                        project=record.project,
-                        pr_url=record.pr_url,
-                        ci_conclusion=conclusion,
-                        status="queued_fix",
-                        reason="dry-run — would submit + auto-approve",
-                        fix_decision_id=str(fix.id),
-                    ))
+                    outcomes.append(
+                        PRFollowupOutcome(
+                            decision_id=record.decision_id,
+                            project=record.project,
+                            pr_url=record.pr_url,
+                            ci_conclusion=conclusion,
+                            status="queued_fix",
+                            reason="dry-run — would submit + auto-approve",
+                            fix_decision_id=str(fix.id),
+                        )
+                    )
                     continue
 
                 # Skip the notifier — this Decision is internal traffic. Mailing
@@ -250,22 +258,26 @@ def run_pr_followup(
                 record.last_followup_at = datetime.now(tz=UTC)
                 engineer_runs_store.update(record)
 
-                outcomes.append(PRFollowupOutcome(
+                outcomes.append(
+                    PRFollowupOutcome(
+                        decision_id=record.decision_id,
+                        project=record.project,
+                        pr_url=record.pr_url,
+                        ci_conclusion=conclusion,
+                        status="queued_fix",
+                        fix_decision_id=str(fix.id),
+                    )
+                )
+        except Exception as e:  # noqa: BLE001
+            outcomes.append(
+                PRFollowupOutcome(
                     decision_id=record.decision_id,
                     project=record.project,
                     pr_url=record.pr_url,
-                    ci_conclusion=conclusion,
-                    status="queued_fix",
-                    fix_decision_id=str(fix.id),
-                ))
-        except Exception as e:  # noqa: BLE001
-            outcomes.append(PRFollowupOutcome(
-                decision_id=record.decision_id,
-                project=record.project,
-                pr_url=record.pr_url,
-                status="error",
-                reason=f"{type(e).__name__}: {e}",
-            ))
+                    status="error",
+                    reason=f"{type(e).__name__}: {e}",
+                )
+            )
 
     return PRFollowupReport(
         started_at=started,

@@ -117,7 +117,7 @@ def _llm_review(decision: Decision, files_changed: list[str], api_key: str) -> Q
         Summary:   {decision.summary}
 
         Plan:
-        {decision.diff_or_plan or '(none)'}
+        {decision.diff_or_plan or "(none)"}
 
         ## Files changed in the PR
         {chr(10).join(f"- {f}" for f in files_changed) or "(none)"}

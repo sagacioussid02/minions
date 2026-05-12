@@ -1116,7 +1116,11 @@ def list_questions(
     from minions.questions import make_question_store
 
     store = make_question_store(QUESTIONS_PATH)
-    qs = store.list_all() if status.lower() == "all" else store.list_by_status(QuestionStatus(status.lower()))
+    qs = (
+        store.list_all()
+        if status.lower() == "all"
+        else store.list_by_status(QuestionStatus(status.lower()))
+    )
     if not qs:
         rprint(f"[dim]no questions matching status={status}[/dim]")
         return
@@ -1164,7 +1168,9 @@ def show_question(question_id: str = typer.Argument(...)) -> None:
     if q.answer:
         rprint(f"\n[bold]Answer ({q.answered_by}):[/bold]\n{q.answer}")
     if q.escalated_at:
-        rprint(f"\n[yellow]Escalated[/yellow] at {q.escalated_at}: {q.escalation_reason or '(no reason given)'}")
+        rprint(
+            f"\n[yellow]Escalated[/yellow] at {q.escalated_at}: {q.escalation_reason or '(no reason given)'}"
+        )
 
 
 @questions_app.command("answer")
