@@ -108,13 +108,27 @@ To make it do real work, copy `.env.example` to `.env`, fill in an Anthropic API
 | Surface | How to reach it |
 |---|---|
 | CLI | `minions --help` (typer-based) |
-| Operator dashboard | `minions dashboard` (Streamlit, http://localhost:8501) |
+| Operator dashboard (Streamlit) | `minions dashboard` (http://localhost:8501) |
+| Web console (Next.js, **alpha**) | `cd web && pnpm install && cp .env.local.example .env.local && pnpm dev` (http://localhost:3000) |
 | Approval webhook | `minions.webhook.app:app` (FastAPI, deployable to Fly.io) |
-| Cron entrypoints | `minions cron weekly\|daily\|friday` |
+| Cron entrypoints | `minions cron weekly\|daily\|friday\|execute-approved\|pr-followup` |
 
 Stores are dual-backend: pure JSON locally so you can hack on the project with no database, Postgres (Neon-compatible) when you set `MINIONS_DATABASE_URL`. Tests cover both backends.
 
 The dashboard now ships five pages — **🤖 Agents**, **📡 Activity** (live timeline + guardrails strip), **📋 Decisions**, **📊 Sprint Board**, **🛡️ Audit** — so contributors can *see* the org work without standing up Langfuse. For a full visual tour of every role, when it activates, and what it produces, read [`docs/AGENTS.md`](docs/AGENTS.md).
+
+### Web console (alpha)
+
+`web/` is a Next.js (App Router) operator console that reads from the same Neon Postgres as the Python crews. The home page is the **Live Floor** — every project gets its own panel, every agent appears as a card that breathes when idle and glows when running, the activity stream scrolls underneath. Designed to make a 60-agent org legible at a glance.
+
+```bash
+cd web
+pnpm install
+cp .env.example .env.local               # paste your MINIONS_DATABASE_URL
+pnpm dev                                 # http://localhost:3000
+```
+
+Sprint 1 ships read-only; animations, particle handoffs, operator writes, and Server-Sent-Events realtime land in sprints 2–6. Full design: [`openspec/changes/operator-console-ui/`](https://github.com/sagacioussid02/minions/blob/main/openspec/changes/operator-console-ui/) on the private planning fork.
 
 ---
 

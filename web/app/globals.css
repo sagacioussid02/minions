@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+/*
+ * Operator console palette — Apple-polished dark mode.
+ *
+ *  --bg-canvas      : page background (deep slate, near-black)
+ *  --bg-surface     : cards / panels
+ *  --bg-elevated    : modals + sidebar
+ *  --line           : 1px borders
+ *  --text-primary   : main copy
+ *  --text-muted     : secondary copy
+ *  --accent         : single accent (cyan) — matches existing Streamlit dashboard
+ *  --project-{1..5} : per-project hues for chips, color tints, dots
+ *  --role-*         : role-tier colors for icons + handoff particles
+ *  --state-*        : status colors (success/warn/danger/idle)
+ */
+
+:root {
+  --bg-canvas: #07090c;
+  --bg-surface: #0e1117;
+  --bg-elevated: #131822;
+  --line: #1f2530;
+  --text-primary: #e6e9ef;
+  --text-muted: #8a93a3;
+  --accent: #22d3ee; /* cyan-400 */
+
+  --project-1: #5eead4; /* teal-300 */
+  --project-2: #fda4af; /* rose-300 */
+  --project-3: #c4b5fd; /* violet-300 */
+  --project-4: #fcd34d; /* amber-300 */
+  --project-5: #93c5fd; /* sky-300 */
+
+  --role-executive: #f0abfc; /* fuchsia-300 */
+  --role-engineering: #22d3ee; /* cyan-400 */
+  --role-audit: #fbbf24; /* amber-400 */
+  --role-specialist: #a3e635; /* lime-400 */
+
+  --state-success: #34d399;
+  --state-warn: #fbbf24;
+  --state-danger: #f87171;
+  --state-idle: #475569;
+}
+
+@theme inline {
+  --color-background: var(--bg-canvas);
+  --color-foreground: var(--text-primary);
+  --color-muted: var(--text-muted);
+  --color-surface: var(--bg-surface);
+  --color-elevated: var(--bg-elevated);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+
+  --color-project-1: var(--project-1);
+  --color-project-2: var(--project-2);
+  --color-project-3: var(--project-3);
+  --color-project-4: var(--project-4);
+  --color-project-5: var(--project-5);
+
+  --color-role-executive: var(--role-executive);
+  --color-role-engineering: var(--role-engineering);
+  --color-role-audit: var(--role-audit);
+  --color-role-specialist: var(--role-specialist);
+
+  --color-state-success: var(--state-success);
+  --color-state-warn: var(--state-warn);
+  --color-state-danger: var(--state-danger);
+  --color-state-idle: var(--state-idle);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html,
+body {
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-geist-sans), Inter, system-ui, -apple-system, sans-serif;
+  font-feature-settings: "ss01", "cv11";
+  text-rendering: optimizeLegibility;
+}
+
+/* Subtle breathing pulse for idle agent cards. Respects reduced motion. */
+@keyframes minions-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50%      { transform: scale(1.015); opacity: 1; }
+}
+
+.breathe {
+  animation: minions-breathe 4.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .breathe {
+    animation: none;
+  }
+}
