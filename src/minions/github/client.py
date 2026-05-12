@@ -16,6 +16,7 @@ from typing import Any
 
 import httpx
 
+from minions.activity import record_guardrail_block
 from minions.github.models import BranchRef, Issue, PullRequest, Repo
 
 
@@ -99,9 +100,13 @@ class GitHubClient:
             )
         return response
 
-    @staticmethod
-    def _check_not_protected(branch: str) -> None:
+    def _check_not_protected(self, branch: str, *, op: str = "write") -> None:
         if branch.lower() in _PROTECTED_BRANCHES:
+            record_guardrail_block(
+                layer="layer2_tooling",
+                kind="protected_branch",
+                details=f"{op} refused on {branch!r} for repo {self.repo}",
+            )
             raise ProtectedBranchError(
                 f"refusing to operate on protected branch {branch!r}. "
                 f"Create a feature branch (e.g., minions/<role>/<summary>) and open a PR."
@@ -156,7 +161,7 @@ class GitHubClient:
 
     def create_branch(self, *, name: str, base_sha: str) -> BranchRef:
         """Create a new ref. Refuses protected branch names."""
-        self._check_not_protected(name)
+        self._check_not_protected(name, op="create_branch")
         r = self._request(
             "POST",
             f"/repos/{self.repo}/git/refs",
@@ -195,7 +200,7 @@ class GitHubClient:
         (use :meth:`get_file_sha`). Returns the resulting commit SHA.
         Refuses protected branches.
         """
-        self._check_not_protected(branch)
+        self._check_not_protected(branch, op="update_file")
         content_bytes = content.encode("utf-8") if isinstance(content, str) else content
         body: dict[str, Any] = {
             "message": message,
@@ -220,6 +225,11 @@ class GitHubClient:
     ) -> PullRequest:
         """Open a PR. Default is draft. Refuses head=protected branch."""
         if head.lower() in _PROTECTED_BRANCHES:
+            record_guardrail_block(
+                layer="layer2_tooling",
+                kind="protected_branch",
+                details=f"open_pull_request refused with head={head!r} for repo {self.repo}",
+            )
             raise ProtectedBranchError(
                 f"refusing to open a PR with head={head!r}; "
                 f"feature branches must be of the form minions/<role>/<summary>."
