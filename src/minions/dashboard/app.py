@@ -945,9 +945,7 @@ def render_activity(data: DashboardData) -> None:
     visible = [
         e
         for e in entries
-        if (e.project or "") in project_filter
-        and e.crew in crew_filter
-        and e.event in event_filter
+        if (e.project or "") in project_filter and e.crew in crew_filter and e.event in event_filter
     ]
     visible.sort(key=lambda e: e.timestamp, reverse=True)
     visible = visible[:200]  # cap render cost
