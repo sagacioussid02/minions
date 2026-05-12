@@ -114,6 +114,8 @@ To make it do real work, copy `.env.example` to `.env`, fill in an Anthropic API
 
 Stores are dual-backend: pure JSON locally so you can hack on the project with no database, Postgres (Neon-compatible) when you set `MINIONS_DATABASE_URL`. Tests cover both backends.
 
+The dashboard now ships five pages — **🤖 Agents**, **📡 Activity** (live timeline + guardrails strip), **📋 Decisions**, **📊 Sprint Board**, **🛡️ Audit** — so contributors can *see* the org work without standing up Langfuse. For a full visual tour of every role, when it activates, and what it produces, read [`docs/AGENTS.md`](docs/AGENTS.md).
+
 ---
 
 ## Status
