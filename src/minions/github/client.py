@@ -183,7 +183,10 @@ class GitHubClient:
         if isinstance(body, list):
             # Path is a directory; not what the caller asked for.
             return None
-        return body.get("sha")
+        if not isinstance(body, dict):
+            return None
+        sha = body.get("sha")
+        return sha if isinstance(sha, str) else None
 
     def update_file(
         self,
@@ -210,7 +213,12 @@ class GitHubClient:
         if sha is not None:
             body["sha"] = sha
         r = self._request("PUT", f"/repos/{self.repo}/contents/{path}", json=body)
-        return r.json()["commit"]["sha"]
+        response_body = r.json()
+        commit = response_body.get("commit") if isinstance(response_body, dict) else None
+        commit_sha = commit.get("sha") if isinstance(commit, dict) else None
+        if not isinstance(commit_sha, str):
+            raise GitHubError("GitHub update_file response did not include commit.sha")
+        return commit_sha
 
     # ---- Pull requests ----
 
@@ -271,9 +279,7 @@ class GitHubClient:
         # 403s on some private-repo + token combinations. Either way, "unknown"
         # is the right answer — the sweep should not error on a stale PR.
         try:
-            r = self._request(
-                "GET", f"/repos/{self.repo}/commits/{pr.head_sha}/check-runs"
-            )
+            r = self._request("GET", f"/repos/{self.repo}/commits/{pr.head_sha}/check-runs")
         except GitHubError as e:
             if e.status_code in {403, 404, 422}:
                 return None, None
