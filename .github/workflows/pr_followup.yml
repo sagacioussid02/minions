@@ -1,0 +1,36 @@
+name: PR follow-up
+
+# Every 4 hours. Polls open minions-authored PRs, fetches CI status, and on
+# failure queues a "fix" Decision (auto-approved) that the next
+# execute-approved tick picks up. This is the "agents iterate on their own
+# work" loop.
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Skip Decision submission and PR comments (default: false)'
+        required: false
+        type: boolean
+        default: false
+      max-attempts:
+        description: 'Cap on auto-fix attempts per original PR (default: 1)'
+        required: false
+        type: string
+        default: '1'
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  pr-followup:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: >-
+        ${{ inputs.dry-run
+            && format('cron pr-followup --dry-run --max-attempts {0}', inputs.max-attempts || '1')
+            || format('cron pr-followup --no-dry-run --max-attempts {0}', inputs.max-attempts || '1') }}
+    secrets: inherit

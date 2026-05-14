@@ -16,6 +16,7 @@ from typing import Any
 
 import httpx
 
+from minions.activity import record_guardrail_block
 from minions.github.models import BranchRef, Issue, PullRequest, Repo
 
 
@@ -99,9 +100,13 @@ class GitHubClient:
             )
         return response
 
-    @staticmethod
-    def _check_not_protected(branch: str) -> None:
+    def _check_not_protected(self, branch: str, *, op: str = "write") -> None:
         if branch.lower() in _PROTECTED_BRANCHES:
+            record_guardrail_block(
+                layer="layer2_tooling",
+                kind="protected_branch",
+                details=f"{op} refused on {branch!r} for repo {self.repo}",
+            )
             raise ProtectedBranchError(
                 f"refusing to operate on protected branch {branch!r}. "
                 f"Create a feature branch (e.g., minions/<role>/<summary>) and open a PR."
@@ -156,7 +161,7 @@ class GitHubClient:
 
     def create_branch(self, *, name: str, base_sha: str) -> BranchRef:
         """Create a new ref. Refuses protected branch names."""
-        self._check_not_protected(name)
+        self._check_not_protected(name, op="create_branch")
         r = self._request(
             "POST",
             f"/repos/{self.repo}/git/refs",
@@ -178,7 +183,10 @@ class GitHubClient:
         if isinstance(body, list):
             # Path is a directory; not what the caller asked for.
             return None
-        return body.get("sha")
+        if not isinstance(body, dict):
+            return None
+        sha = body.get("sha")
+        return sha if isinstance(sha, str) else None
 
     def update_file(
         self,
@@ -195,7 +203,7 @@ class GitHubClient:
         (use :meth:`get_file_sha`). Returns the resulting commit SHA.
         Refuses protected branches.
         """
-        self._check_not_protected(branch)
+        self._check_not_protected(branch, op="update_file")
         content_bytes = content.encode("utf-8") if isinstance(content, str) else content
         body: dict[str, Any] = {
             "message": message,
@@ -205,7 +213,12 @@ class GitHubClient:
         if sha is not None:
             body["sha"] = sha
         r = self._request("PUT", f"/repos/{self.repo}/contents/{path}", json=body)
-        return r.json()["commit"]["sha"]
+        response_body = r.json()
+        commit = response_body.get("commit") if isinstance(response_body, dict) else None
+        commit_sha = commit.get("sha") if isinstance(commit, dict) else None
+        if not isinstance(commit_sha, str):
+            raise GitHubError("GitHub update_file response did not include commit.sha")
+        return commit_sha
 
     # ---- Pull requests ----
 
@@ -220,6 +233,11 @@ class GitHubClient:
     ) -> PullRequest:
         """Open a PR. Default is draft. Refuses head=protected branch."""
         if head.lower() in _PROTECTED_BRANCHES:
+            record_guardrail_block(
+                layer="layer2_tooling",
+                kind="protected_branch",
+                details=f"open_pull_request refused with head={head!r} for repo {self.repo}",
+            )
             raise ProtectedBranchError(
                 f"refusing to open a PR with head={head!r}; "
                 f"feature branches must be of the form minions/<role>/<summary>."
@@ -244,6 +262,51 @@ class GitHubClient:
     def get_pull_request(self, number: int) -> PullRequest:
         r = self._request("GET", f"/repos/{self.repo}/pulls/{number}")
         return _normalize_pull_request(r.json())
+
+    def get_pr_check_status(self, number: int) -> tuple[str | None, str | None]:
+        """Return ``(conclusion, details_url)`` for the latest CI on a PR.
+
+        ``conclusion`` is one of ``"success"`` / ``"failure"`` / ``"pending"`` /
+        ``None`` (no checks configured yet). Aggregates across all check-runs on
+        the PR's head SHA: any failure wins; otherwise any in-flight check makes
+        it ``"pending"``; otherwise ``"success"`` when ≥1 check completed.
+        """
+        pr = self.get_pull_request(number)
+        if not pr.head_sha:
+            return None, None
+        # Best-effort read. The head SHA can disappear from the repo (force-push,
+        # rebase, branch deleted before sweep) and the check-runs endpoint also
+        # 403s on some private-repo + token combinations. Either way, "unknown"
+        # is the right answer — the sweep should not error on a stale PR.
+        try:
+            r = self._request("GET", f"/repos/{self.repo}/commits/{pr.head_sha}/check-runs")
+        except GitHubError as e:
+            if e.status_code in {403, 404, 422}:
+                return None, None
+            raise
+        runs = r.json().get("check_runs", []) or []
+        if not runs:
+            return None, None
+
+        details_url: str | None = None
+        had_failure = False
+        had_pending = False
+        for run in runs:
+            status = (run.get("status") or "").lower()
+            concl = (run.get("conclusion") or "").lower() or None
+            if status != "completed":
+                had_pending = True
+                continue
+            if concl in {"failure", "timed_out", "cancelled", "action_required"}:
+                had_failure = True
+                if not details_url:
+                    details_url = run.get("html_url") or run.get("details_url")
+
+        if had_failure:
+            return "failure", details_url
+        if had_pending:
+            return "pending", None
+        return "success", None
 
     def list_pull_request_files(self, number: int, *, per_page: int = 30) -> list[dict[str, Any]]:
         """Return PR files: filename, status, additions, deletions, patch (when present).
@@ -300,6 +363,7 @@ def _normalize_pull_request(item: dict[str, Any]) -> PullRequest:
         body=item.get("body"),
         state=item.get("state") or "open",
         head=head_obj.get("ref", "") if isinstance(head_obj, dict) else "",
+        head_sha=head_obj.get("sha") if isinstance(head_obj, dict) else None,
         base=base_obj.get("ref", "") if isinstance(base_obj, dict) else "",
         draft=bool(item.get("draft", False)),
         html_url=item.get("html_url") or "",

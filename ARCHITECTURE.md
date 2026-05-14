@@ -147,6 +147,17 @@ If 72 hours pass without a click, the magic-link token expires AND `sweep_timeou
 
 ---
 
+## Observability — watching the org work
+
+Two complementary surfaces:
+
+- **Streamlit dashboard** (`minions dashboard`) — five pages, no extra infra. The **📡 Activity** page renders a chronological stream of every `crew_started` / `crew_finished` / `crew_failed` event from `data/local/activity.jsonl` (or the `activity_log` Postgres table), with a always-on guardrails strip that names the four safety layers. This is the default UX and is sufficient for solo operators.
+- **Langfuse** — opt-in. `crews/*.py` wrap each run with `@observe_crew`; when `LANGFUSE_*` env vars resolve, full LLM traces flow there. When they don't, the decorator is a no-op. Use this when you need token-level traces for debugging multi-agent reasoning.
+
+For a contributor-facing visual tour of every role, cron trigger, and Decision lifecycle, see [`docs/AGENTS.md`](docs/AGENTS.md).
+
+---
+
 ## Where to start reading
 
 If you only have 30 minutes:

@@ -67,7 +67,14 @@ def _use_postgres() -> bool:
 RUNNING_WINDOW_SECONDS = 10 * 60  # 10 minutes
 
 
-Event = Literal["crew_started", "crew_finished", "crew_failed"]
+Event = Literal["crew_started", "crew_finished", "crew_failed", "guardrail_blocked"]
+
+
+# Guardrail layer identifiers — match the four layers in ARCHITECTURE.md.
+# "layer1" is the prompt preamble (agent self-restraint), "layer2" is the
+# in-process tooling deny-list. Layers 3/4 (branch protection, egress) are
+# enforced outside this codebase and are not instrumented here.
+GuardrailLayer = Literal["layer1_prompt", "layer2_tooling"]
 
 
 @dataclass(frozen=True)
@@ -237,6 +244,55 @@ def is_role_running(
         if e.project == project and role in e.agents:
             return True
     return False
+
+
+def record_guardrail_block(
+    *,
+    layer: GuardrailLayer,
+    kind: str,
+    details: str,
+    project: str | None = None,
+    role: str | None = None,
+    path: Path | None = None,
+) -> None:
+    """Emit a ``guardrail_blocked`` event when the system refuses an unsafe action.
+
+    Reuses the existing ActivityEntry schema:
+      * ``crew``         — ``"guardrail:<layer>"`` (e.g., ``"guardrail:layer2_tooling"``)
+      * ``agents``       — ``(kind,)`` (e.g., ``("protected_branch",)``)
+      * ``error``        — human-readable detail
+      * ``decision_id``  — empty (these aren't tied to a Decision)
+
+    Never raises — observability code must not crash the safety check that
+    produced the block. A failed append is logged at debug and swallowed.
+    """
+    try:
+        entry = ActivityEntry(
+            timestamp=datetime.now(tz=UTC),
+            event="guardrail_blocked",
+            run_id=uuid.uuid4().hex,
+            crew=f"guardrail:{layer}",
+            project=project or "",
+            decision_id="",
+            agents=(kind,) if role is None else (kind, role),
+            error=details[:200],
+        )
+        append(entry, path=path)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("record_guardrail_block failed: %s", e)
+
+
+def guardrail_blocks(
+    *,
+    since: datetime | None = None,
+    path: Path | None = None,
+) -> list[ActivityEntry]:
+    """Return guardrail_blocked events, newest first, optionally filtered by ``since``."""
+    out = [e for e in read_log(path) if e.event == "guardrail_blocked"]
+    if since is not None:
+        out = [e for e in out if e.timestamp >= since]
+    out.sort(key=lambda e: e.timestamp, reverse=True)
+    return out
 
 
 def history_for_role(

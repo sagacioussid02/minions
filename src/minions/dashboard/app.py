@@ -13,7 +13,7 @@ All data is read fresh from cost log + decision store on every render. The
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import streamlit as st
@@ -833,6 +833,150 @@ def _render_finding_detail(f) -> None:  # type: ignore[no-untyped-def]
 
 
 # ---------------------------------------------------------------------------
+# Page: Activity (live timeline + guardrails)
+# ---------------------------------------------------------------------------
+
+
+def render_activity(data: DashboardData) -> None:
+    """Chronological stream of crew lifecycle events + guardrails strip.
+
+    Reads the same activity log that powers the per-agent "running now" dot.
+    The guardrails strip surfaces the four safety layers as live evidence
+    rather than a README bullet list — so contributors can *see* the system
+    refusing to do unsafe things.
+    """
+    from minions.activity import read_log, running_now
+
+    st.header("📡 Activity")
+    st.caption(
+        "Live stream of every crew lifecycle event and guardrail block. One row per "
+        "`crew_started` / `crew_finished` / `crew_failed` / `guardrail_blocked`."
+    )
+
+    # --- Guardrails strip ---------------------------------------------------
+    entries = read_log(ACTIVITY_LOG_PATH)
+    in_flight = running_now(path=ACTIVITY_LOG_PATH)
+    cutoff_24h = datetime.now(tz=UTC) - timedelta(days=1)
+    last_24h = [e for e in entries if e.timestamp >= cutoff_24h]
+    starts_24h = sum(1 for e in last_24h if e.event == "crew_started")
+    fails_24h = sum(1 for e in last_24h if e.event == "crew_failed")
+    finished_24h = sum(1 for e in last_24h if e.event == "crew_finished")
+    success_rate = (
+        f"{(finished_24h / max(finished_24h + fails_24h, 1)) * 100:.0f}%"
+        if (finished_24h + fails_24h) > 0
+        else "—"
+    )
+
+    layer1_blocks_24h = sum(
+        1
+        for e in last_24h
+        if e.event == "guardrail_blocked" and e.crew == "guardrail:layer1_prompt"
+    )
+    layer2_blocks_24h = sum(
+        1
+        for e in last_24h
+        if e.event == "guardrail_blocked" and e.crew == "guardrail:layer2_tooling"
+    )
+
+    st.subheader("🛡️ Guardrails")
+    g1, g2, g3, g4 = st.columns(4)
+    g1.metric(
+        "Layer 1 · Prompt",
+        f"{layer1_blocks_24h} blocked · 24h",
+        help=(
+            "Safety preamble prepended to every agent (src/minions/agents/safety.py). "
+            "Counter shows agent self-reported refusals captured via "
+            "activity.record_guardrail_block(layer='layer1_prompt', ...)."
+        ),
+    )
+    g2.metric(
+        "Layer 2 · Tooling",
+        f"{layer2_blocks_24h} blocked · 24h",
+        help=(
+            "GitHub client refuses pushes to main/master/trunk/develop and has no merge(). "
+            "Counter shows real ProtectedBranchError raises in the last 24h."
+        ),
+    )
+    g3.metric(
+        "Layer 3 · Branch protect",
+        "GitHub",
+        help="Required reviews on main — enforced outside this codebase.",
+    )
+    g4.metric(
+        "Layer 4 · Egress",
+        "Sandbox",
+        help="Runtime egress allowlist — enforced outside this codebase.",
+    )
+
+    st.divider()
+
+    # --- Live counters ------------------------------------------------------
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Running now", len(in_flight))
+    c2.metric("Started · 24h", starts_24h)
+    c3.metric("Success rate · 24h", success_rate)
+    c4.metric(
+        "Failed · 24h",
+        fails_24h,
+        delta=None,
+        delta_color="inverse",
+    )
+
+    if not entries:
+        st.info(
+            "No activity yet. Run `minions cron weekly --no-dry-run` to emit "
+            "lifecycle events, or hit the dashboard after the next scheduled "
+            "tick."
+        )
+        return
+
+    # --- Filters ------------------------------------------------------------
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        projects = sorted({e.project for e in entries if e.project})
+        project_filter = st.multiselect("Project", projects, default=projects)
+    with col2:
+        crews = sorted({e.crew for e in entries if e.crew})
+        crew_filter = st.multiselect("Crew", crews, default=crews)
+    with col3:
+        events = ["crew_started", "crew_finished", "crew_failed", "guardrail_blocked"]
+        event_filter = st.multiselect("Event", events, default=events)
+
+    visible = [
+        e
+        for e in entries
+        if (e.project or "") in project_filter and e.crew in crew_filter and e.event in event_filter
+    ]
+    visible.sort(key=lambda e: e.timestamp, reverse=True)
+    visible = visible[:200]  # cap render cost
+
+    if not visible:
+        st.info("No events match the current filters.")
+        return
+
+    icon = {
+        "crew_started": "▶️",
+        "crew_finished": "✅",
+        "crew_failed": "🔴",
+        "guardrail_blocked": "🛡️",
+    }
+    rows = [
+        {
+            "when": e.timestamp.strftime("%m-%d %H:%M:%S"),
+            "event": f"{icon.get(e.event, '·')} {e.event.replace('crew_', '')}",
+            "crew": e.crew,
+            "project": e.project or "—",
+            "agents": ", ".join(e.agents) if e.agents else "—",
+            "decision": (e.decision_id or "—")[:8],
+            "error": (e.error or "")[:60],
+        }
+        for e in visible
+    ]
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.caption(f"Showing {len(visible)} most recent of {len(entries)} total events.")
+
+
+# ---------------------------------------------------------------------------
 # Entry
 # ---------------------------------------------------------------------------
 
@@ -853,7 +997,7 @@ def main() -> None:
         st.caption("Autonomous engineering org")
         page = st.radio(
             "Page",
-            ["🤖 Agents", "📋 Decisions", "📊 Sprint Board", "🛡️ Audit"],
+            ["🤖 Agents", "📡 Activity", "📋 Decisions", "📊 Sprint Board", "🛡️ Audit"],
         )
         st.divider()
         if st.button("🔄 Refresh now", use_container_width=True):
@@ -869,6 +1013,8 @@ def main() -> None:
     if page == "🤖 Agents":
         _render_agent_detail(data)
         render_agents(data)
+    elif page == "📡 Activity":
+        render_activity(data)
     elif page == "📋 Decisions":
         render_decisions(data)
     elif page == "📊 Sprint Board":

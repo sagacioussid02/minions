@@ -20,6 +20,8 @@ from minions.budget import maybe_notify
 from minions.config.portfolio import PortfolioConfig
 from minions.crews.devils_advocate import attach_critique, should_critique
 from minions.crews.planning import run_planning_crew
+from minions.crews.security import attach_review as attach_security_review
+from minions.crews.security import should_review as should_security_review
 from minions.models.manifest import Manifest, load_active_manifests
 from minions.notify.base import Notifier
 from minions.onboarding import build_profile
@@ -124,6 +126,13 @@ def run_weekly_planning(
             if should_critique(decision) and api_key is not None:
                 try:
                     attach_critique(decision, api_key=api_key, portfolio=portfolio)
+                except Exception:  # noqa: BLE001
+                    pass
+            # §9.4 — security review on risk>=medium. Same gate as DA, runs
+            # independently so a parse failure doesn't drop the critique too.
+            if should_security_review(decision) and api_key is not None:
+                try:
+                    attach_security_review(decision, api_key=api_key, portfolio=portfolio)
                 except Exception:  # noqa: BLE001
                     pass
             submit_for_approval(decision, store=store, notifier=notifier)

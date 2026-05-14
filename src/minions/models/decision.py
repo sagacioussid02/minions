@@ -43,6 +43,21 @@ class DevilsAdvocateCritique(BaseModel):
     alternative_considered: str | None = None
 
 
+SecurityVerdict = Literal["pass", "flag", "block"]
+
+
+class SecurityReview(BaseModel):
+    """Pre-approval security review attached to any Decision at risk >= medium.
+
+    ``verdict`` is informational in v0 (no veto) — same model as Devil's Advocate.
+    "block" surfaces in the operator's notification so they know to scrutinize.
+    """
+
+    verdict: SecurityVerdict
+    concerns: list[str]
+    reasoning: str
+
+
 class Decision(BaseModel):
     """A material change proposal. Always recorded; gated by operator approval
     unless it matches a project-specific auto-approval rule.
@@ -65,6 +80,7 @@ class Decision(BaseModel):
     status: DecisionStatus = DecisionStatus.PENDING
 
     critique: DevilsAdvocateCritique | None = None
+    security_review: SecurityReview | None = None
 
     # Cost-coupled approvals (e.g., team_composition + budget_raise) link via this field.
     paired_decision_id: UUID | None = None

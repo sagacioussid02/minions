@@ -87,6 +87,10 @@ db_app = typer.Typer(
     help="Postgres (Neon) backend management — migrations, status, JSON backfill.",
     no_args_is_help=True,
 )
+questions_app = typer.Typer(
+    help="Inter-agent Question Records (escalation channel).",
+    no_args_is_help=True,
+)
 app.add_typer(decisions_app, name="decisions")
 app.add_typer(secrets_app, name="secrets")
 app.add_typer(github_app, name="github")
@@ -94,6 +98,7 @@ app.add_typer(cron_app, name="cron")
 app.add_typer(cost_app, name="cost")
 app.add_typer(audit_app, name="audit")
 app.add_typer(db_app, name="db")
+app.add_typer(questions_app, name="questions")
 console = Console()
 
 
@@ -150,6 +155,7 @@ BUDGET_NOTIFICATIONS_PATH = REPO_ROOT / "data" / "local" / "budget_notifications
 ACTIVITY_LOG_PATH = REPO_ROOT / "data" / "local" / "activity.jsonl"
 ENGINEER_RUNS_PATH = REPO_ROOT / "data" / "local" / "engineer_runs.json"
 AUDIT_FINDINGS_PATH = REPO_ROOT / "data" / "local" / "audit_findings.json"
+QUESTIONS_PATH = REPO_ROOT / "data" / "local" / "questions.json"
 init_cost_tracking(log_path=COST_LOG_PATH)
 
 from minions.activity import set_log_path as _set_activity_log_path  # noqa: E402
@@ -1038,6 +1044,222 @@ def cron_friday(
         f"rejected {report.rejected} · executed {report.executed}[/dim]"
     )
     rprint(report.body)
+
+
+@cron_app.command("execute-approved")
+def cron_execute_approved(
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Dry run skips LLM calls and does NOT open PRs.",
+    ),
+    max_runs: int = typer.Option(
+        5, "--max-runs", help="Hard cap on engineer-crew runs per invocation."
+    ),
+) -> None:
+    """Run the engineer crew on every approved Decision (FIFO, capped)."""
+    from minions.crews.engineer_runs_store_factory import make_engineer_runs_store
+    from minions.scheduled import run_execute_approved
+
+    api_key: str | None = None
+    if not dry_run:
+        try:
+            api_key = get_anthropic_api_key()
+        except SecretNotFound as e:
+            rprint(f"[red]Missing Anthropic API key:[/red] {e}")
+            raise typer.Exit(1) from e
+        ok, message = anthropic_check.auth_check(api_key)
+        if not ok:
+            rprint(f"[red]Anthropic preflight failed:[/red] {message}")
+            raise typer.Exit(1)
+
+    report = run_execute_approved(
+        projects_dir=PROJECTS_DIR,
+        store=_store(),
+        engineer_runs_store=make_engineer_runs_store(ENGINEER_RUNS_PATH),
+        open_github_client=_open_github_client,
+        api_key=api_key,
+        dry_run=dry_run,
+        cost_log_path=COST_LOG_PATH,
+        max_runs=max_runs,
+    )
+
+    rprint(
+        f"\n[bold]Execute-approved sweep[/bold] — "
+        f"executed {report.executed}, skipped {report.skipped}, "
+        f"throttled {report.throttled}, errored {report.errored}"
+        + ("  [yellow](capped)[/yellow]" if report.capped else "")
+    )
+    for o in report.outcomes:
+        tag = {
+            "executed": "[green]✓[/green]",
+            "skipped": "[dim]⊘[/dim]",
+            "throttled": "[yellow]⊘[/yellow]",
+            "error": "[red]✗[/red]",
+        }[o.status]
+        line = f"  {tag} {o.project} ({o.decision_id[:8]})"
+        if o.pr_url:
+            line += f" → {o.pr_url}"
+        elif o.reason:
+            line += f" — {o.reason[:80]}"
+        rprint(line)
+
+
+@questions_app.command("list")
+def list_questions(
+    status: str = typer.Option(
+        "open", "--status", help="open / answered / escalated / cancelled / all"
+    ),
+) -> None:
+    """List Question Records by status."""
+    from minions.models.question import QuestionStatus
+    from minions.questions import make_question_store
+
+    store = make_question_store(QUESTIONS_PATH)
+    qs = (
+        store.list_all()
+        if status.lower() == "all"
+        else store.list_by_status(QuestionStatus(status.lower()))
+    )
+    if not qs:
+        rprint(f"[dim]no questions matching status={status}[/dim]")
+        return
+
+    table = Table(title=f"Questions ({status})")
+    table.add_column("ID")
+    table.add_column("Project")
+    table.add_column("Asker")
+    table.add_column("Target")
+    table.add_column("Status")
+    table.add_column("Question")
+    for q in qs:
+        table.add_row(
+            str(q.id)[:8] + "…",
+            q.project,
+            q.asker_role,
+            q.target_role,
+            q.status.value,
+            q.question[:60],
+        )
+    console.print(table)
+
+
+@questions_app.command("show")
+def show_question(question_id: str = typer.Argument(...)) -> None:
+    """Show full details for a Question Record (id prefix is OK)."""
+    from minions.questions import make_question_store
+
+    store = make_question_store(QUESTIONS_PATH)
+    matches = [q for q in store.list_all() if str(q.id).startswith(question_id)]
+    if not matches:
+        rprint(f"[red]no question matching prefix {question_id!r}[/red]")
+        raise typer.Exit(1)
+    q = matches[0]
+    rprint(f"[bold]ID:[/bold]      {q.id}")
+    rprint(f"[bold]Project:[/bold] {q.project}")
+    rprint(f"[bold]Status:[/bold]  {q.status.value}")
+    rprint(f"[bold]Asker:[/bold]   {q.asker_role} ({q.asker_agent_id})")
+    rprint(f"[bold]Target:[/bold]  {q.target_role}")
+    rprint(f"\n[bold]Question:[/bold]\n{q.question}")
+    if q.context:
+        rprint(f"\n[bold]Context:[/bold]\n{q.context}")
+    if q.related_pr_url:
+        rprint(f"\n[bold]Related PR:[/bold] {q.related_pr_url}")
+    if q.answer:
+        rprint(f"\n[bold]Answer ({q.answered_by}):[/bold]\n{q.answer}")
+    if q.escalated_at:
+        rprint(
+            f"\n[yellow]Escalated[/yellow] at {q.escalated_at}: {q.escalation_reason or '(no reason given)'}"
+        )
+
+
+@questions_app.command("answer")
+def answer_question_cmd(
+    question_id: str = typer.Argument(..., help="Question id prefix"),
+    answer: str = typer.Option(..., "--answer", "-a", help="The answer text"),
+    by: str = typer.Option("operator", "--by", help="Who is answering (role or 'operator')"),
+) -> None:
+    """Answer an OPEN question."""
+    from minions.questions import answer_question, make_question_store
+
+    store = make_question_store(QUESTIONS_PATH)
+    matches = [q for q in store.list_all() if str(q.id).startswith(question_id)]
+    if not matches:
+        rprint(f"[red]no question matching prefix {question_id!r}[/red]")
+        raise typer.Exit(1)
+    answered = answer_question(matches[0].id, store=store, answer=answer, answered_by=by)
+    rprint(f"[green]✓ answered[/green] {answered.id} by {by}")
+
+
+@questions_app.command("escalate")
+def escalate_question_cmd(
+    question_id: str = typer.Argument(..., help="Question id prefix"),
+    reason: str = typer.Option(None, "--reason", help="Why this is bumping to the operator"),
+) -> None:
+    """Escalate a question to the operator (notifies via the configured notifier)."""
+    from minions.questions import escalate_question, make_question_store
+
+    store = make_question_store(QUESTIONS_PATH)
+    matches = [q for q in store.list_all() if str(q.id).startswith(question_id)]
+    if not matches:
+        rprint(f"[red]no question matching prefix {question_id!r}[/red]")
+        raise typer.Exit(1)
+    escalated = escalate_question(matches[0].id, store=store, notifier=_notifier(), reason=reason)
+    rprint(f"[yellow]↑ escalated[/yellow] {escalated.id} to operator")
+
+
+@cron_app.command("pr-followup")
+def cron_pr_followup(
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run/--no-dry-run",
+        help="Dry run skips submitting fix Decisions and posting PR comments.",
+    ),
+    max_attempts: int = typer.Option(
+        1, "--max-attempts", help="Cap on auto-fix attempts per original PR."
+    ),
+) -> None:
+    """Watch minions PRs; on CI failure, queue a fix Decision automatically."""
+    from minions.crews.engineer_runs_store_factory import make_engineer_runs_store
+    from minions.scheduled import run_pr_followup
+
+    api_key: str | None = None
+    try:
+        api_key = get_anthropic_api_key()
+    except SecretNotFound:
+        api_key = None  # QA review will skip; CI-failure handling still works
+
+    report = run_pr_followup(
+        projects_dir=PROJECTS_DIR,
+        store=_store(),
+        engineer_runs_store=make_engineer_runs_store(ENGINEER_RUNS_PATH),
+        notifier=_notifier(),
+        open_github_client=_open_github_client,
+        max_attempts=max_attempts,
+        dry_run=dry_run,
+        api_key=api_key,
+    )
+
+    rprint(
+        f"\n[bold]PR follow-up sweep[/bold] — "
+        f"queued_fixes {report.queued_fixes}, errored {report.errored}, "
+        f"total_checked {len(report.outcomes)}"
+    )
+    for o in report.outcomes:
+        tag = {
+            "ok": "[green]✓[/green]",
+            "queued_fix": "[yellow]↻[/yellow]",
+            "skipped": "[dim]⊘[/dim]",
+            "error": "[red]✗[/red]",
+        }[o.status]
+        line = f"  {tag} {o.project} — {o.pr_url or o.decision_id[:8]}"
+        if o.ci_conclusion:
+            line += f" [ci={o.ci_conclusion}]"
+        if o.fix_decision_id:
+            line += f" → fix decision {o.fix_decision_id[:8]}"
+        if o.reason:
+            line += f" — {o.reason[:80]}"
+        rprint(line)
 
 
 @cost_app.command("weekly")
