@@ -1,0 +1,46 @@
+name: Shared cron runner
+
+on:
+  workflow_call:
+    inputs:
+      command:
+        description: "Minions cron command to run."
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  cron:
+    name: ${{ inputs.command }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@8d55fbecc275b1c35dbe060458839f8d30439ccf # v3
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: uv pip install --system -e .
+
+      - name: Run cron command
+        run: minions ${{ inputs.command }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+          MINIONS_DATABASE_URL: ${{ secrets.MINIONS_DATABASE_URL }}
+          MINIONS_TOKEN_SECRET: ${{ secrets.MINIONS_TOKEN_SECRET }}
+          MINIONS_WEBHOOK_BASE_URL: ${{ secrets.MINIONS_WEBHOOK_BASE_URL }}
+          MINIONS_NOTIFIER: gmail
+          MINIONS_SECRET_GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
