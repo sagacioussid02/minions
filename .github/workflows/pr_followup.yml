@@ -1,13 +1,13 @@
 name: PR follow-up
 
-# Every 30 min. Polls open minions-authored PRs, fetches CI status, and on
+# Every 4 hours. Polls open minions-authored PRs, fetches CI status, and on
 # failure queues a "fix" Decision (auto-approved) that the next
 # execute-approved tick picks up. This is the "agents iterate on their own
 # work" loop.
 
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '0 */4 * * *'
   workflow_dispatch:
     inputs:
       dry-run:
