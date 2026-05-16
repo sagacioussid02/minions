@@ -1,10 +1,12 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { type AgentState } from "@/lib/schemas";
 import { iconFor, prettyRole, type RoleTier } from "@/lib/roles";
 import { colorFor, registerProjects } from "@/lib/project-color";
+import { vitalityFromAge } from "@/lib/recency";
+import { Avatar } from "@/components/Avatar";
 import { formatDistanceToNowStrict } from "date-fns";
 
 type AgentsResponse = { agents: AgentState[] };
@@ -23,16 +25,31 @@ async function fetchAgents(): Promise<AgentsResponse> {
   return r.json();
 }
 
-export function Floor({ initial }: { initial: AgentState[] }) {
+/**
+ * `referenceNow` — when set, the Floor renders relative to this point in
+ * time instead of `Date.now()`. Used by /replay so agent vitality reflects
+ * the state at the scrubbed moment, not now.
+ *
+ * When `referenceNow` is set, polling is disabled (replay snapshots are
+ * static — re-fetch only when the URL changes, handled at page level).
+ */
+export function Floor({
+  initial,
+  referenceNow,
+}: {
+  initial: AgentState[];
+  referenceNow?: string;
+}) {
   const { data } = useQuery({
-    queryKey: ["agents"],
+    queryKey: ["agents", referenceNow ?? "live"],
     queryFn: fetchAgents,
     initialData: { agents: initial },
+    refetchInterval: referenceNow ? false : 3_000,
   });
 
   const agents = data.agents;
+  const refMs = referenceNow ? new Date(referenceNow).getTime() : null;
 
-  // Group by project. Shared (null project) is a synthetic "Shared" floor.
   const byProject = useMemo(() => {
     const groups = new Map<string, AgentState[]>();
     for (const a of agents) {
@@ -41,7 +58,6 @@ export function Floor({ initial }: { initial: AgentState[] }) {
       arr.push(a);
       groups.set(key, arr);
     }
-    // Register palette assignments in a stable alphabetical order.
     registerProjects([...groups.keys()].filter((k) => k !== "Shared"));
     return [...groups.entries()].sort(([a], [b]) => {
       if (a === "Shared") return 1;
@@ -60,15 +76,28 @@ export function Floor({ initial }: { initial: AgentState[] }) {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
       {byProject.map(([project, members]) => (
-        <ProjectFloor key={project} project={project} members={members} />
+        <ProjectFloor
+          key={project}
+          project={project}
+          members={members}
+          refMs={refMs}
+        />
       ))}
     </div>
   );
 }
 
-function ProjectFloor({ project, members }: { project: string; members: AgentState[] }) {
+function ProjectFloor({
+  project,
+  members,
+  refMs,
+}: {
+  project: string;
+  members: AgentState[];
+  refMs: number | null;
+}) {
   const color = colorFor(project === "Shared" ? null : project);
   const byTier = useMemo(() => {
     const m = new Map<RoleTier, AgentState[]>();
@@ -80,32 +109,57 @@ function ProjectFloor({ project, members }: { project: string; members: AgentSta
     return m;
   }, [members]);
 
+  // Project-level summary line: "AaaG · 7 agents · last active 3h ago"
+  const newest = useMemo(() => {
+    const times = members
+      .map((m) => (m.last_event_at ? new Date(m.last_event_at).getTime() : null))
+      .filter((t): t is number => t !== null);
+    return times.length ? Math.max(...times) : null;
+  }, [members]);
+  const newestLabel = newest
+    ? formatDistanceToNowStrict(new Date(newest), { addSuffix: true })
+    : "no recorded activity";
+
   return (
-    <div className="rounded-xl border border-[var(--line)] bg-[var(--bg-surface)] p-4">
-      <div className="mb-3 flex items-center gap-2">
+    <div
+      className="relative overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--bg-surface)] p-5"
+      style={{
+        // Subtle "graph paper" floor lines beneath the cards.
+        backgroundImage:
+          "linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px)",
+        backgroundSize: "32px 32px",
+        backgroundPosition: "-1px -1px",
+      }}
+    >
+      <header className="mb-4 flex items-baseline gap-2">
         <span
-          className="inline-block size-2 rounded-full"
+          className="inline-block size-2.5 rounded-full"
           style={{ backgroundColor: color }}
           aria-hidden
         />
-        <span className="text-sm font-medium tracking-tight">{project}</span>
-        <span className="ml-auto text-xs text-[var(--text-muted)]">
-          {members.length} agent{members.length === 1 ? "" : "s"}
+        <h2 className="text-base font-semibold tracking-tight">{project}</h2>
+        <span className="ml-2 text-xs text-[var(--text-muted)]">
+          {members.length} agent{members.length === 1 ? "" : "s"} · last active {newestLabel}
         </span>
-      </div>
+      </header>
 
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4">
         {ROW_ORDER.map((tier) => {
           const list = byTier.get(tier) ?? [];
           if (list.length === 0) return null;
           return (
-            <div key={tier}>
-              <div className="mb-1.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+            <div key={tier} className="flex gap-3">
+              <div className="w-16 shrink-0 pt-2 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
                 {ROW_LABEL[tier]}
               </div>
-              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+              <div className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-2">
                 {list.map((a) => (
-                  <AgentCard key={a.id} agent={a} projectColor={color} />
+                  <AgentCard
+                    key={a.id}
+                    agent={a}
+                    projectColor={color}
+                    refMs={refMs}
+                  />
                 ))}
               </div>
             </div>
@@ -116,49 +170,126 @@ function ProjectFloor({ project, members }: { project: string; members: AgentSta
   );
 }
 
-function AgentCard({ agent, projectColor }: { agent: AgentState; projectColor: string }) {
-  const inFlight = agent.in_flight;
+function AgentCard({
+  agent,
+  projectColor,
+  refMs,
+}: {
+  agent: AgentState;
+  projectColor: string;
+  refMs: number | null;
+}) {
   const errored = agent.errored;
+  const liveNowMs = useCurrentTime(refMs === null);
+
+  // When refMs is set (replay mode), compute age relative to it; otherwise
+  // use the live clock from recency.ts.
+  const ageMinutes = useMemo(() => {
+    if (!agent.last_event_at) return null;
+    const eventMs = new Date(agent.last_event_at).getTime();
+    if (isNaN(eventMs)) return null;
+    const refClock = refMs ?? liveNowMs;
+    return Math.max(0, (refClock - eventMs) / 60_000);
+  }, [agent.last_event_at, liveNowMs, refMs]);
+
+  const vitality = vitalityFromAge(ageMinutes);
 
   const ageLabel = agent.last_event_at
-    ? formatDistanceToNowStrict(new Date(agent.last_event_at), { addSuffix: true })
+    ? formatDistanceToNowStrict(new Date(agent.last_event_at), {
+        addSuffix: true,
+        ...(refMs ? { now: new Date(refMs) } : {}),
+      })
     : "—";
 
   const roleTierColor = `var(--color-role-${agent.role_tier})`;
-  const ring = errored
-    ? "ring-1 ring-[var(--state-danger)]"
-    : inFlight
-      ? "ring-1"
-      : "";
+
+  const cardStyle: React.CSSProperties = {
+    filter: errored ? undefined : vitality.filter,
+    opacity: errored ? 1 : vitality.brightness,
+    borderColor: errored ? "var(--state-danger)" : undefined,
+    transition: "filter 600ms ease, opacity 600ms ease",
+  };
+
+  const fallbackName = prettyRole(agent.role).split(" ")[0]; // "Engineer", "Manager"
+  const displayName = agent.display_name?.trim() || fallbackName;
 
   return (
     <div
-      className={`group relative rounded-lg border border-[var(--line)] bg-[var(--bg-elevated)] px-2.5 py-2 transition-shadow hover:border-[var(--accent)]/40 ${ring} ${inFlight ? "" : "breathe"}`}
-      style={inFlight ? ({ ["--tw-ring-color" as never]: roleTierColor } as React.CSSProperties) : undefined}
+      className={`group relative flex min-h-[88px] flex-col gap-2 rounded-xl border border-[var(--line)] bg-[var(--bg-elevated)] px-3 py-3 transition-shadow hover:border-[var(--accent)]/40 ${vitality.level === "live" ? "" : "breathe"}`}
+      style={cardStyle}
       title={agent.last_event ?? agent.role}
     >
-      <div className="flex items-center gap-1.5">
-        <span
-          className="font-mono text-base leading-none"
-          style={{ color: roleTierColor }}
-          aria-hidden
-        >
-          {iconFor(agent.role_tier)}
-        </span>
-        <span className="truncate text-xs font-medium">{prettyRole(agent.role)}</span>
-      </div>
-      <div
-        className="mt-1 truncate text-[10px] text-[var(--text-muted)]"
-        title={agent.last_event ?? undefined}
-      >
-        {agent.last_event ? agent.last_event : "idle"} · {ageLabel}
+      <div className="flex items-center gap-3">
+        <div className={`relative ${vitality.showPulse ? "pulse-halo" : ""}`}>
+          <Avatar
+            seed={agent.id}
+            size={40}
+            ring={vitality.showPulse ? roleTierColor : undefined}
+          />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span
+              className="font-mono text-sm leading-none"
+              style={{ color: roleTierColor }}
+              aria-hidden
+            >
+              {iconFor(agent.role_tier)}
+            </span>
+            <span className="truncate text-sm font-medium">{displayName}</span>
+          </div>
+          <div className="truncate text-[11px] text-[var(--text-muted)]">
+            {prettyRole(agent.role)}
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-0.5">
+          {agent.seats > 1 && (
+            <span
+              className="rounded px-1.5 text-[9px] font-medium uppercase tracking-wider text-[var(--text-muted)]"
+              style={{ background: "var(--bg-surface)" }}
+              title={`${agent.seats} seats configured`}
+            >
+              × {agent.seats}
+            </span>
+          )}
+          <span
+            className="rounded px-1.5 text-[9px] uppercase tracking-wider"
+            style={{
+              color: roleTierColor,
+              background: `color-mix(in srgb, ${roleTierColor} 14%, transparent)`,
+            }}
+          >
+            {vitality.level}
+          </span>
+        </div>
       </div>
 
-      {/* Project color accent strip on the left edge */}
+      <div
+        className="truncate text-[11px] text-[var(--text-muted)]"
+        title={agent.last_event ?? undefined}
+      >
+        {agent.last_event_at
+          ? `${agent.last_event ?? "idle"} · ${ageLabel}`
+          : "never fired · configured only"}
+      </div>
+
+      {/* Project color accent strip */}
       <span
-        className="pointer-events-none absolute inset-y-1 left-0 w-0.5 rounded-full opacity-70"
-        style={{ background: projectColor }}
+        className="pointer-events-none absolute inset-y-2 left-0 w-0.5 rounded-full"
+        style={{ background: projectColor, opacity: 0.8 }}
       />
     </div>
   );
+}
+
+function useCurrentTime(enabled: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!enabled) return;
+    const id = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, [enabled]);
+
+  return now;
 }
