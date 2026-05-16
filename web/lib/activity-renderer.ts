@@ -14,7 +14,8 @@ function actor(e: ActivityEvent): string {
   const role = e.role ? prettyRole(e.role) : null;
   if (role && e.project) return `${role} @ ${e.project}`;
   if (role) return role;
-  if (e.crew) return `${e.crew} crew`;
+  if (e.crew && e.project) return `${prettyRole(e.crew)} @ ${e.project}`;
+  if (e.crew) return prettyRole(e.crew);
   return "system";
 }
 
@@ -22,9 +23,14 @@ export function describe(e: ActivityEvent): string {
   const who = actor(e);
   switch (e.event) {
     case "crew_started":
-      return `${who} started ${e.crew ?? "a"} crew`;
+      // If the actor was already derived from the crew name, do not repeat it.
+      return e.role
+        ? `${who} started a ${prettyRole(e.crew ?? "")} crew`
+        : `${who} crew started`;
     case "crew_finished":
-      return `${who} finished ${e.crew ?? "a"} crew`;
+      return e.role
+        ? `${who} finished a ${prettyRole(e.crew ?? "")} crew`
+        : `${who} crew finished`;
     case "decision_submitted":
       return `${who} proposed a Decision for review`;
     case "decision_resolved": {
