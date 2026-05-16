@@ -23,8 +23,9 @@ export async function POST(
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     console.error("[merge]", err);
+    const message = err instanceof Error ? err.message : "internal";
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "internal" },
+      { ok: false, reason: message, error: message },
       { status: 500 },
     );
   }

@@ -193,7 +193,7 @@ function Card({ card }: { card: SprintCard }) {
       const r = await fetch(`/api/work-items/${card.decision_id}/merge`, { method: "POST" });
       if (!r.ok) {
         const body = await r.json().catch(() => ({}));
-        throw new Error(body.reason ?? `merge failed (${r.status})`);
+        throw new Error(body.reason ?? body.error ?? `merge failed (${r.status})`);
       }
     },
     onSuccess: invalidate,

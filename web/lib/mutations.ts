@@ -107,9 +107,9 @@ export async function mergePullRequest(args: {
   prUrl: string;
   prNumber: number;
 }): Promise<{ sha: string; merged: boolean }> {
-  const token = process.env.MINIONS_GH_PAT ?? process.env.GITHUB_TOKEN;
+  const token = process.env.MINIONS_GH_PAT;
   if (!token) {
-    throw new Error("MINIONS_GH_PAT not set; cannot merge");
+    throw new Error("MINIONS_GH_PAT is not set in web/.env.local; cannot merge");
   }
   // Parse owner/repo from the PR URL: https://github.com/owner/repo/pull/N
   const m = /github\.com\/([^/]+)\/([^/]+)\/pull\//.exec(args.prUrl);
@@ -131,7 +131,7 @@ export async function mergePullRequest(args: {
   );
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`GitHub merge ${res.status}: ${text.slice(0, 200)}`);
+    throw new Error(`GitHub merge ${res.status}: ${summarizeGitHubError(text)}`);
   }
   const body = (await res.json()) as { sha: string; merged: boolean };
 
@@ -145,4 +145,14 @@ export async function mergePullRequest(args: {
     WHERE pr_url = ${args.prUrl}
   `;
   return body;
+}
+
+function summarizeGitHubError(text: string): string {
+  try {
+    const body = JSON.parse(text) as { message?: string; errors?: unknown };
+    if (body.message) return body.message;
+  } catch {
+    // Fall through to the raw text preview.
+  }
+  return text.slice(0, 200);
 }
