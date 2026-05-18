@@ -3,9 +3,16 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Avatar } from "@/components/Avatar";
-import { type SprintBoard as Board, type SprintCard, type SprintColumn } from "@/lib/schemas";
+import {
+  type SprintBoard as Board,
+  type SprintCard,
+  type SprintColumn,
+  type SprintReviewer,
+  type SprintWindow,
+} from "@/lib/schemas";
 import { prettyRole } from "@/lib/roles";
 import { colorFor, registerProjects } from "@/lib/project-color";
+import { CRON_SCHEDULES, describeNextRun } from "@/lib/cron-schedule";
 
 const COLUMN_ORDER: SprintColumn[] = [
   "backlog",
@@ -34,8 +41,18 @@ const COLUMN_HINT: Record<SprintColumn, string> = {
   done: "Shipped.",
 };
 
-async function fetchBoard(project: string | null): Promise<Board> {
-  const url = project ? `/api/sprint-board?project=${encodeURIComponent(project)}` : `/api/sprint-board`;
+const WINDOW_OPTIONS: Array<{ value: SprintWindow; label: string }> = [
+  { value: "this_week", label: "This week" },
+  { value: "last_week", label: "Last week" },
+  { value: "last_30d", label: "30d" },
+  { value: "last_90d", label: "90d" },
+  { value: "all", label: "All" },
+];
+
+async function fetchBoard(project: string | null, window: SprintWindow): Promise<Board> {
+  const params = new URLSearchParams({ window });
+  if (project) params.set("project", project);
+  const url = `/api/sprint-board?${params.toString()}`;
   const r = await fetch(url, { cache: "no-store" });
   if (!r.ok) throw new Error("sprint board fetch failed");
   return r.json();
@@ -43,11 +60,12 @@ async function fetchBoard(project: string | null): Promise<Board> {
 
 export function SprintBoard({ initial }: { initial: Board }) {
   const [tab, setTab] = useState<string | null>(null); // null = All
+  const [window, setWindow] = useState<SprintWindow>("this_week");
 
   const { data } = useQuery({
-    queryKey: ["sprint-board", tab],
-    queryFn: () => fetchBoard(tab),
-    initialData: tab === null ? initial : undefined,
+    queryKey: ["sprint-board", tab, window],
+    queryFn: () => fetchBoard(tab, window),
+    initialData: tab === null && window === "this_week" ? initial : undefined,
     refetchInterval: 5_000,
   });
 
@@ -68,7 +86,10 @@ export function SprintBoard({ initial }: { initial: Board }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <Tabs current={tab} projects={board.projects} onChange={setTab} />
+      <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+        <Tabs current={tab} projects={board.projects} onChange={setTab} />
+        <WindowFilter current={window} onChange={setWindow} />
+      </div>
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 xl:grid-cols-6">
         {COLUMN_ORDER.map((col) => (
           <Column
@@ -78,6 +99,33 @@ export function SprintBoard({ initial }: { initial: Board }) {
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+function WindowFilter({
+  current,
+  onChange,
+}: {
+  current: SprintWindow;
+  onChange: (w: SprintWindow) => void;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-1 overflow-x-auto rounded-xl border border-[var(--line)] bg-[var(--bg-surface)] p-1.5">
+      {WINDOW_OPTIONS.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          className={`rounded-lg px-3 py-1.5 text-xs transition-colors ${
+            current === option.value
+              ? "bg-[var(--bg-elevated)] text-[var(--text-primary)]"
+              : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -193,7 +241,7 @@ function Card({ card }: { card: SprintCard }) {
       const r = await fetch(`/api/work-items/${card.decision_id}/merge`, { method: "POST" });
       if (!r.ok) {
         const body = await r.json().catch(() => ({}));
-        throw new Error(body.reason ?? `merge failed (${r.status})`);
+        throw new Error(body.reason ?? body.error ?? `merge failed (${r.status})`);
       }
     },
     onSuccess: invalidate,
@@ -225,6 +273,7 @@ function Card({ card }: { card: SprintCard }) {
             {card.ci_conclusion && card.ci_conclusion !== "success" && (
               <Pill label={`CI ${card.ci_conclusion}`} tone={card.ci_conclusion === "failure" ? "danger" : "muted"} />
             )}
+            <Pill label={card.review_status_label ?? "Not in review"} tone={toneForReview(card.review_status)} />
           </div>
           <div className="mt-0.5 text-xs font-medium text-[var(--text-primary)]" title={card.summary}>
             {truncate(card.summary, 90)}
@@ -242,6 +291,41 @@ function Card({ card }: { card: SprintCard }) {
               </a>
             )}
           </div>
+          {card.live_crew && (
+            <div
+              className="mt-2 flex items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[10px] text-emerald-200"
+              title={`run_id: ${card.live_crew.run_id}`}
+            >
+              <span className="relative inline-flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/60" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+              </span>
+              <span>
+                <span className="font-medium">{prettyRole(card.live_crew.crew)} crew</span> running ·{" "}
+                {liveDuration(card.live_crew.started_at)}
+                {card.live_crew.agents.length > 0 && (
+                  <span className="text-emerald-200/70">
+                    {" "}· {card.live_crew.agents.map(prettyRole).join(", ")}
+                  </span>
+                )}
+              </span>
+            </div>
+          )}
+          {!card.live_crew && card.column === "approved" && (
+            <div
+              className="mt-2 rounded-md border border-[var(--line)] bg-[var(--bg-surface)]/65 px-2 py-1 text-[10px] text-[var(--text-muted)]"
+              title={`Regular sweep: ${CRON_SCHEDULES["execute-approved"].expr} UTC. Expedited sweep: ${CRON_SCHEDULES["execute-expedited"].expr} UTC.`}
+            >
+              Next engineer pickup: {describeNextRun(CRON_SCHEDULES["execute-approved"].expr)}
+              {" · "}
+              <span className="text-[var(--text-muted)]/70">
+                expedited lane: {describeNextRun(CRON_SCHEDULES["execute-expedited"].expr)}
+              </span>
+            </div>
+          )}
+          {(card.pr_url || card.followup_attempts > 0 || card.column === "review" || card.column === "in_progress") && (
+            <ReviewTrail card={card} />
+          )}
           {/* Action row — only renders when there is something to do */}
           {(card.column === "awaiting_you" || card.can_auto_merge) && (
             <div className="mt-2 flex items-center gap-1.5">
@@ -289,6 +373,54 @@ function Card({ card }: { card: SprintCard }) {
   );
 }
 
+function ReviewTrail({ card }: { card: SprintCard }) {
+  const reviewers = card.reviewers ?? [];
+  return (
+    <div className="mt-2 rounded-md border border-[var(--line)] bg-[var(--bg-surface)]/65 p-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+            crew loop
+          </div>
+          <div className="mt-0.5 text-[10px] leading-snug text-[var(--text-primary)]">
+            {card.crew_last_action ?? "Waiting for the PR to reach crew review."}
+          </div>
+        </div>
+        {card.followup_attempts > 0 && (
+          <span className="shrink-0 rounded bg-[var(--state-warn)]/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-[var(--state-warn)]">
+            fix {card.followup_attempts}
+          </span>
+        )}
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-1.5">
+        {reviewers.map((reviewer) => (
+          <ReviewerChip key={`${card.decision_id}-${reviewer.role}`} reviewer={reviewer} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ReviewerChip({ reviewer }: { reviewer: SprintReviewer }) {
+  const tone = toneForReviewer(reviewer.status);
+  return (
+    <div
+      className="min-w-0 rounded border px-1.5 py-1"
+      style={{
+        borderColor: tone.border,
+        background: tone.bg,
+      }}
+      title={reviewer.detail}
+    >
+      <div className="flex items-center gap-1 text-[9px] font-medium uppercase tracking-wider" style={{ color: tone.fg }}>
+        <span>{statusMark(reviewer.status)}</span>
+        <span className="truncate">{reviewer.label}</span>
+      </div>
+      <div className="mt-0.5 truncate text-[9px] text-[var(--text-muted)]">{reviewer.detail}</div>
+    </div>
+  );
+}
+
 function RiskPill({ risk }: { risk: "low" | "medium" | "high" }) {
   const tone = risk === "high" ? "danger" : risk === "medium" ? "warn" : "success";
   return <Pill label={risk} tone={tone} />;
@@ -317,6 +449,83 @@ function Pill({
       {label}
     </span>
   );
+}
+
+function liveDuration(startedAtIso: string, now: number = Date.now()): string {
+  const elapsed = Math.max(0, now - new Date(startedAtIso).getTime());
+  const totalSec = Math.round(elapsed / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  if (min < 60) return sec ? `${min}m ${sec}s` : `${min}m`;
+  const hr = Math.floor(min / 60);
+  const remMin = min % 60;
+  return remMin ? `${hr}h ${remMin}m` : `${hr}h`;
+}
+
+function toneForReview(status: SprintCard["review_status"]): "success" | "warn" | "danger" | "audit" | "muted" {
+  switch (status) {
+    case "crew_approved":
+    case "merged":
+      return "success";
+    case "changes_requested":
+      return "danger";
+    case "superseded":
+    case "closed":
+    case "fix_queued":
+    case "needs_operator":
+      return "warn";
+    case "crew_reviewing":
+    case "ci_running":
+      return "audit";
+    default:
+      return "muted";
+  }
+}
+
+function toneForReviewer(status: SprintReviewer["status"]): { bg: string; fg: string; border: string } {
+  switch (status) {
+    case "approved":
+      return {
+        bg: "color-mix(in srgb, var(--state-success) 10%, transparent)",
+        fg: "var(--state-success)",
+        border: "color-mix(in srgb, var(--state-success) 30%, var(--line))",
+      };
+    case "changes_requested":
+    case "blocked":
+      return {
+        bg: "color-mix(in srgb, var(--state-danger) 10%, transparent)",
+        fg: "var(--state-danger)",
+        border: "color-mix(in srgb, var(--state-danger) 30%, var(--line))",
+      };
+    case "reviewing":
+      return {
+        bg: "color-mix(in srgb, var(--role-audit) 10%, transparent)",
+        fg: "var(--role-audit)",
+        border: "color-mix(in srgb, var(--role-audit) 30%, var(--line))",
+      };
+    default:
+      return {
+        bg: "transparent",
+        fg: "var(--text-muted)",
+        border: "var(--line)",
+      };
+  }
+}
+
+function statusMark(status: SprintReviewer["status"]): string {
+  switch (status) {
+    case "approved":
+      return "✓";
+    case "changes_requested":
+      return "!";
+    case "blocked":
+      return "×";
+    case "reviewing":
+      return "…";
+    default:
+      return "○";
+  }
 }
 
 function truncate(s: string, max: number): string {

@@ -106,10 +106,15 @@ export async function listActiveAgentsAt(asOf: Date): Promise<AgentState[]> {
       seats: 1,
       last_event_at: r.last_event_at ? r.last_event_at.toISOString() : null,
       last_event: r.last_event,
+      last_output: r.last_event,
       last_decision_id: r.last_decision_id,
       in_flight: inFlight,
       errored: Boolean(r.errored_recently),
       cost_today_usd: 0,
+      recent_events: [],
+      // Replay/as-of mode does not reconstruct the "currently running"
+      // window — that signal is only meaningful for live state.
+      live_run: null,
     };
   });
 }
