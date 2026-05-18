@@ -20,10 +20,35 @@ export const AgentStateSchema = z.object({
   seats: z.number().int().positive(), // Number of seats for this role on this floor.
   last_event_at: z.string().datetime().nullable(),
   last_event: z.string().nullable(),
+  last_output: z.string().nullable(),
   last_decision_id: z.string().nullable(),
   in_flight: z.boolean(),
   errored: z.boolean(),
   cost_today_usd: z.number(),
+  recent_events: z.array(
+    z.object({
+      ts: z.string().datetime(),
+      event: z.string(),
+      sentence: z.string(),
+      decision_id: z.string().nullable(),
+      decision_summary: z.string().nullable(),
+      pr_url: z.string().nullable(),
+    })
+  ),
+  // Active crew assignment, populated when this agent appears in a
+  // `crew_started` event (last 10 min) with no matching `crew_finished` /
+  // `crew_failed`. Lets the Floor say "Engineer is working on
+  // 'Fix CI failure'" instead of just "in_flight = true".
+  live_run: z
+    .object({
+      run_id: z.string(),
+      crew: z.string(),
+      project: z.string().nullable(),
+      decision_id: z.string().nullable(),
+      decision_summary: z.string().nullable(),
+      started_at: z.string().datetime(),
+    })
+    .nullable(),
 });
 export type AgentState = z.infer<typeof AgentStateSchema>;
 
@@ -132,6 +157,37 @@ export const SprintColumnSchema = z.enum([
 ]);
 export type SprintColumn = z.infer<typeof SprintColumnSchema>;
 
+export const SprintWindowSchema = z.enum([
+  "this_week",
+  "last_week",
+  "last_30d",
+  "last_90d",
+  "all",
+]);
+export type SprintWindow = z.infer<typeof SprintWindowSchema>;
+
+export const SprintReviewStatusSchema = z.enum([
+  "not_started",
+  "ci_running",
+  "changes_requested",
+  "fix_queued",
+  "crew_reviewing",
+  "crew_approved",
+  "needs_operator",
+  "merged",
+  "superseded",
+  "closed",
+]);
+export type SprintReviewStatus = z.infer<typeof SprintReviewStatusSchema>;
+
+export const SprintReviewerSchema = z.object({
+  role: z.string(),
+  label: z.string(),
+  status: z.enum(["waiting", "reviewing", "approved", "changes_requested", "blocked"]),
+  detail: z.string(),
+});
+export type SprintReviewer = z.infer<typeof SprintReviewerSchema>;
+
 export const SprintCardSchema = z.object({
   decision_id: z.string(),
   project: z.string(),
@@ -151,6 +207,28 @@ export const SprintCardSchema = z.object({
   has_devils_advocate: z.boolean(),
   // True iff this card is eligible for the auto-merge button.
   can_auto_merge: z.boolean(),
+  review_status: SprintReviewStatusSchema,
+  review_status_label: z.string(),
+  crew_last_action: z.string(),
+  reviewers: z.array(SprintReviewerSchema),
+  followup_attempts: z.number().int().nonnegative(),
+  last_followup_at: z.string().datetime().nullable(),
+  qa_review_posted_at: z.string().datetime().nullable(),
+  operator_comment_posted: z.boolean(),
+  merge_blocked_reason: z.string().nullable(),
+  human_handoff_posted_at: z.string().datetime().nullable(),
+  // Live crew indicator — populated when an `activity_log.crew_started` event
+  // for this decision_id has no matching `crew_finished`/`crew_failed` within
+  // the last 10 minutes. Tells the operator "this card is being worked on
+  // right now" instead of letting it sit stale in the Approved column.
+  live_crew: z
+    .object({
+      crew: z.string(),
+      started_at: z.string().datetime(),
+      agents: z.array(z.string()),
+      run_id: z.string(),
+    })
+    .nullable(),
 });
 export type SprintCard = z.infer<typeof SprintCardSchema>;
 
@@ -159,6 +237,159 @@ export const SprintBoardSchema = z.object({
   cards: z.array(SprintCardSchema),
 });
 export type SprintBoard = z.infer<typeof SprintBoardSchema>;
+
+// ---------- Agile cadence ----------
+
+export const AgileArtifactSchema = z.object({
+  id: z.string(),
+  project: z.string(),
+  ritual: z.enum(["scrum", "sprint_planning", "monthly_planning", "monthly_demo"]),
+  summary: z.string(),
+  blockers: z.array(z.string()),
+  next_actions: z.array(z.string()),
+  related_pr_urls: z.array(z.string()),
+  created_at: z.string().datetime(),
+});
+export type AgileArtifact = z.infer<typeof AgileArtifactSchema>;
+
+export const PMAnswerSchema = z.object({
+  id: z.string(),
+  project: z.string(),
+  question: z.string(),
+  answer: z.string(),
+  citations: z.array(z.string()),
+  escalated_to: z.string().nullable(),
+  created_at: z.string().datetime(),
+});
+export type PMAnswer = z.infer<typeof PMAnswerSchema>;
+
+export const AgilePanelSchema = z.object({
+  projects: z.array(z.string()),
+  artifacts: z.array(AgileArtifactSchema),
+  pm_answers: z.array(PMAnswerSchema),
+});
+export type AgilePanel = z.infer<typeof AgilePanelSchema>;
+
+// ---------- Spokesperson interviews ----------
+
+export const InterviewCitationSchema = z.object({
+  source_type: z.enum([
+    "manifest",
+    "readme",
+    "docs",
+    "decision",
+    "pull_request",
+    "agile_ritual",
+    "activity",
+    "cost",
+    "role_memory",
+    "code_scan",
+    "consultation",
+  ]),
+  label: z.string(),
+  reference: z.string().nullable(),
+  excerpt: z.string(),
+});
+export type InterviewCitation = z.infer<typeof InterviewCitationSchema>;
+
+export const InterviewThreadSchema = z.object({
+  id: z.string(),
+  scope: z.enum(["project", "organization"]),
+  project: z.string().nullable(),
+  spokesperson_role: z.string(),
+  title: z.string(),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+});
+export type InterviewThread = z.infer<typeof InterviewThreadSchema>;
+
+export const ConsultationStatusSchema = z.enum([
+  "queued",
+  "gathering_memory",
+  "scanning_code",
+  "answered",
+  "blocked",
+]);
+export type ConsultationStatus = z.infer<typeof ConsultationStatusSchema>;
+
+export const ConfidenceSchema = z.enum(["high", "medium", "low", "unknown"]);
+export type Confidence = z.infer<typeof ConfidenceSchema>;
+
+export const ConsultationSchema = z.object({
+  id: z.string(),
+  thread_id: z.string(),
+  message_id: z.string(),
+  project: z.string().nullable(),
+  consulted_role: z.string(),
+  status: ConsultationStatusSchema,
+  memory_summary: z.string().nullable(),
+  code_scan_summary: z.string().nullable(),
+  files_inspected: z.array(z.string()),
+  note: z.string().nullable(),
+  citations: z.array(InterviewCitationSchema),
+  confidence: ConfidenceSchema,
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+});
+export type Consultation = z.infer<typeof ConsultationSchema>;
+
+export const InterviewMessageSchema = z.object({
+  id: z.string(),
+  thread_id: z.string(),
+  role: z.enum(["operator", "spokesperson", "consulted_agent"]),
+  agent_role: z.string().nullable(),
+  content: z.string(),
+  citations: z.array(InterviewCitationSchema),
+  consulted_roles: z.array(z.string()),
+  confidence: ConfidenceSchema,
+  follow_up_actions: z.array(z.string()),
+  task_proposal_id: z.string().nullable(),
+  created_at: z.string().datetime(),
+});
+export type InterviewMessage = z.infer<typeof InterviewMessageSchema>;
+
+export const InterviewTaskProposalSchema = z.object({
+  id: z.string(),
+  thread_id: z.string(),
+  message_id: z.string(),
+  project: z.string().nullable(),
+  owner_role: z.string(),
+  title: z.string(),
+  rationale: z.string(),
+  status: z.enum(["pending", "converted", "dismissed"]),
+  decision_id: z.string().nullable(),
+  created_at: z.string().datetime(),
+});
+export type InterviewTaskProposal = z.infer<typeof InterviewTaskProposalSchema>;
+
+export const InterviewBundleSchema = z.object({
+  thread: InterviewThreadSchema,
+  messages: z.array(InterviewMessageSchema),
+  consultations: z.array(ConsultationSchema),
+  tasks: z.array(InterviewTaskProposalSchema),
+});
+export type InterviewBundle = z.infer<typeof InterviewBundleSchema>;
+
+export const SpokespersonRolesSchema = z.object({
+  roles: z.array(z.string()),
+});
+
+export const SpokespersonProjectsSchema = z.object({
+  projects: z.array(z.string()),
+});
+
+export const SpokespersonThreadsSchema = z.object({
+  threads: z.array(InterviewThreadSchema),
+});
+
+export const SpokespersonAnswerSchema = z.object({
+  thread: InterviewThreadSchema,
+  operator_message: InterviewMessageSchema,
+  answer_message: InterviewMessageSchema,
+  consultations: z.array(ConsultationSchema),
+  task: InterviewTaskProposalSchema.nullable(),
+});
+export type SpokespersonAnswer = z.infer<typeof SpokespersonAnswerSchema>;
 
 // ---------- Headline counters ----------
 
