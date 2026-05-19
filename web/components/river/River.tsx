@@ -5,6 +5,13 @@ import { useQuery } from "@tanstack/react-query";
 import { describe, deepLinks } from "@/lib/activity-renderer";
 import { type ActivityEvent } from "@/lib/schemas";
 import { prettyRole, tierFor } from "@/lib/roles";
+import {
+  type EventGroup,
+  agentsForEvent,
+  formatDuration,
+  groupByRun,
+  liveStartedEvents,
+} from "@/lib/stage-grouping";
 import { format } from "date-fns";
 
 type EventsResponse = { events: ActivityEvent[] };
@@ -13,99 +20,6 @@ async function fetchEvents(): Promise<EventsResponse> {
   const r = await fetch("/api/events?limit=200", { cache: "no-store" });
   if (!r.ok) throw new Error("events fetch failed");
   return r.json();
-}
-
-/** A consecutive set of events sharing the same `run_id`. */
-type EventGroup =
-  | { kind: "single"; event: ActivityEvent }
-  | {
-      kind: "run";
-      run_id: string;
-      crew: string | null;
-      project: string | null;
-      role: string | null;
-      events: ActivityEvent[]; // newest → oldest
-      startTs: string;
-      endTs: string;
-      durationMs: number;
-    };
-
-/**
- * Fold the events list into groups. A "run" is a consecutive sequence of
- * events that share the same non-empty `run_id`. The Python crew lifecycle
- * (crew_started → ... → crew_finished) lives inside a single run_id, so
- * this collapses a chatty 5-row block into one feed card.
- *
- * Single events without a run_id (PR opens, audit findings, etc.) stay
- * standalone.
- */
-function groupByRun(events: ActivityEvent[]): EventGroup[] {
-  const groups: EventGroup[] = [];
-  let i = 0;
-  while (i < events.length) {
-    const e = events[i];
-    if (!e.run_id) {
-      groups.push({ kind: "single", event: e });
-      i += 1;
-      continue;
-    }
-    // Walk forward over the contiguous block with the same run_id.
-    let j = i;
-    while (j < events.length && events[j].run_id === e.run_id) j += 1;
-    const block = events.slice(i, j); // newest → oldest
-    if (block.length === 1) {
-      groups.push({ kind: "single", event: block[0] });
-    } else {
-      const startTs = block[block.length - 1].ts;
-      const endTs = block[0].ts;
-      groups.push({
-        kind: "run",
-        run_id: e.run_id,
-        crew: e.crew,
-        project: e.project,
-        role: e.role,
-        events: block,
-        startTs,
-        endTs,
-        durationMs:
-          new Date(endTs).getTime() - new Date(startTs).getTime(),
-      });
-    }
-    i = j;
-  }
-  return groups;
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return "instant";
-  const s = Math.round(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.round(m / 60);
-  return `${h}h`;
-}
-
-/**
- * A `crew_started` event is "live" when it has no `crew_finished` /
- * `crew_failed` peer with the same run_id, and started within the last
- * 10 minutes (matches Python `RUNNING_WINDOW_SECONDS`).
- */
-function liveStartedEvents(events: ActivityEvent[]): ActivityEvent[] {
-  const closedRunIds = new Set<string>();
-  for (const e of events) {
-    if (e.run_id && (e.event === "crew_finished" || e.event === "crew_failed")) {
-      closedRunIds.add(e.run_id);
-    }
-  }
-  const cutoffMs = Date.now() - 10 * 60 * 1000;
-  return events.filter(
-    (e) =>
-      e.event === "crew_started" &&
-      e.run_id !== null &&
-      !closedRunIds.has(e.run_id) &&
-      new Date(e.ts).getTime() >= cutoffMs,
-  );
 }
 
 export function River({ initial }: { initial: ActivityEvent[] }) {
@@ -164,12 +78,12 @@ export function River({ initial }: { initial: ActivityEvent[] }) {
 }
 
 function useTick(ms: number): number {
-  const [, setT] = useState(0);
+  const [now, setNow] = useState(0);
   useEffect(() => {
-    const id = window.setInterval(() => setT((n) => n + 1), ms);
+    const id = window.setInterval(() => setNow(Date.now()), ms);
     return () => window.clearInterval(id);
   }, [ms]);
-  return Date.now();
+  return now;
 }
 
 function LiveRow({ event }: { event: ActivityEvent }) {
@@ -184,9 +98,7 @@ function LiveRow({ event }: { event: ActivityEvent }) {
   const links = deepLinks(event);
   const crewLabel = event.crew ? prettyRole(event.crew) : "crew";
   const projectLabel = event.project ? ` @ ${event.project}` : "";
-  const agents = Array.isArray(event.payload?.["agents"])
-    ? (event.payload!["agents"] as unknown[]).map((a) => prettyRole(String(a)))
-    : [];
+  const agents = agentsForEvent(event).map((agent) => prettyRole(agent));
   return (
     <li className="flex items-center gap-3 rounded-md bg-white/60 px-2 py-1.5 text-sm text-emerald-900">
       <span className="font-mono text-xs text-emerald-700">{elapsedLabel}</span>

@@ -72,6 +72,131 @@ function redactSecrets(text: string): string {
     );
 }
 
+/**
+ * Normalize a question for the question-memory lookup: lowercase, collapse
+ * whitespace, drop trailing punctuation. Intentionally simple (exact match
+ * after normalization) — semantic match via embeddings is a follow-up.
+ */
+function normalizeQuestionKey(question: string): string {
+  return question
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[\s.?!,;:]+$/g, "")
+    .trim();
+}
+
+interface PriorAnswer {
+  asked_at: string;
+  prior_answer: string | null;
+  spike_decision_id: string | null;
+  spike_status: string | null;
+  spike_pr_url: string | null;
+}
+
+/**
+ * Look for a prior operator question identical to ``question`` (after
+ * normalization) in either the current thread or anywhere in the
+ * spokesperson's history. If found, also resolve the SPIKE Decision that
+ * was spawned from it (if any) and whether the answer ever came back.
+ */
+async function findPriorAnswer(
+  question: string,
+  threadId: string | null,
+  spokespersonRole: string,
+): Promise<PriorAnswer | null> {
+  const s = sql();
+  const normalized = normalizeQuestionKey(question);
+  if (!normalized) return null;
+  // Look at operator messages — those are the questions. Match within the
+  // current thread first (highest signal). Fall back to any thread for the
+  // same spokesperson role. Pick the most recent prior occurrence.
+  const rows = (await s`
+    SELECT m.id::text AS message_id,
+           m.thread_id::text AS thread_id,
+           m.created_at,
+           m.payload->>'content' AS content
+    FROM interview_messages m
+    JOIN interview_threads t ON t.id = m.thread_id
+    WHERE m.role = 'operator'
+      AND t.spokesperson_role = ${spokespersonRole}
+      AND LOWER(BTRIM(COALESCE(m.payload->>'content', ''))) LIKE ${`%${normalized}%`}
+      AND m.id::text <> COALESCE(${threadId}::text, '')
+    ORDER BY (m.thread_id = ${threadId}::uuid) DESC NULLS LAST, m.created_at DESC
+    LIMIT 5
+  `) as Array<{
+    message_id: string;
+    thread_id: string;
+    created_at: string;
+    content: string | null;
+  }>;
+  const hit = rows.find(
+    (r) => normalizeQuestionKey(r.content ?? "") === normalized,
+  );
+  if (!hit) return null;
+
+  // Find the most recent spokesperson reply in the same thread that came
+  // after the matched operator message — that's the prior answer.
+  const replies = (await s`
+    SELECT m.payload->>'content' AS content
+    FROM interview_messages m
+    WHERE m.thread_id = ${hit.thread_id}::uuid
+      AND m.role = 'spokesperson'
+      AND m.created_at >= ${hit.created_at}::timestamptz
+    ORDER BY m.created_at ASC
+    LIMIT 1
+  `) as Array<{ content: string | null }>;
+  const priorAnswer = replies[0]?.content ?? null;
+
+  // Did that question spawn a SPIKE? If so, look up its current state.
+  const spikes = (await s`
+    SELECT id::text AS id,
+           status,
+           payload->>'pr_url' AS pr_url
+    FROM decisions
+    WHERE payload->>'spike_source' = 'spokesperson_interview'
+      AND payload->>'thread_id' = ${hit.thread_id}
+      AND payload->>'message_id' = ${hit.message_id}
+    ORDER BY created_at DESC
+    LIMIT 1
+  `) as Array<{ id: string; status: string; pr_url: string | null }>;
+
+  return {
+    asked_at: hit.created_at,
+    prior_answer: priorAnswer,
+    spike_decision_id: spikes[0]?.id ?? null,
+    spike_status: spikes[0]?.status ?? null,
+    spike_pr_url: spikes[0]?.pr_url ?? null,
+  };
+}
+
+function priorAnswerPreface(prior: PriorAnswer): string {
+  const date = new Date(prior.asked_at).toISOString().slice(0, 10);
+  const lines: string[] = [
+    `**Asked before on ${date}.**`,
+  ];
+  if (prior.prior_answer) {
+    const snippet = prior.prior_answer.length > 280
+      ? `${prior.prior_answer.slice(0, 277)}…`
+      : prior.prior_answer;
+    lines.push(`Previous answer: ${snippet}`);
+  }
+  if (prior.spike_decision_id) {
+    const shortId = prior.spike_decision_id.slice(0, 8);
+    if (prior.spike_pr_url) {
+      lines.push(
+        `A SPIKE was opened (\`${shortId}\`, status: ${prior.spike_status ?? "unknown"}) ` +
+        `and the engineer crew posted findings in ${prior.spike_pr_url}.`,
+      );
+    } else {
+      lines.push(
+        `A SPIKE was opened (\`${shortId}\`, status: ${prior.spike_status ?? "unknown"}). ` +
+        `No PR yet.`,
+      );
+    }
+  }
+  return lines.join("\n\n");
+}
+
 function inferProjectFromQuestion(question: string, projects: string[]): string | null {
   const sorted = [...projects]
     .filter((project) => project.trim().length > 1)
@@ -380,6 +505,22 @@ export async function askSpokesperson(args: {
         ${project}, ${role}, ${consultation.status}, NOW(), NOW(), ${JSON.stringify(consultation)}::jsonb
       )
     `;
+    await s`
+      INSERT INTO activity_log (ts, event, project, role, decision_id, crew, run_id, error, payload)
+      VALUES (
+        NOW(), 'consultation_answered', ${project ?? ""}, ${role}, ${operatorMessage.id},
+        'leadership_room', ${`consultation-${thread.id}-${role}`}, NULL,
+        ${JSON.stringify({
+          thread_id: thread.id,
+          question,
+          kind,
+          speaker_role: role,
+          requested_by_role: spokespersonRole,
+          summary: consultation.note,
+          agents: [role],
+        })}::jsonb
+      )
+    `;
   }
 
   const hasStrongEvidence = consultations.some(
@@ -404,9 +545,11 @@ export async function askSpokesperson(args: {
         ownerRole: ownerForKind(kind),
         consultedRoles,
         spokespersonRole,
+        threadId: thread.id,
+        messageId: operatorMessage.id,
       })
     : null;
-  const answerText = composeAnswer({
+  const composedAnswer = composeAnswer({
     spokespersonRole,
     project,
     selectedProject,
@@ -418,6 +561,20 @@ export async function askSpokesperson(args: {
     followUps,
     spikeDecisionId: spikeDecision?.id ?? null,
   });
+
+  // Question-memory layer: if this question has been asked before in the
+  // same spokesperson room, surface the prior answer + the status of any
+  // SPIKE that came out of it. Best-effort; failure must not break the
+  // chat flow. See `findPriorAnswer` for the matching rules.
+  let answerText = composedAnswer;
+  try {
+    const prior = await findPriorAnswer(question, thread.id, spokespersonRole);
+    if (prior) {
+      answerText = `${priorAnswerPreface(prior)}\n\n---\n\n${composedAnswer}`;
+    }
+  } catch (err) {
+    console.warn("[askSpokesperson] findPriorAnswer failed:", err);
+  }
 
   let task: Record<string, unknown> | null = null;
   if (followUps.length > 0) {
@@ -470,10 +627,16 @@ export async function askSpokesperson(args: {
   const updatedThread = { ...thread, updated_at: nowIso() };
   await upsertThread(updatedThread);
   await s`
-    INSERT INTO activity_log (ts, event, project, decision_id, crew, run_id, error, payload)
+    INSERT INTO activity_log (ts, event, project, role, decision_id, crew, run_id, error, payload)
     VALUES (
-      NOW(), 'spokesperson_answered', ${project ?? ""}, ${answerMessage.id}, 'spokesperson',
-      ${`spokesperson-${thread.id}`}, NULL, ${JSON.stringify({ agents: consultedRoles })}::jsonb
+      NOW(), 'spokesperson_answered', ${project ?? ""}, ${spokespersonRole}, ${answerMessage.id},
+      'leadership_room', ${`spokesperson-${thread.id}`}, NULL,
+      ${JSON.stringify({
+        agents: [spokespersonRole, ...consultedRoles.filter((role) => role !== spokespersonRole)],
+        speaker_role: spokespersonRole,
+        question,
+        kind,
+      })}::jsonb
     )
   `;
   return { thread: updatedThread, operator_message: operatorMessage, answer_message: answerMessage, consultations, task };
@@ -545,20 +708,42 @@ async function buildEvidence(project: string | null): Promise<{ summary: string;
   const s = sql();
   const decisions = project
     ? ((await s`
-        SELECT id::text AS id, project, status, payload->>'summary' AS summary
+        SELECT
+          id::text AS id,
+          project,
+          status,
+          payload->>'summary' AS summary,
+          payload->>'diff_or_plan' AS diff_or_plan
         FROM decisions
         WHERE project = ${project}
           AND COALESCE(payload->>'summary', '') NOT LIKE '%[DRY RUN]%'
         ORDER BY created_at DESC
         LIMIT 5
-      `) as Array<{ id: string; project: string; status: string; summary: string | null }>)
+      `) as Array<{
+        id: string;
+        project: string;
+        status: string;
+        summary: string | null;
+        diff_or_plan: string | null;
+      }>)
     : ((await s`
-        SELECT id::text AS id, project, status, payload->>'summary' AS summary
+        SELECT
+          id::text AS id,
+          project,
+          status,
+          payload->>'summary' AS summary,
+          payload->>'diff_or_plan' AS diff_or_plan
         FROM decisions
         WHERE COALESCE(payload->>'summary', '') NOT LIKE '%[DRY RUN]%'
         ORDER BY created_at DESC
         LIMIT 8
-      `) as Array<{ id: string; project: string; status: string; summary: string | null }>);
+      `) as Array<{
+        id: string;
+        project: string;
+        status: string;
+        summary: string | null;
+        diff_or_plan: string | null;
+      }>);
   const activity = project
     ? ((await s`
         SELECT event, crew, run_id
@@ -601,7 +786,10 @@ async function buildEvidence(project: string | null): Promise<{ summary: string;
       source_type: "decision",
       label: `decision:${d.id.slice(0, 8)}`,
       reference: d.id,
-      excerpt: `${d.project} ${d.status}: ${d.summary ?? "Decision recorded"}`,
+      excerpt: [
+        `${d.project} ${d.status}: ${d.summary ?? "Decision recorded"}`,
+        d.diff_or_plan ? `Plan: ${compactText(d.diff_or_plan, 1800)}` : null,
+      ].filter(Boolean).join(". "),
     })),
     ...activity.map((a) => ({
       source_type: "activity",
@@ -766,6 +954,47 @@ function hasUsefulMemory(summary: string | null | undefined): boolean {
   return !/no prior role-specific memory/i.test(summary);
 }
 
+function compactText(text: string, max = 280): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  return normalized.length > max ? `${normalized.slice(0, max - 1).trim()}…` : normalized;
+}
+
+function autoApproveInvestigationFor(role: string): boolean {
+  return normalizeRole(role) !== "spokesperson";
+}
+
+function priorityForLeadershipRole(role: string): "p1" | "p2" | "p3" {
+  const normalized = normalizeRole(role);
+  if (
+    [
+      "ceo",
+      "cto",
+      "md",
+      "managing_director",
+      "chair",
+      "board",
+      "chief_product_officer",
+      "coo",
+    ].includes(normalized)
+  ) {
+    return "p1";
+  }
+  if (
+    [
+      "principal",
+      "principal_engineer",
+      "pm",
+      "product_manager",
+      "portfolio_owner",
+      "security_champion",
+      "spokesperson",
+    ].includes(normalized)
+  ) {
+    return "p2";
+  }
+  return "p3";
+}
+
 async function createSpikeDecision(args: {
   project: string;
   kind: QuestionKind;
@@ -778,11 +1007,20 @@ async function createSpikeDecision(args: {
   // `minions/src/minions/models/decision.py` — that table is the source of
   // truth; do NOT duplicate priority logic here.
   spokespersonRole: string;
+  // Originating thread + operator message. Stashed in the Decision payload
+  // so the Python `interview_relay.relay_spike_answer()` hook in
+  // `scheduled/execute_approved.py` can post the answer back into THIS
+  // chat thread when the engineer crew finishes. Without these, the
+  // answer is invisible in the Leadership Room.
+  threadId: string;
+  messageId: string;
 }): Promise<{ id: string; reused: boolean }> {
   const s = sql();
   const normalizedQuestion = args.question.trim();
+  const autoApprove = autoApproveInvestigationFor(args.spokespersonRole);
+  const priority = priorityForLeadershipRole(args.spokespersonRole);
   const existing = (await s`
-    SELECT id::text AS id
+    SELECT id::text AS id, status
     FROM decisions
     WHERE project = ${args.project}
       AND status IN ('pending', 'approved')
@@ -790,12 +1028,70 @@ async function createSpikeDecision(args: {
       AND payload->>'question' = ${normalizedQuestion}
     ORDER BY created_at DESC
     LIMIT 1
-  `) as Array<{ id: string }>;
-  if (existing[0]) return { id: existing[0].id, reused: true };
+  `) as Array<{ id: string; status: string }>;
+  if (existing[0]) {
+    const reason = `auto-approved expedited investigation requested by ${prettyRole(args.spokespersonRole)}`;
+    if (autoApprove && existing[0].status === "pending") {
+      await s`
+        UPDATE decisions
+        SET
+          status = 'approved',
+          resolved_at = NOW(),
+          payload = jsonb_set(
+            jsonb_set(
+              jsonb_set(
+                jsonb_set(
+                  jsonb_set(payload, '{status}', '"approved"'::jsonb),
+                  '{resolved_reason}', to_jsonb(${reason}::text)
+                ),
+                '{requested_by_role}', to_jsonb(${args.spokespersonRole}::text)
+              ),
+              '{priority}', to_jsonb(${priority}::text)
+            ),
+            '{expedited}', to_jsonb(true)
+          )
+        WHERE id = ${existing[0].id}::uuid
+      `;
+      await s`
+        INSERT INTO activity_log (ts, event, project, role, decision_id, crew, run_id, error, payload)
+        VALUES (
+          NOW(), 'decision_resolved', ${args.project}, ${args.spokespersonRole}, ${existing[0].id},
+          'leadership_room', ${`spike-approved-${existing[0].id}`}, NULL,
+          ${JSON.stringify({
+            agents: [args.spokespersonRole, args.ownerRole],
+            status: "approved",
+            requested_by_role: args.spokespersonRole,
+            priority,
+            expedited: true,
+            reason,
+          })}::jsonb
+        )
+      `;
+    } else if (autoApprove) {
+      await s`
+        UPDATE decisions
+        SET payload = jsonb_set(
+          jsonb_set(
+            jsonb_set(payload, '{requested_by_role}', to_jsonb(${args.spokespersonRole}::text)),
+            '{priority}', to_jsonb(${priority}::text)
+          ),
+          '{expedited}', to_jsonb(true)
+        )
+        WHERE id = ${existing[0].id}::uuid
+          AND payload->>'spike_source' = 'spokesperson_interview'
+          AND payload->>'question' = ${normalizedQuestion}
+      `;
+    }
+    return { id: existing[0].id, reused: true };
+  }
 
   const id = crypto.randomUUID();
   const now = nowIso();
   const summary = `SPIKE: Discover ${args.project} ${humanKind(args.kind)} answer`;
+  const status = autoApprove ? "approved" : "pending";
+  const resolvedReason = autoApprove
+    ? `auto-approved expedited investigation requested by ${prettyRole(args.spokespersonRole)}`
+    : null;
   const rationale = (
     `The operator asked: "${normalizedQuestion}". The spokesperson consulted ` +
     `${args.consultedRoles.map(prettyRole).join(", ")} but did not find verified evidence in ` +
@@ -807,12 +1103,8 @@ async function createSpikeDecision(args: {
     "3. Record citations: files, PRs, docs, or deployment config inspected.",
     "4. Return a concise answer that the spokesperson can relay to the operator.",
   ].join("\n");
-  // `requested_by_role` is the single signal Python uses to auto-derive
-  // priority + expedited (see `_ROLE_PRIORITY_DEFAULTS` in models/decision.py).
-  // We do not stamp priority/expedited here on purpose — the validator runs on
-  // every read, so the loaded Decision in `execute-approved` will always have
-  // the correct, role-derived priority. Keeping the source of truth in one
-  // place avoids TS and Python drifting apart over time.
+  // The Python model also derives this from requested_by_role, but the web
+  // Sprint Board reads raw JSON. Stamp it explicitly so the operator sees P1.
   const payload = {
     id,
     project: args.project,
@@ -824,8 +1116,10 @@ async function createSpikeDecision(args: {
     proposer_role: args.ownerRole,
     proposer_agent_id: `${args.ownerRole}@${args.project}`,
     proposer_display_name: `${prettyRole(args.ownerRole)} SPIKE`,
-    status: "pending",
+    status,
     requested_by_role: args.spokespersonRole,
+    priority,
+    expedited: autoApprove,
     critique: null,
     security_review: null,
     portfolio_review: null,
@@ -833,23 +1127,59 @@ async function createSpikeDecision(args: {
     pr_url: null,
     base_sha: null,
     created_at: now,
-    resolved_at: null,
-    resolved_reason: null,
+    resolved_at: autoApprove ? now : null,
+    resolved_reason: resolvedReason,
     spike_source: "spokesperson_interview",
     question: normalizedQuestion,
     consulted_roles: args.consultedRoles,
+    thread_id: args.threadId,
+    message_id: args.messageId,
   };
   await s`
     INSERT INTO decisions (id, project, status, type, risk, created_at, resolved_at, payload)
-    VALUES (${id}::uuid, ${args.project}, 'pending', 'other', 'low', NOW(), NULL, ${JSON.stringify(payload)}::jsonb)
+    VALUES (
+      ${id}::uuid,
+      ${args.project},
+      ${status},
+      'other',
+      'low',
+      NOW(),
+      ${autoApprove ? now : null}::timestamptz,
+      ${JSON.stringify(payload)}::jsonb
+    )
   `;
   await s`
     INSERT INTO activity_log (ts, event, project, decision_id, crew, run_id, error, payload)
     VALUES (
-      NOW(), 'decision_submitted', ${args.project}, ${id}, 'spokesperson',
-      ${`spike-${id}`}, NULL, ${JSON.stringify({ agents: [args.ownerRole], spike: true })}::jsonb
+      NOW(), 'decision_submitted', ${args.project}, ${id}, 'leadership_room',
+      ${`spike-${id}`}, NULL,
+      ${JSON.stringify({
+        agents: [args.ownerRole],
+        spike: true,
+        status,
+        requested_by_role: args.spokespersonRole,
+        priority,
+        expedited: autoApprove,
+      })}::jsonb
     )
   `;
+  if (autoApprove) {
+    await s`
+      INSERT INTO activity_log (ts, event, project, role, decision_id, crew, run_id, error, payload)
+      VALUES (
+        NOW(), 'decision_resolved', ${args.project}, ${args.spokespersonRole}, ${id},
+        'leadership_room', ${`spike-approved-${id}`}, NULL,
+        ${JSON.stringify({
+          agents: [args.spokespersonRole, args.ownerRole],
+          status: "approved",
+          requested_by_role: args.spokespersonRole,
+          priority,
+          expedited: true,
+          reason: resolvedReason,
+        })}::jsonb
+      )
+    `;
+  }
   return { id, reused: false };
 }
 
@@ -899,10 +1229,22 @@ function composeAnswer(args: {
           .join(", ")}.`,
       );
     }
+  } else if (args.kind === "functional") {
+    paragraphs.push(...composeFunctionalAnswer(args));
   } else if (args.kind === "deployment" && args.confidence === "low") {
-    paragraphs.push(
-      `I do not have verified deployment evidence for ${scope} yet. I checked the stored project records and recent engineer-run file history, but I did not find deployment/config files such as Vercel, Fly, Render, Docker, Railway, or runtime environment configuration.`,
-    );
+    if (args.spikeDecisionId) {
+      const priority = priorityForLeadershipRole(args.spokespersonRole).toUpperCase();
+      paragraphs.push(
+        `I do not have verified deployment evidence for ${scope} yet, so I opened a ${priority} expedited investigation for ${prettyRole(ownerForKind(args.kind))}: ${args.spikeDecisionId.slice(0, 8)}.`,
+      );
+      paragraphs.push(
+        "The expected output is a short deployment answer with the host, environment, confidence level, and file or PR citations. I will not treat this as answered until that evidence comes back.",
+      );
+    } else {
+      paragraphs.push(
+        `I do not have verified deployment evidence for ${scope} yet. I checked the stored project records and recent engineer-run file history, but I did not find deployment/config files such as Vercel, Fly, Render, Docker, Railway, or runtime environment configuration.`,
+      );
+    }
   } else if (args.confidence === "low") {
     paragraphs.push(
       `I do not have enough verified evidence to answer confidently for ${scope} yet.`,
@@ -927,7 +1269,7 @@ function composeAnswer(args: {
   if (usefulMemory.length > 0) {
     evidenceBits.push(`role memory: ${usefulMemory.join("; ")}`);
   }
-  if (args.kind !== "repo_inventory") {
+  if (args.kind !== "repo_inventory" && args.kind !== "functional") {
     const recentDecisions = args.projectCitations
       .filter((c) => c.source_type === "decision")
       .slice(0, 3)
@@ -936,21 +1278,30 @@ function composeAnswer(args: {
       evidenceBits.push(`recent decisions: ${recentDecisions.join("; ")}`);
     }
   }
-  if (evidenceBits.length > 0) {
+  const alreadyOpenedDeploymentSpike =
+    args.kind === "deployment" && args.confidence === "low" && args.spikeDecisionId;
+  if (evidenceBits.length > 0 && args.kind !== "functional" && !alreadyOpenedDeploymentSpike) {
     paragraphs.push(`What I found: ${evidenceBits.join(". ")}.`);
   }
 
-  if (consulted.length > 0 && args.kind !== "repo_inventory") {
+  if (
+    consulted.length > 0 &&
+    args.kind !== "repo_inventory" &&
+    args.kind !== "functional" &&
+    !alreadyOpenedDeploymentSpike
+  ) {
     paragraphs.push(`I asked ${consulted.join(", ")} to weigh in on this ${args.kind} question.`);
-  } else if (consulted.length > 0) {
+  } else if (consulted.length > 0 && args.kind === "repo_inventory") {
     paragraphs.push(`For this org-inventory question, I checked the portfolio registry and asked ${consulted.join(", ")} to validate the scope.`);
   }
 
   if (args.followUps.length > 0) {
     if (args.spikeDecisionId) {
-      paragraphs.push(
-        `I opened a Sprint Board investigation for ${prettyRole(ownerForKind(args.kind))} to verify this and report back: ${args.spikeDecisionId.slice(0, 8)}. Once that investigation completes, leadership can bring the concrete answer back into this room.`,
-      );
+      if (!alreadyOpenedDeploymentSpike) {
+        paragraphs.push(
+          `I opened a Sprint Board investigation for ${prettyRole(ownerForKind(args.kind))} to verify this and report back: ${args.spikeDecisionId.slice(0, 8)}. Once that investigation completes, leadership can bring the concrete answer back into this room.`,
+        );
+      }
     } else {
       paragraphs.push(
         `Recommended next step: ${args.followUps[0]}. That should be owned by ${prettyRole(ownerForKind(args.kind))}.`,
@@ -959,6 +1310,234 @@ function composeAnswer(args: {
   }
 
   return paragraphs.join("\n\n");
+}
+
+function composeFunctionalAnswer(args: {
+  spokespersonRole: string;
+  project: string | null;
+  confidence: string;
+  projectCitations: Citation[];
+}): string[] {
+  const scope = args.project ?? "the organization";
+  const proposals = args.projectCitations
+    .filter((citation) => citation.source_type === "decision")
+    .map((citation) => citation.excerpt)
+    .filter((excerpt) => !/\bSPIKE:|deployment answer|dry run|Planning conversation/i.test(excerpt))
+    .slice(0, 3);
+  const approved = proposals.filter((excerpt) => /\bapproved\b|\bexecuted\b/i.test(excerpt));
+  const items = approved.length > 0 ? approved : proposals;
+  const owner = prettyRole(args.spokespersonRole);
+  const brief = bestSprintBrief(items);
+
+  if (items.length === 0 || brief === null) {
+    return [
+      `For ${scope}, I do not see a clean sprint-scope record yet.`,
+      "What I can say: there are project records in the console, but they do not spell out the work in a way I would treat as a reliable sprint commitment.",
+      `${owner} should ask the Manager to publish a short sprint brief: goals, committed items, and what is deliberately out of scope.`,
+    ];
+  }
+
+  const paragraphs = [
+    `For ${scope}, the approved sprint scope is ${brief.title}.`,
+    brief.goal
+      ? `Sprint goal: ${brief.goal}`
+      : "Sprint goal: tighten the current product path and reduce launch risk.",
+  ];
+  if (brief.committed.length > 0) {
+    paragraphs.push([
+      "Committed scope:",
+      ...brief.committed.slice(0, 6).map((item) => `- ${item}`),
+    ].join("\n"));
+  }
+  if (brief.done.length > 0) {
+    paragraphs.push([
+      "What I will treat as done:",
+      ...brief.done.slice(0, 4).map((item) => `- ${item}`),
+    ].join("\n"));
+  }
+  if (brief.risks.length > 0) {
+    paragraphs.push([
+      "Risks or watch points:",
+      ...brief.risks.slice(0, 3).map((item) => `- ${item}`),
+    ].join("\n"));
+  }
+  paragraphs.push(
+    `${owner} view: this is an approved sprint, so I would manage it as the team's current commitment. I would keep investor-facing language focused on the sprint goal and the committed outcomes, not the internal planning transcript.`,
+  );
+  return paragraphs;
+}
+
+function humanizeDecisionExcerpt(excerpt: string): string {
+  const title =
+    matchClean(excerpt, /Sprint Title\s*\**\s*["“]?([^"\n—-]{6,120})/i) ||
+    matchClean(excerpt, /Sprint Proposal:\s*([^*#\n]{6,120})/i) ||
+    matchClean(excerpt, /Sprint Goal\s*([^#\n]{12,180})/i);
+  if (title) return title;
+
+  const cleaned = excerpt
+    .replace(/^[^:]+:\s*/, "")
+    .replace(/\bSprint proposal for\b/i, "Sprint work for")
+    .replace(/\bapproved:\s*/i, "")
+    .replace(/\bexecuted:\s*/i, "In execution: ")
+    .replace(/[#*_`>-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return compactText(cleaned, 180);
+}
+
+type SprintBrief = {
+  title: string;
+  goal: string | null;
+  committed: string[];
+  done: string[];
+  risks: string[];
+};
+
+function bestSprintBrief(excerpts: string[]): SprintBrief | null {
+  const parsed = excerpts
+    .map(parseSprintBrief)
+    .filter((brief): brief is SprintBrief => brief !== null);
+  if (parsed.length === 0) return null;
+  return parsed.sort((a, b) => scoreSprintBrief(b) - scoreSprintBrief(a))[0];
+}
+
+function parseSprintBrief(excerpt: string): SprintBrief | null {
+  const plan = excerpt.includes("Plan:") ? excerpt.split("Plan:").slice(1).join("Plan:") : excerpt;
+  const title = humanizeDecisionExcerpt(excerpt);
+  const goal =
+    extractSectionLine(plan, ["Sprint Goal", "Goal", "Objective"]) ||
+    extractAfterLabel(plan, /Sprint Goal\s*[:\-]?\s*([^#\n]{20,260})/i);
+  let committed = extractSectionItems(plan, [
+    "Committed Scope",
+    "Scope",
+    "Deliverables",
+    "Key Deliverables",
+    "Sprint Backlog",
+    "Planned Work",
+    "In Scope",
+  ]);
+  if (committed.length === 0) committed = fallbackCommittedScope(plan, goal);
+  const done = extractSectionItems(plan, [
+    "Acceptance Criteria",
+    "Definition of Done",
+    "Done",
+    "Success Criteria",
+    "Expected Outcome",
+  ]);
+  const risks = extractSectionItems(plan, [
+    "Risks",
+    "Risk",
+    "Watch Points",
+    "Dependencies",
+    "Blockers",
+  ]);
+  if (!title && !goal && committed.length === 0) return null;
+  return {
+    title: title || "the approved sprint proposal",
+    goal,
+    committed,
+    done,
+    risks,
+  };
+}
+
+function fallbackCommittedScope(plan: string, goal: string | null): string[] {
+  const text = `${goal ?? ""} ${plan}`.toLowerCase();
+  const items: string[] = [];
+  if (/checkout|payment|order/.test(text)) {
+    items.push("Stabilize the checkout, payment, and order-creation path so purchase flow correctness is protected.");
+  }
+  if (/inventory|stock/.test(text)) {
+    items.push("Tighten inventory correctness so orders do not drift from available stock.");
+  }
+  if (/mobile|conversion/.test(text)) {
+    items.push("Unblock the mobile conversion path and remove launch blockers that could hurt buyer completion.");
+  }
+  if (/financial|money|charge|pricing/.test(text)) {
+    items.push("Protect financial integrity around charges, totals, and order state.");
+  }
+  if (/security|secret|auth|token/.test(text)) {
+    items.push("Reduce launch security risk around sensitive configuration and access paths.");
+  }
+  if (/test|qa|validation|verify/.test(text)) {
+    items.push("Add enough validation and QA coverage that the team can trust the launch-critical path.");
+  }
+  return Array.from(new Set(items)).slice(0, 6);
+}
+
+function scoreSprintBrief(brief: SprintBrief): number {
+  return brief.committed.length * 3 + brief.done.length * 2 + brief.risks.length + (brief.goal ? 4 : 0);
+}
+
+function extractSectionLine(text: string, headings: string[]): string | null {
+  for (const heading of headings) {
+    const section = extractSection(text, heading);
+    if (!section) continue;
+    const cleaned = firstUsefulLine(section);
+    if (cleaned) return cleaned;
+  }
+  return null;
+}
+
+function extractSectionItems(text: string, headings: string[]): string[] {
+  for (const heading of headings) {
+    const section = extractSection(text, heading);
+    if (!section) continue;
+    const items = section
+      .split(/\n|(?:^|\s)(?:[-*•]|\d+[.)])\s+/)
+      .map(cleanSprintLine)
+      .filter((line) => line.length > 8)
+      .filter((line) => !/^sprint|^status|^project|^prepared by/i.test(line))
+      .slice(0, 8);
+    if (items.length > 0) return Array.from(new Set(items));
+  }
+  return [];
+}
+
+function extractSection(text: string, heading: string): string | null {
+  const pattern = new RegExp(
+    `(?:^|\\n)\\s*#{0,4}\\s*(?:\\*\\*)?${escapeRegExp(heading)}(?:\\*\\*)?\\s*[:\\-]?\\s*\\n?([\\s\\S]*?)(?=\\n\\s*#{1,4}\\s|\\n\\s*(?:\\*\\*)?[A-Z][A-Za-z /+&-]{2,60}(?:\\*\\*)?\\s*[:\\-]\\s*\\n|$)`,
+    "i",
+  );
+  return pattern.exec(text)?.[1] ?? null;
+}
+
+function firstUsefulLine(section: string): string | null {
+  return section
+    .split(/\n/)
+    .map(cleanSprintLine)
+    .find((line) => line.length > 12 && !/^[-*•]?$/.test(line)) ?? null;
+}
+
+function extractAfterLabel(text: string, pattern: RegExp): string | null {
+  const match = pattern.exec(text);
+  return match?.[1] ? cleanSprintLine(match[1]) : null;
+}
+
+function cleanSprintLine(line: string): string {
+  return compactText(
+    line
+      .replace(/^[\s\-*•\d.)]+/, "")
+      .replace(/[#*_`>"“”]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/[.:;,—-]+$/, ""),
+    220,
+  );
+}
+
+function matchClean(text: string, pattern: RegExp): string | null {
+  const match = pattern.exec(text);
+  if (!match?.[1]) return null;
+  return match[1]
+    .replace(/[#*_`>"“”]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.:;,—-]+$/, "");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function prettyRole(role: string): string {

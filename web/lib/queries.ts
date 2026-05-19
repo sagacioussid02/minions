@@ -515,30 +515,35 @@ export async function listRecentEvents(opts: {
   project?: string;
   role?: string;
   event?: string;
+  windowMinutes?: number;
 }): Promise<ActivityEvent[]> {
   const s = sql();
   const limit = Math.min(opts.limit ?? 100, 500);
   const sinceId = opts.sinceId ?? 0;
+  const windowMinutes = Math.min(Math.max(opts.windowMinutes ?? 60, 1), 24 * 60);
 
   // Filter clauses are stitched conditionally so we don't send empty SQL.
   const rows = (await s`
     SELECT
-      id::int8 AS id,
-      ts,
-      event,
-      project,
-      role,
-      decision_id,
-      crew,
-      run_id,
-      error,
-      payload
-    FROM activity_log
-    WHERE id > ${sinceId}
-      AND (${opts.project ?? null}::text IS NULL OR project = ${opts.project ?? null})
-      AND (${opts.role ?? null}::text IS NULL OR role = ${opts.role ?? null})
-      AND (${opts.event ?? null}::text IS NULL OR event = ${opts.event ?? null})
-    ORDER BY id DESC
+      al.id::int8 AS id,
+      al.ts,
+      al.event,
+      al.project,
+      al.role,
+      al.decision_id,
+      d.payload->>'summary' AS decision_summary,
+      al.crew,
+      al.run_id,
+      al.error,
+      al.payload
+    FROM activity_log al
+    LEFT JOIN decisions d ON d.id::text = al.decision_id
+    WHERE al.id > ${sinceId}
+      AND al.ts > NOW() - (${windowMinutes}::text || ' minutes')::interval
+      AND (${opts.project ?? null}::text IS NULL OR al.project = ${opts.project ?? null})
+      AND (${opts.role ?? null}::text IS NULL OR al.role = ${opts.role ?? null})
+      AND (${opts.event ?? null}::text IS NULL OR al.event = ${opts.event ?? null})
+    ORDER BY al.id DESC
     LIMIT ${limit}
   `) as Array<{
     id: number | bigint;
@@ -547,6 +552,7 @@ export async function listRecentEvents(opts: {
     project: string | null;
     role: string | null;
     decision_id: string | null;
+    decision_summary: string | null;
     crew: string | null;
     run_id: string | null;
     error: string | null;
@@ -560,6 +566,7 @@ export async function listRecentEvents(opts: {
     project: r.project,
     role: r.role,
     decision_id: r.decision_id,
+    decision_summary: r.decision_summary,
     crew: r.crew,
     run_id: r.run_id,
     error: r.error,
@@ -699,6 +706,7 @@ export async function getHeroEvent(): Promise<HeroEvent> {
     project: r.project,
     role: r.role,
     decision_id: r.decision_id,
+    decision_summary: null,
     crew: r.crew,
     run_id: r.run_id,
     error: r.error,
@@ -728,6 +736,9 @@ import {
   type SprintReviewer,
   type SprintReviewStatus,
   type SprintWindow,
+  type Task,
+  type AgentMemory,
+  StructuredSprintPlanSchema,
 } from "./schemas";
 
 /**
@@ -766,6 +777,32 @@ export async function listSprintBoard(
       d.created_at,
       d.resolved_at,
       COALESCE(d.payload->>'summary', '(no summary)') AS summary,
+      COALESCE((d.payload->>'sprint_number')::int, d.sprint_number) AS sprint_number,
+      COALESCE(d.structured_plan, d.payload->'structured_plan') AS structured_plan,
+      CASE
+        WHEN d.payload->>'priority' IN ('p1', 'p2', 'p3') THEN d.payload->>'priority'
+        WHEN lower(COALESCE(d.payload->>'requested_by_role', '')) IN (
+          'ceo', 'cto', 'md', 'managing_director', 'chair', 'board',
+          'chief_product_officer', 'coo'
+        ) THEN 'p1'
+        WHEN lower(COALESCE(d.payload->>'requested_by_role', '')) IN (
+          'principal', 'principal_engineer', 'pm', 'product_manager',
+          'portfolio_owner', 'security_champion', 'spokesperson',
+          'pr_followup', 'pr_review_loop'
+        ) THEN 'p2'
+        ELSE 'p3'
+      END AS priority,
+      CASE
+        WHEN d.payload ? 'expedited' THEN COALESCE((d.payload->>'expedited')::boolean, false)
+        WHEN lower(COALESCE(d.payload->>'requested_by_role', '')) IN (
+          'ceo', 'cto', 'md', 'managing_director', 'chair', 'board',
+          'chief_product_officer', 'coo', 'principal', 'principal_engineer',
+          'pm', 'product_manager', 'portfolio_owner', 'security_champion',
+          'spokesperson', 'pr_followup', 'pr_review_loop'
+        ) THEN true
+        ELSE false
+      END AS expedited,
+      d.payload->>'requested_by_role' AS requested_by_role,
       d.payload->>'proposer_role' AS proposer_role,
       d.payload->>'proposer_display_name' AS proposer_display_name,
       (d.payload ? 'security_review') AS has_security_review,
@@ -845,6 +882,11 @@ export async function listSprintBoard(
     created_at: Date;
     resolved_at: Date | null;
     summary: string;
+    sprint_number: number | null;
+    structured_plan: unknown;
+    priority: "p1" | "p2" | "p3";
+    expedited: boolean;
+    requested_by_role: string | null;
     proposer_role: string | null;
     proposer_display_name: string | null;
     has_security_review: boolean;
@@ -872,6 +914,13 @@ export async function listSprintBoard(
   }>;
 
   const now = Date.now();
+  const taskRows = await listTasksForDecisions(rows.map((r) => r.decision_id));
+  const tasksByDecision = new Map<string, Task[]>();
+  for (const task of taskRows) {
+    const arr = tasksByDecision.get(task.decision_id) ?? [];
+    arr.push(task);
+    tasksByDecision.set(task.decision_id, arr);
+  }
   const cards: SprintCard[] = rows
     .filter((r) => r.column !== null)
     .map((r) => {
@@ -897,6 +946,7 @@ export async function listSprintBoard(
         !liveCrew && (
           (column === "awaiting_you" && ageMin > 24 * 60) ||
           (column === "in_progress" && r.ci_conclusion === "failure" && ageMin > 6 * 60) ||
+          (column === "approved" && r.expedited && ageMin > 15) ||
           (column === "approved" && ageMin > 6.5 * 60)
         );
       const can_auto_merge =
@@ -927,6 +977,12 @@ export async function listSprintBoard(
         column,
         type: r.type,
         risk: r.risk,
+        sprint_number: r.sprint_number,
+        structured_plan: parseStructuredPlan(r.structured_plan),
+        tasks: tasksByDecision.get(r.decision_id) ?? [],
+        priority: r.priority,
+        expedited: r.expedited,
+        requested_by_role: r.requested_by_role,
         summary: r.summary,
         proposer_role: r.proposer_role,
         proposer_display_name: r.proposer_display_name,
@@ -956,6 +1012,167 @@ export async function listSprintBoard(
     });
 
   return { projects, cards };
+}
+
+function parseStructuredPlan(raw: unknown): SprintCard["structured_plan"] {
+  if (!raw) return null;
+  const parsed = StructuredSprintPlanSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
+async function listTasksForDecisions(decisionIds: string[]): Promise<Task[]> {
+  if (decisionIds.length === 0) return [];
+  const s = sql();
+  const rows = (await s`
+    SELECT
+      id::text,
+      decision_id::text,
+      project,
+      sprint_number,
+      category,
+      title,
+      description,
+      acceptance_criteria,
+      owner_role,
+      owner_agent_id,
+      owner_display_name,
+      estimated_effort,
+      status,
+      pr_url,
+      pr_number,
+      created_at,
+      updated_at,
+      completed_at
+    FROM tasks
+    WHERE decision_id::text = ANY(${decisionIds})
+    ORDER BY created_at ASC
+  `) as Array<{
+    id: string;
+    decision_id: string;
+    project: string;
+    sprint_number: number | null;
+    category: Task["category"];
+    title: string;
+    description: string;
+    acceptance_criteria: string | null;
+    owner_role: string;
+    owner_agent_id: string;
+    owner_display_name: string | null;
+    estimated_effort: Task["estimated_effort"];
+    status: Task["status"];
+    pr_url: string | null;
+    pr_number: number | null;
+    created_at: Date;
+    updated_at: Date;
+    completed_at: Date | null;
+  }>;
+  return rows.map(rowToTask);
+}
+
+export async function listTasksForDecision(decisionId: string): Promise<Task[]> {
+  return listTasksForDecisions([decisionId]);
+}
+
+export async function listTasksForProject(project: string, sprintNumber?: number): Promise<Task[]> {
+  const s = sql();
+  const rows = (await s`
+    SELECT
+      id::text,
+      decision_id::text,
+      project,
+      sprint_number,
+      category,
+      title,
+      description,
+      acceptance_criteria,
+      owner_role,
+      owner_agent_id,
+      owner_display_name,
+      estimated_effort,
+      status,
+      pr_url,
+      pr_number,
+      created_at,
+      updated_at,
+      completed_at
+    FROM tasks
+    WHERE project = ${project}
+      AND (${sprintNumber ?? null}::int IS NULL OR sprint_number = ${sprintNumber ?? null})
+    ORDER BY sprint_number DESC NULLS LAST, created_at ASC
+    LIMIT 200
+  `) as Parameters<typeof rowToTask>[0][];
+  return rows.map(rowToTask);
+}
+
+export async function listAgentMemory(
+  agentId: string,
+  includeCold = false,
+): Promise<AgentMemory[]> {
+  const s = sql();
+  const rows = (await s`
+    SELECT
+      id::text,
+      agent_id,
+      sprint_number,
+      decision_id::text,
+      task_id::text,
+      pr_url,
+      event,
+      summary,
+      details,
+      created_at,
+      tier
+    FROM agent_memory
+    WHERE agent_id = ${agentId}
+      AND (${includeCold}::boolean OR tier = 'hot')
+    ORDER BY created_at DESC
+    LIMIT 50
+  `) as Array<{
+    id: string;
+    agent_id: string;
+    sprint_number: number | null;
+    decision_id: string | null;
+    task_id: string | null;
+    pr_url: string | null;
+    event: string;
+    summary: string;
+    details: string | null;
+    created_at: Date;
+    tier: "hot" | "cold";
+  }>;
+  return rows.map((r) => ({
+    ...r,
+    created_at: r.created_at.toISOString(),
+  }));
+}
+
+function rowToTask(row: {
+  id: string;
+  decision_id: string;
+  project: string;
+  sprint_number: number | null;
+  category: Task["category"];
+  title: string;
+  description: string;
+  acceptance_criteria: string | null;
+  owner_role: string;
+  owner_agent_id: string;
+  owner_display_name: string | null;
+  estimated_effort: Task["estimated_effort"];
+  status: Task["status"];
+  pr_url: string | null;
+  pr_number: number | null;
+  created_at: Date;
+  updated_at: Date;
+  completed_at: Date | null;
+}): Task {
+  return {
+    ...row,
+    acceptance_criteria: row.acceptance_criteria ?? "",
+    created_at: row.created_at.toISOString(),
+    updated_at: row.updated_at.toISOString(),
+    completed_at: row.completed_at ? row.completed_at.toISOString() : null,
+  };
 }
 
 function sprintWindowBounds(window: SprintWindow): {

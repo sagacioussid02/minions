@@ -16,24 +16,24 @@
  */
 
 :root {
-  --bg-canvas: #07090c;
-  --bg-surface: #0e1117;
-  --bg-elevated: #131822;
-  --line: #1f2530;
-  --text-primary: #e6e9ef;
-  --text-muted: #8a93a3;
-  --accent: #22d3ee; /* cyan-400 */
+  --bg-canvas: #eaf1fb;
+  --bg-surface: #f8fbff;
+  --bg-elevated: #ffffff;
+  --line: #cbd7e6;
+  --text-primary: #172033;
+  --text-muted: #64748b;
+  --accent: #0ea5e9; /* sky-500 */
 
-  --project-1: #5eead4; /* teal-300 */
-  --project-2: #fda4af; /* rose-300 */
-  --project-3: #c4b5fd; /* violet-300 */
-  --project-4: #fcd34d; /* amber-300 */
-  --project-5: #93c5fd; /* sky-300 */
+  --project-1: #14b8a6; /* teal-500 */
+  --project-2: #f43f5e; /* rose-500 */
+  --project-3: #8b5cf6; /* violet-500 */
+  --project-4: #f59e0b; /* amber-500 */
+  --project-5: #3b82f6; /* blue-500 */
 
-  --role-executive: #f0abfc; /* fuchsia-300 */
-  --role-engineering: #22d3ee; /* cyan-400 */
-  --role-audit: #fbbf24; /* amber-400 */
-  --role-specialist: #a3e635; /* lime-400 */
+  --role-executive: #d946ef; /* fuchsia-500 */
+  --role-engineering: #0ea5e9; /* sky-500 */
+  --role-audit: #f59e0b; /* amber-500 */
+  --role-specialist: #65a30d; /* lime-600 */
 
   --state-success: #34d399;
   --state-warn: #fbbf24;
@@ -72,7 +72,10 @@
 
 html,
 body {
-  background: var(--bg-canvas);
+  background:
+    radial-gradient(circle at 20% 10%, rgb(14 165 233 / 0.16), transparent 26rem),
+    radial-gradient(circle at 85% 0%, rgb(139 92 246 / 0.14), transparent 24rem),
+    var(--bg-canvas);
   color: var(--text-primary);
   font-family: var(--font-geist-sans), Inter, system-ui, -apple-system, sans-serif;
   font-feature-settings: "ss01", "cv11";
@@ -184,12 +187,131 @@ input[type="range"].slider::-moz-range-thumb {
   animation: minions-row-in 240ms ease-out both;
 }
 
+@keyframes minions-stage-bubble-in {
+  from { transform: translateY(4px) scale(0.98); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.stage-huddle {
+  transition:
+    opacity 600ms ease,
+    transform 600ms ease,
+    filter 600ms ease;
+}
+
+.stage-huddle-leaving {
+  opacity: 0;
+  filter: blur(1px);
+  transform: translateY(8px) scale(0.985);
+}
+
+.stage-bubble {
+  position: relative;
+  animation: minions-stage-bubble-in 200ms ease-out both;
+  transition:
+    opacity 600ms ease,
+    transform 600ms ease;
+}
+
+.stage-bubble::after {
+  content: "";
+  position: absolute;
+  left: 1.25rem;
+  bottom: -0.38rem;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-right: 1px solid inherit;
+  border-bottom: 1px solid inherit;
+  background: inherit;
+  transform: rotate(45deg);
+}
+
+.stage-bubble-leaving {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+@keyframes minions-avatar-active {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-2px) rotate(1deg); }
+}
+
+@keyframes minions-avatar-leisure {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(1px); }
+}
+
+.avatar-active {
+  animation: minions-avatar-active 2.8s ease-in-out infinite;
+}
+
+.avatar-leisure {
+  animation: minions-avatar-leisure 4.6s ease-in-out infinite;
+}
+
+.avatar-shell svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.avatar-accessory {
+  color: #334155;
+}
+
+.org-tree {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  align-items: stretch;
+  gap: 1rem;
+  overflow-x: visible;
+  padding-bottom: 0.25rem;
+}
+
+.org-tree-horizontal {
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+}
+
+.tree-column {
+  min-width: 0;
+}
+
+@media (min-width: 1536px) {
+  .org-tree-horizontal {
+    grid-template-columns: repeat(4, minmax(17rem, 1fr));
+  }
+}
+
+@keyframes minions-agent-spotlight {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 0 0 0 rgb(14 165 233 / 0);
+  }
+  50% {
+    transform: translateY(-4px) scale(1.025);
+    box-shadow: 0 16px 36px rgb(14 165 233 / 0.24);
+  }
+}
+
+.agent-spotlight {
+  border-color: var(--accent) !important;
+  background:
+    radial-gradient(circle at 50% 0%, rgb(14 165 233 / 0.18), transparent 55%),
+    var(--bg-elevated);
+  animation: minions-agent-spotlight 1.4s ease-in-out infinite;
+  opacity: 1 !important;
+  filter: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .breathe,
   .pulse-halo::after,
   .heartbeat-dot,
   .ambient-dot,
-  .row-in {
+  .row-in,
+  .avatar-active,
+  .avatar-leisure,
+  .agent-spotlight {
     animation: none !important;
   }
 }

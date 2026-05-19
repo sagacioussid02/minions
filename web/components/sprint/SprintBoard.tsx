@@ -3,12 +3,15 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Avatar } from "@/components/Avatar";
+import { TaskDrawer } from "@/components/sprint/TaskDrawer";
 import {
   type SprintBoard as Board,
   type SprintCard,
   type SprintColumn,
   type SprintReviewer,
   type SprintWindow,
+  type Task,
+  type PlanItem,
 } from "@/lib/schemas";
 import { prettyRole } from "@/lib/roles";
 import { colorFor, registerProjects } from "@/lib/project-color";
@@ -61,6 +64,7 @@ async function fetchBoard(project: string | null, window: SprintWindow): Promise
 export function SprintBoard({ initial }: { initial: Board }) {
   const [tab, setTab] = useState<string | null>(null); // null = All
   const [window, setWindow] = useState<SprintWindow>("this_week");
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   const { data } = useQuery({
     queryKey: ["sprint-board", tab, window],
@@ -90,15 +94,18 @@ export function SprintBoard({ initial }: { initial: Board }) {
         <Tabs current={tab} projects={board.projects} onChange={setTab} />
         <WindowFilter current={window} onChange={setWindow} />
       </div>
+      <SprintHeaderStrip cards={board.cards} />
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 xl:grid-cols-6">
         {COLUMN_ORDER.map((col) => (
           <Column
             key={col}
             column={col}
             cards={byColumn.get(col) ?? []}
+            onTaskSelect={setSelectedTask}
           />
         ))}
       </div>
+      {selectedTask && <TaskDrawer task={selectedTask} onClose={() => setSelectedTask(null)} />}
     </div>
   );
 }
@@ -182,7 +189,63 @@ function TabButton({
   );
 }
 
-function Column({ column, cards }: { column: SprintColumn; cards: SprintCard[] }) {
+function SprintHeaderStrip({ cards }: { cards: SprintCard[] }) {
+  const byProject = useMemo(() => {
+    const map = new Map<string, SprintCard[]>();
+    for (const card of cards) {
+      const arr = map.get(card.project) ?? [];
+      arr.push(card);
+      map.set(card.project, arr);
+    }
+    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [cards]);
+  if (byProject.length === 0) return null;
+  return (
+    <div className="grid grid-cols-1 gap-2 xl:grid-cols-3">
+      {byProject.map(([project, projectCards]) => {
+        const sprint = projectCards
+          .map((card) => card.sprint_number)
+          .filter((value): value is number => value !== null)
+          .sort((a, b) => b - a)[0];
+        const tasks = projectCards.flatMap((card) => card.tasks);
+        const queued = tasks.filter((task) => task.status === "queued").length;
+        const review = tasks.filter((task) => task.status === "review").length;
+        const blocked = tasks.filter((task) => task.status === "blocked").length;
+        const goal = projectCards.find((card) => card.structured_plan)?.structured_plan?.goal;
+        return (
+          <div key={project} className="rounded-xl border border-[var(--line)] bg-[var(--bg-surface)] p-3">
+            <div className="flex items-center gap-2">
+              <span className="size-2 rounded-full" style={{ backgroundColor: colorFor(project) }} />
+              <span className="font-semibold text-[var(--text-primary)]">{project}</span>
+              <span className="ml-auto text-xs text-[var(--text-muted)]">
+                Sprint {sprint ?? "?"}
+              </span>
+            </div>
+            <div className="mt-1 line-clamp-2 text-xs text-[var(--text-muted)]">
+              {goal ?? "No structured sprint goal recorded yet."}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+              <Pill label={`${tasks.length} tasks`} tone="muted" />
+              <Pill label={`${queued} queued`} tone="muted" />
+              <Pill label={`${review} review`} tone="success" />
+              {blocked > 0 && <Pill label={`${blocked} blocked`} tone="danger" />}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Column({
+  column,
+  cards,
+  onTaskSelect,
+}: {
+  column: SprintColumn;
+  cards: SprintCard[];
+  onTaskSelect: (task: Task) => void;
+}) {
   const stalled = cards.filter((c) => c.stalled).length;
   return (
     <div className="rounded-xl border border-[var(--line)] bg-[var(--bg-surface)] p-3">
@@ -204,14 +267,14 @@ function Column({ column, cards }: { column: SprintColumn; cards: SprintCard[] }
             empty
           </li>
         ) : (
-          cards.map((c) => <Card key={c.decision_id} card={c} />)
+          cards.map((c) => <Card key={c.decision_id} card={c} onTaskSelect={onTaskSelect} />)
         )}
       </ul>
     </div>
   );
 }
 
-function Card({ card }: { card: SprintCard }) {
+function Card({ card, onTaskSelect }: { card: SprintCard; onTaskSelect: (task: Task) => void }) {
   const qc = useQueryClient();
   const projectColor = colorFor(card.project);
   const ageLabel = formatAgeMinutes(card.age_minutes);
@@ -267,6 +330,7 @@ function Card({ card }: { card: SprintCard }) {
             <span>{card.project}</span>
             <span>·</span>
             <span>{card.proposer_display_name ?? prettyRole(card.proposer_role ?? "system")}</span>
+            <PriorityPill priority={card.priority} expedited={card.expedited} />
             <RiskPill risk={card.risk} />
             {card.has_devils_advocate && <Pill label="DA" tone="audit" />}
             {card.has_security_review && <Pill label="SEC" tone="audit" />}
@@ -278,6 +342,14 @@ function Card({ card }: { card: SprintCard }) {
           <div className="mt-0.5 text-xs font-medium text-[var(--text-primary)]" title={card.summary}>
             {truncate(card.summary, 90)}
           </div>
+          {card.sprint_number !== null && (
+            <div className="mt-1 text-[10px] font-medium uppercase tracking-wider text-[var(--accent)]">
+              Sprint {card.sprint_number}
+            </div>
+          )}
+          {card.structured_plan && (
+            <StructuredPlanMini card={card} onTaskSelect={onTaskSelect} />
+          )}
           <div className="mt-1 flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
             <span>{ageLabel}</span>
             {card.pr_url && (
@@ -313,14 +385,29 @@ function Card({ card }: { card: SprintCard }) {
           )}
           {!card.live_crew && card.column === "approved" && (
             <div
-              className="mt-2 rounded-md border border-[var(--line)] bg-[var(--bg-surface)]/65 px-2 py-1 text-[10px] text-[var(--text-muted)]"
+              className={`mt-2 rounded-md border px-2 py-1 text-[10px] ${
+                card.expedited
+                  ? "border-[var(--state-warn)]/45 bg-[var(--state-warn)]/10 text-[var(--text-primary)]"
+                  : "border-[var(--line)] bg-[var(--bg-surface)]/65 text-[var(--text-muted)]"
+              }`}
               title={`Regular sweep: ${CRON_SCHEDULES["execute-approved"].expr} UTC. Expedited sweep: ${CRON_SCHEDULES["execute-expedited"].expr} UTC.`}
             >
-              Next engineer pickup: {describeNextRun(CRON_SCHEDULES["execute-approved"].expr)}
-              {" · "}
-              <span className="text-[var(--text-muted)]/70">
-                expedited lane: {describeNextRun(CRON_SCHEDULES["execute-expedited"].expr)}
-              </span>
+              {card.expedited ? (
+                <>
+                  Expedited pickup: {describeNextRun(CRON_SCHEDULES["execute-expedited"].expr)}
+                  <span className="text-[var(--text-muted)]/75">
+                    {" "}· requested by {prettyRole(card.requested_by_role ?? "leadership")}
+                  </span>
+                </>
+              ) : (
+                <>
+                  Next engineer pickup: {describeNextRun(CRON_SCHEDULES["execute-approved"].expr)}
+                  {" · "}
+                  <span className="text-[var(--text-muted)]/70">
+                    expedited lane: {describeNextRun(CRON_SCHEDULES["execute-expedited"].expr)}
+                  </span>
+                </>
+              )}
             </div>
           )}
           {(card.pr_url || card.followup_attempts > 0 || card.column === "review" || card.column === "in_progress") && (
@@ -401,6 +488,71 @@ function ReviewTrail({ card }: { card: SprintCard }) {
   );
 }
 
+function StructuredPlanMini({
+  card,
+  onTaskSelect,
+}: {
+  card: SprintCard;
+  onTaskSelect: (task: Task) => void;
+}) {
+  if (!card.structured_plan) return null;
+  type SectionKey = "features" | "bugs" | "tech_debt" | "ops" | "docs";
+  const sections: Array<[string, SectionKey]> = [
+    ["Features", "features"],
+    ["Bugs", "bugs"],
+    ["Tech debt", "tech_debt"],
+    ["Ops", "ops"],
+    ["Docs", "docs"],
+  ];
+  const taskByTitle = new Map(card.tasks.map((task) => [task.title.toLowerCase(), task]));
+  return (
+    <div className="mt-2 rounded-md border border-[var(--line)] bg-[var(--bg-surface)]/70 p-2">
+      <div className="line-clamp-2 text-[10px] leading-snug text-[var(--text-muted)]">
+        Goal: {card.structured_plan.goal}
+      </div>
+      <div className="mt-2 space-y-1.5">
+        {sections.map(([label, key]) => {
+          const items: PlanItem[] = card.structured_plan?.[key] ?? [];
+          if (!Array.isArray(items) || items.length === 0) return null;
+          return (
+            <div key={key}>
+              <div className="text-[9px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                {label} ({items.length})
+              </div>
+              <ul className="mt-1 space-y-1">
+                {items.slice(0, 3).map((item) => {
+                  const task = taskByTitle.get(item.title.toLowerCase());
+                  return (
+                    <li key={`${key}-${item.title}`}>
+                      <button
+                        type="button"
+                        disabled={!task}
+                        onClick={() => task && onTaskSelect(task)}
+                        className="flex w-full items-center gap-1.5 rounded bg-white/70 px-2 py-1 text-left text-[10px] text-[var(--text-primary)] disabled:cursor-default disabled:opacity-80"
+                        title={item.rationale}
+                      >
+                        <span className="min-w-0 flex-1 truncate">{item.title}</span>
+                        <span className="rounded bg-[var(--bg-surface)] px-1 font-mono text-[9px] uppercase text-[var(--text-muted)]">
+                          {item.estimated_effort}
+                        </span>
+                        {task && (
+                          <span className="rounded bg-sky-50 px-1 text-[9px] uppercase text-[var(--accent)]">
+                            {task.status}
+                          </span>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ReviewerChip({ reviewer }: { reviewer: SprintReviewer }) {
   const tone = toneForReviewer(reviewer.status);
   return (
@@ -424,6 +576,17 @@ function ReviewerChip({ reviewer }: { reviewer: SprintReviewer }) {
 function RiskPill({ risk }: { risk: "low" | "medium" | "high" }) {
   const tone = risk === "high" ? "danger" : risk === "medium" ? "warn" : "success";
   return <Pill label={risk} tone={tone} />;
+}
+
+function PriorityPill({
+  priority,
+  expedited,
+}: {
+  priority: SprintCard["priority"];
+  expedited: boolean;
+}) {
+  const tone = priority === "p1" ? "danger" : priority === "p2" ? "warn" : "muted";
+  return <Pill label={expedited ? `${priority} fast` : priority} tone={tone} />;
 }
 
 function Pill({

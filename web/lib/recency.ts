@@ -25,8 +25,8 @@ const STALE_MIN = 24 * 60;// 24h
 export function vitalityFromAge(ageMinutes: number | null): Vitality {
   if (ageMinutes == null) {
     return {
-      brightness: 0.25,
-      filter: "saturate(0.3) brightness(0.85)",
+      brightness: 0.72,
+      filter: "saturate(0.78) brightness(0.98)",
       level: "cold",
       showPulse: false,
     };
@@ -58,15 +58,15 @@ export function vitalityFromAge(ageMinutes: number | null): Vitality {
   }
   if (ageMinutes < STALE_MIN) {
     return {
-      brightness: 0.5,
-      filter: "saturate(0.55) brightness(0.85)",
+      brightness: 0.78,
+      filter: "saturate(0.82) brightness(0.98)",
       level: "stale",
       showPulse: false,
     };
   }
   return {
-    brightness: 0.3,
-    filter: "saturate(0.3) brightness(0.78)",
+    brightness: 0.72,
+    filter: "saturate(0.75) brightness(0.95)",
     level: "cold",
     showPulse: false,
   };

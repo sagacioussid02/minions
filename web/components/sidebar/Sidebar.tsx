@@ -1,6 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   type CostSummary,
   type HeadlineCounters,
@@ -54,9 +57,53 @@ export function Sidebar({
     queryFn: fetchQuestions,
     initialData: { questions: initialQuestions },
   });
+  const pathname = usePathname();
+  const [stageOpened, setStageOpened] = useState(
+    () =>
+      typeof window === "undefined" ||
+      window.localStorage.getItem("minions-stage-opened") === "true",
+  );
+
+  useEffect(() => {
+    const onOpened = () => setStageOpened(true);
+    window.addEventListener("minions-stage-opened", onOpened);
+    return () => window.removeEventListener("minions-stage-opened", onOpened);
+  }, []);
+
+  useEffect(() => {
+    if (pathname === "/stage") {
+      window.localStorage.setItem("minions-stage-opened", "true");
+    }
+  }, [pathname]);
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col gap-4 border-r border-[var(--line)] bg-[var(--bg-surface)] p-4">
+    <aside className="flex w-80 shrink-0 flex-col gap-4 border-r border-[var(--line)] bg-[var(--bg-surface)] p-4">
+      <nav className="rounded-xl border border-[var(--line)] bg-[var(--bg-elevated)] p-3">
+        <div className="mb-2 text-xs uppercase tracking-wider text-[var(--text-muted)]">
+          Console
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            ["/", "Live"],
+            ["/stage", "Stage"],
+            ["/leadership", "Leadership"],
+            ["/sprint", "Sprint"],
+          ].map(([href, label]) => (
+            <Link
+              key={href}
+              href={href}
+              className="relative rounded-md border border-[var(--line)] px-2 py-1 text-center text-xs font-medium uppercase tracking-wider text-[var(--text-muted)] hover:border-[var(--accent)]/40 hover:text-[var(--text-primary)]"
+            >
+              {label}
+              {href === "/stage" && !stageOpened && (
+                <span className="absolute -right-1.5 -top-1 rounded-full bg-[var(--accent)] px-1.5 py-0.5 text-[9px] font-semibold leading-none text-white shadow-sm">
+                  new
+                </span>
+              )}
+            </Link>
+          ))}
+        </div>
+      </nav>
       <CostGauge summary={cost.data} />
       <Counters c={headline.data} />
       <QuestionsInbox qs={questions.data.questions} />
@@ -76,7 +123,7 @@ function CostGauge({ summary }: { summary: CostSummary }) {
   const offset = dash * (1 - frac);
   return (
     <div className="rounded-xl border border-[var(--line)] bg-[var(--bg-elevated)] p-4">
-      <div className="mb-2 text-xs uppercase tracking-wider text-[var(--text-muted)]">
+      <div className="mb-3 text-sm uppercase tracking-wider text-[var(--text-muted)]">
         Spend this week
       </div>
       <div className="flex items-center gap-4">
@@ -104,13 +151,13 @@ function CostGauge({ summary }: { summary: CostSummary }) {
           />
         </svg>
         <div>
-          <div className="text-xl font-medium tabular-nums">
+          <div className="text-2xl font-semibold tabular-nums">
             ${summary.week_to_date_usd.toFixed(2)}
           </div>
-          <div className="text-xs text-[var(--text-muted)]">
+          <div className="text-sm text-[var(--text-muted)]">
             of ${summary.week_cap_usd.toFixed(0)} cap
           </div>
-          <div className="mt-1 text-[10px] text-[var(--text-muted)]">
+          <div className="mt-1 text-xs text-[var(--text-muted)]">
             today ${summary.today_usd.toFixed(2)}
           </div>
         </div>
@@ -128,14 +175,14 @@ function Counters({ c }: { c: HeadlineCounters }) {
   ];
   return (
     <div className="rounded-xl border border-[var(--line)] bg-[var(--bg-elevated)] p-4">
-      <div className="mb-2 text-xs uppercase tracking-wider text-[var(--text-muted)]">
+      <div className="mb-3 text-sm uppercase tracking-wider text-[var(--text-muted)]">
         Right now
       </div>
       <dl className="grid grid-cols-2 gap-y-2">
         {items.map(([label, n]) => (
           <div key={label}>
-            <dt className="text-[10px] text-[var(--text-muted)]">{label}</dt>
-            <dd className="text-base font-medium tabular-nums">{n}</dd>
+            <dt className="text-xs text-[var(--text-muted)]">{label}</dt>
+            <dd className="text-xl font-semibold tabular-nums">{n}</dd>
           </div>
         ))}
       </dl>
@@ -146,19 +193,19 @@ function Counters({ c }: { c: HeadlineCounters }) {
 function QuestionsInbox({ qs }: { qs: Question[] }) {
   return (
     <div className="rounded-xl border border-[var(--line)] bg-[var(--bg-elevated)] p-4">
-      <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-wider text-[var(--text-muted)]">
+      <div className="mb-3 flex items-center gap-2 text-sm uppercase tracking-wider text-[var(--text-muted)]">
         Questions for you
         <span className="ml-auto rounded bg-[var(--bg-surface)] px-1.5 font-mono text-[10px]">
           {qs.length}
         </span>
       </div>
       {qs.length === 0 ? (
-        <p className="text-xs text-[var(--text-muted)]">No open questions.</p>
+        <p className="text-sm text-[var(--text-muted)]">No open questions.</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {qs.slice(0, 5).map((q) => (
             <li key={q.id} className="rounded-md border border-[var(--line)] p-2">
-              <div className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
+              <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
                 <span>{q.project}</span>
                 <span>·</span>
                 <span>{prettyRole(q.asker_role)}</span>
@@ -168,7 +215,7 @@ function QuestionsInbox({ qs }: { qs: Question[] }) {
                   </span>
                 )}
               </div>
-              <div className="mt-0.5 line-clamp-2 text-xs">{q.question}</div>
+              <div className="mt-1 line-clamp-2 text-sm">{q.question}</div>
             </li>
           ))}
         </ul>
