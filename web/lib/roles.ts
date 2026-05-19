@@ -12,14 +12,14 @@ const TIER_BY_ROLE: Record<string, RoleTier> = {
   // Executives
   ceo: "executive",
   cto: "executive",
-  md: "executive",
+  managing_director: "executive",
   org_owner: "executive",
   // Engineering line
   product_owner: "engineering",
   manager: "engineering",
-  principal: "engineering",
-  ttl: "engineering",
-  sr_engineer: "engineering",
+  principal_engineer: "engineering",
+  tech_team_lead: "engineering",
+  senior_engineer: "engineering",
   engineer: "engineering",
   intern: "engineering",
   // Audit + Security
@@ -35,7 +35,7 @@ const TIER_BY_ROLE: Record<string, RoleTier> = {
   cloud_devops: "specialist",
   devsecops: "specialist",
   team_architect: "specialist",
-  sr_devops: "specialist",
+  senior_devops: "specialist",
   performance_engineer: "specialist",
   data_engineer: "specialist",
   documentation_engineer: "specialist",
@@ -63,4 +63,8 @@ export function prettyRole(role: string): string {
     .split("_")
     .map((p) => p[0]?.toUpperCase() + p.slice(1))
     .join(" ");
+}
+
+export function agentSeedFor(role: string | null, project: string | null): string {
+  return `${role ?? "system"}@${project ?? "shared"}`;
 }

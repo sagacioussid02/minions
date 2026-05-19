@@ -1,37 +1,41 @@
 /**
- * Static org roster — mirrors `src/minions/agents/roster.py`.
+ * Static org display roster.
  *
- * The Floor uses this to scaffold every *configured* agent, not just the
- * ones that have produced activity. Roles with zero events still render
- * as "cold" cards so the operator sees the full ~60-agent org shape.
+ * The public console intentionally presents the company as a shared, dynamic
+ * org: executives and senior specialists span the portfolio, while project
+ * pods stay lightweight and borrow capacity from shared pools.
  *
- * Keep in sync with the Python file. If the Python roster changes,
- * update this list in the same PR.
+ * Python may still run project-scoped roles internally. This file is the
+ * investor-facing shape of the org, not a one-card-per-runtime-worker mirror.
  */
 
 export const PER_PROJECT_ROLES: Array<{ role: string; seats: number }> = [
   { role: "product_owner", seats: 1 },
   { role: "manager", seats: 1 },
-  { role: "principal", seats: 1 },
-  { role: "ttl", seats: 1 },
-  { role: "sr_engineer", seats: 2 },
-  { role: "engineer", seats: 3 },
-  { role: "intern", seats: 1 },
-  { role: "sr_devops", seats: 1 },
-  { role: "security_champion", seats: 1 },
+  { role: "tech_team_lead", seats: 1 },
 ];
 
 export const SHARED_EXECUTIVE: string[] = [
   "ceo",
   "cto",
-  "md",
+  "managing_director",
   "org_owner",
 ];
 
-export const SHARED_SPECIALIST: string[] = [
-  "cloud_devops",
-  "devsecops",
-  "team_architect",
+export const SHARED_SPECIALIST: Array<{ role: string; seats: number }> = [
+  { role: "principal_engineer", seats: 1 },
+  { role: "team_architect", seats: 1 },
+  { role: "cloud_devops", seats: 1 },
+  { role: "senior_devops", seats: 1 },
+  { role: "devsecops", seats: 1 },
+  { role: "security_champion", seats: 1 },
+  { role: "qa_engineer", seats: 1 },
+];
+
+export const SHARED_ENGINEERING_POOL: Array<{ role: string; seatsPerProject: number }> = [
+  { role: "senior_engineer", seatsPerProject: 1 },
+  { role: "engineer", seatsPerProject: 2 },
+  { role: "intern", seatsPerProject: 0.5 },
 ];
 
 export const AUDIT: string[] = [
@@ -45,6 +49,11 @@ export const AUDIT: string[] = [
 /** Total agent count given a list of active projects. Layman headline. */
 export function totalConfiguredAgents(projectCount: number): number {
   const perProject = PER_PROJECT_ROLES.reduce((n, r) => n + r.seats, 0);
-  const shared = SHARED_EXECUTIVE.length + SHARED_SPECIALIST.length + AUDIT.length;
+  const sharedSpecialists = SHARED_SPECIALIST.reduce((n, r) => n + r.seats, 0);
+  const sharedPool = SHARED_ENGINEERING_POOL.reduce(
+    (n, r) => n + Math.ceil(r.seatsPerProject * projectCount),
+    0,
+  );
+  const shared = SHARED_EXECUTIVE.length + sharedSpecialists + sharedPool + AUDIT.length;
   return perProject * projectCount + shared;
 }

@@ -132,6 +132,7 @@ export async function listRecentEventsAt(
       project,
       role,
       decision_id,
+      NULL::text AS decision_summary,
       crew,
       run_id,
       error,
@@ -147,6 +148,7 @@ export async function listRecentEventsAt(
     project: string | null;
     role: string | null;
     decision_id: string | null;
+    decision_summary: string | null;
     crew: string | null;
     run_id: string | null;
     error: string | null;
@@ -160,6 +162,7 @@ export async function listRecentEventsAt(
     project: r.project,
     role: r.role,
     decision_id: r.decision_id,
+    decision_summary: r.decision_summary,
     crew: r.crew,
     run_id: r.run_id,
     error: r.error,
@@ -205,6 +208,7 @@ export async function getHeroEventAt(asOf: Date): Promise<HeroEvent> {
     project: r.project,
     role: r.role,
     decision_id: r.decision_id,
+    decision_summary: null,
     crew: r.crew,
     run_id: r.run_id,
     error: r.error,

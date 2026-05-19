@@ -31,7 +31,7 @@ export type MinionsCron =
 // Mirrors the schedules in `.github/workflows/*.yml`. UTC.
 export const CRON_SCHEDULES: Record<MinionsCron, { expr: string; label: string }> = {
   "execute-approved":  { expr: "15 */6 * * *",   label: "Engineer pickup (regular)" },
-  "execute-expedited": { expr: "*/20 * * * *",   label: "Engineer pickup (expedited)" },
+  "execute-expedited": { expr: "*/10 * * * *",   label: "Engineer pickup (expedited)" },
   "pr-followup":       { expr: "*/30 * * * *",   label: "PR follow-up sweep" },
   "pr-review-loop":    { expr: "15,45 * * * *",  label: "PR review loop" },
   "daily":             { expr: "0 */6 * * *",    label: "Daily monitor" },

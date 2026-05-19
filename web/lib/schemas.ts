@@ -89,6 +89,7 @@ export const ActivityEventSchema = z.object({
   project: z.string().nullable(),
   role: z.string().nullable(),
   decision_id: z.string().nullable(),
+  decision_summary: z.string().nullable(),
   crew: z.string().nullable(),
   run_id: z.string().nullable(),
   error: z.string().nullable(),
@@ -188,12 +189,75 @@ export const SprintReviewerSchema = z.object({
 });
 export type SprintReviewer = z.infer<typeof SprintReviewerSchema>;
 
+export const PlanItemSchema = z.object({
+  title: z.string(),
+  rationale: z.string().optional().default(""),
+  acceptance_criteria: z.string().optional().default(""),
+  estimated_effort: z.enum(["xs", "s", "m", "l", "xl"]).optional().default("m"),
+  suggested_owner_role: z.string().nullable().optional(),
+});
+export type PlanItem = z.infer<typeof PlanItemSchema>;
+
+export const StructuredSprintPlanSchema = z.object({
+  goal: z.string(),
+  features: z.array(PlanItemSchema).optional().default([]),
+  bugs: z.array(PlanItemSchema).optional().default([]),
+  tech_debt: z.array(PlanItemSchema).optional().default([]),
+  ops: z.array(PlanItemSchema).optional().default([]),
+  docs: z.array(PlanItemSchema).optional().default([]),
+  risks: z.array(z.string()).optional().default([]),
+});
+export type StructuredSprintPlan = z.infer<typeof StructuredSprintPlanSchema>;
+
+export const TaskSchema = z.object({
+  id: z.string(),
+  decision_id: z.string(),
+  project: z.string(),
+  sprint_number: z.number().nullable(),
+  category: z.enum(["feature", "bug", "tech_debt", "ops", "docs"]),
+  title: z.string(),
+  description: z.string(),
+  acceptance_criteria: z.string(),
+  owner_role: z.string(),
+  owner_agent_id: z.string(),
+  owner_display_name: z.string().nullable(),
+  estimated_effort: z.enum(["xs", "s", "m", "l", "xl"]),
+  status: z.enum(["queued", "in_progress", "review", "done", "blocked", "cancelled"]),
+  pr_url: z.string().nullable(),
+  pr_number: z.number().nullable(),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+  completed_at: z.string().datetime().nullable(),
+});
+export type Task = z.infer<typeof TaskSchema>;
+
+export const AgentMemorySchema = z.object({
+  id: z.string(),
+  agent_id: z.string(),
+  sprint_number: z.number().nullable(),
+  decision_id: z.string().nullable(),
+  task_id: z.string().nullable(),
+  pr_url: z.string().nullable(),
+  event: z.string(),
+  summary: z.string(),
+  details: z.string().nullable(),
+  created_at: z.string().datetime(),
+  tier: z.enum(["hot", "cold"]),
+});
+export type AgentMemory = z.infer<typeof AgentMemorySchema>;
+
 export const SprintCardSchema = z.object({
   decision_id: z.string(),
   project: z.string(),
   column: SprintColumnSchema,
   type: z.string(),
   risk: z.enum(["low", "medium", "high"]),
+  sprint_number: z.number().nullable(),
+  structured_plan: StructuredSprintPlanSchema.nullable(),
+  tasks: z.array(TaskSchema),
+  priority: z.enum(["p1", "p2", "p3"]),
+  expedited: z.boolean(),
+  requested_by_role: z.string().nullable(),
   summary: z.string(),
   proposer_role: z.string().nullable(),
   proposer_display_name: z.string().nullable(),

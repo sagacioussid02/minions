@@ -2,14 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { type AgentState } from "@/lib/schemas";
-import { iconFor, prettyRole } from "@/lib/roles";
+import { type AgentMemory, type AgentState } from "@/lib/schemas";
+import { agentSeedFor, iconFor, prettyRole } from "@/lib/roles";
 import { colorFor, registerProjects } from "@/lib/project-color";
 import { vitalityFromAge } from "@/lib/recency";
 import { Avatar } from "@/components/Avatar";
 import { formatDistanceToNowStrict } from "date-fns";
 
 type AgentsResponse = { agents: AgentState[] };
+type MemoryResponse = { memory: AgentMemory[] };
 
 const TREE_LEVELS = [
   {
@@ -79,6 +80,17 @@ const AUDIT_ROLES = new Set([
 async function fetchAgents(): Promise<AgentsResponse> {
   const r = await fetch("/api/agents", { cache: "no-store" });
   if (!r.ok) throw new Error("agents fetch failed");
+  return r.json();
+}
+
+async function fetchMemory(agentId: string, includeCold: boolean): Promise<MemoryResponse> {
+  const params = new URLSearchParams();
+  if (includeCold) params.set("include_cold", "true");
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  const r = await fetch(`/api/agent-memory/${encodeURIComponent(agentId)}${suffix}`, {
+    cache: "no-store",
+  });
+  if (!r.ok) throw new Error("agent memory fetch failed");
   return r.json();
 }
 
@@ -434,7 +446,7 @@ function BenchCard({
     >
       <div className="flex items-center gap-3">
         <Avatar
-          seed={agent.id}
+          seed={agentSeedFor(agent.role, agent.project)}
           size={40}
           ring={agent.in_flight ? roleTierColor : undefined}
           mood={agent.in_flight ? "active" : "idle"}
@@ -716,7 +728,7 @@ function AgentCard({
       <div className="flex flex-col items-center gap-2 text-center">
         <div className={`relative ${vitality.showPulse ? "pulse-halo" : ""}`}>
           <Avatar
-            seed={agent.id}
+            seed={agentSeedFor(agent.role, agent.project)}
             size={56}
             ring={vitality.showPulse ? roleTierColor : undefined}
             mood={mood}
@@ -813,6 +825,12 @@ function AgentInspector({
   refMs: number | null;
   onClose: () => void;
 }) {
+  const [includeCold, setIncludeCold] = useState(false);
+  const memory = useQuery({
+    queryKey: ["agent-memory", agent.id, includeCold],
+    queryFn: () => fetchMemory(agent.id, includeCold),
+    initialData: { memory: [] },
+  });
   const liveNowMs = useCurrentTime(refMs === null);
   const eventMs = agent.last_event_at ? new Date(agent.last_event_at).getTime() : null;
   const ageMinutes =
@@ -854,7 +872,7 @@ function AgentInspector({
         <header className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-4">
             <Avatar
-              seed={agent.id}
+              seed={agentSeedFor(agent.role, agent.project)}
               size={72}
               ring={roleTierColor}
               mood={mood}
@@ -935,6 +953,44 @@ function AgentInspector({
             {agent.last_output ??
               "No assignment has been recorded for this agent yet. They are configured in the crew and will light up when the next cron or approved decision reaches them."}
           </p>
+        </div>
+
+        <div className="mt-5 rounded-xl border border-[var(--line)] bg-[var(--bg-surface)] p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+              Memory
+            </div>
+            <button
+              type="button"
+              onClick={() => setIncludeCold((value) => !value)}
+              className="rounded border border-[var(--line)] px-2 py-1 text-xs text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text-primary)]"
+            >
+              {includeCold ? "Hot only" : "Load older sprints"}
+            </button>
+          </div>
+          {memory.data.memory.length > 0 ? (
+            <ol className="mt-3 space-y-2">
+              {memory.data.memory.slice(0, 6).map((record) => (
+                <li key={record.id} className="rounded-lg bg-white/70 px-3 py-2">
+                  <div className="text-sm leading-5">{record.summary}</div>
+                  <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-[var(--text-muted)]">
+                    <span>{record.tier}</span>
+                    <span>{record.event}</span>
+                    {record.sprint_number !== null && <span>Sprint {record.sprint_number}</span>}
+                    {record.pr_url && (
+                      <a className="text-[var(--accent)] hover:underline" href={record.pr_url} target="_blank" rel="noreferrer">
+                        PR
+                      </a>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <div className="mt-3 rounded-lg border border-dashed border-[var(--line)] bg-white/60 px-3 py-4 text-sm text-[var(--text-muted)]">
+              No durable memory recorded for this agent yet.
+            </div>
+          )}
         </div>
 
         <div className="mt-5">

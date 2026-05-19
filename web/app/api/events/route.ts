@@ -14,8 +14,19 @@ export async function GET(req: NextRequest) {
     const project = searchParams.get("project") ?? undefined;
     const role = searchParams.get("role") ?? undefined;
     const event = searchParams.get("event") ?? undefined;
+    const windowMinutesRaw = searchParams.get("window_minutes");
+    const windowMinutes = windowMinutesRaw
+      ? Math.min(Math.max(Number(windowMinutesRaw), 1), 24 * 60)
+      : undefined;
 
-    const events = await listRecentEvents({ limit, sinceId, project, role, event });
+    const events = await listRecentEvents({
+      limit: Math.min(Math.max(limit, 1), 500),
+      sinceId,
+      project,
+      role,
+      event,
+      windowMinutes,
+    });
     const validated = events.map((e) => ActivityEventSchema.parse(e));
     return NextResponse.json({ events: validated });
   } catch (err) {

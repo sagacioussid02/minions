@@ -25,19 +25,21 @@ export function describe(e: ActivityEvent): string {
     case "crew_started":
       // If the actor was already derived from the crew name, do not repeat it.
       return e.role
-        ? `${who} started a ${prettyRole(e.crew ?? "")} crew`
-        : `${who} crew started`;
+        ? `${who} joined a ${prettyRole(e.crew ?? "")} working session`
+        : `${who} working session started`;
     case "crew_finished":
       return e.role
-        ? `${who} finished a ${prettyRole(e.crew ?? "")} crew`
-        : `${who} crew finished`;
+        ? `${who} wrapped a ${prettyRole(e.crew ?? "")} working session`
+        : `${who} working session wrapped`;
+    case "crew_checkin":
+      return `${who} checked in and is available`;
     case "decision_submitted":
-      return `${who} proposed a Decision for review`;
+      return `${who} proposed work for operator review`;
     case "decision_resolved": {
       const status =
         (typeof e.payload?.["status"] === "string" && (e.payload["status"] as string)) ||
         "resolved";
-      return `${who} → Decision ${status}`;
+      return `${who} marked a Decision ${status}`;
     }
     case "pr_opened":
       return `${who} opened a PR`;
@@ -46,9 +48,21 @@ export function describe(e: ActivityEvent): string {
     case "audit_finding_created":
       return `${who} raised an audit finding`;
     case "question_submitted":
-      return `${who} raised a Question`;
+      return `${who} asked for operator input`;
     case "question_escalated":
-      return `${who} escalated a Question to operator`;
+      return `${who} escalated a blocker to the operator`;
+    case "scrum_created":
+      return `${who} published scrum notes`;
+    case "sprint_planned":
+      return `${who} prepared the sprint plan`;
+    case "monthly_demo_ready":
+      return `${who} prepared demo material`;
+    case "pm_answered":
+      return `${who} answered as Product Manager`;
+    case "spokesperson_answered":
+      return `${who} answered in the Leadership Room`;
+    case "consultation_answered":
+      return `${who} weighed in on a leadership question`;
     default:
       // Friendly fall-through: "engineer @ AaaG · pr_pushed_4_files"
       return `${who} · ${e.event}`;

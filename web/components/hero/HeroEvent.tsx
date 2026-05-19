@@ -13,7 +13,7 @@ import { formatDistanceToNowStrict } from "date-fns";
 export function HeroEvent({ event }: { event: HeroEventT }) {
   if (!event) {
     return (
-      <div className="rounded-2xl border border-[var(--line)] bg-[var(--bg-surface)] px-5 py-3 text-sm text-[var(--text-muted)]">
+      <div className="rounded-2xl border border-[var(--line)] bg-[var(--bg-surface)] px-5 py-3 text-base text-[var(--text-muted)]">
         Quiet floor. No meaningful events recorded yet.
       </div>
     );
@@ -36,7 +36,7 @@ export function HeroEvent({ event }: { event: HeroEventT }) {
           <Avatar seed={event.avatar_seed} size={48} ring={tierColor} />
         </div>
         <div className="flex flex-1 flex-col gap-0.5">
-          <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-[var(--text-muted)]">
             <span className="font-mono text-base leading-none" style={{ color: tierColor }} aria-hidden>
               {iconFor(event.role_tier)}
             </span>
@@ -44,7 +44,7 @@ export function HeroEvent({ event }: { event: HeroEventT }) {
             {event.project && <span>· {event.project}</span>}
             <span className="ml-auto">{ageLabel}</span>
           </div>
-          <div className="text-base font-medium tracking-tight text-[var(--text-primary)]">
+          <div className="text-lg font-medium tracking-tight text-[var(--text-primary)]">
             {event.sentence}
           </div>
         </div>
