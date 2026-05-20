@@ -189,14 +189,27 @@ export const SprintReviewerSchema = z.object({
 });
 export type SprintReviewer = z.infer<typeof SprintReviewerSchema>;
 
-export const PlanItemSchema = z.object({
-  title: z.string(),
-  rationale: z.string().optional().default(""),
-  acceptance_criteria: z.string().optional().default(""),
-  estimated_effort: z.enum(["xs", "s", "m", "l", "xl"]).optional().default("m"),
-  suggested_owner_role: z.string().nullable().optional(),
-});
-export type PlanItem = z.infer<typeof PlanItemSchema>;
+// PlanItem is recursive via `subtasks` — zod's `z.lazy` handles the cycle.
+// Mirrors `src/minions/models/sprint_plan.py` (Phase B of openspec/
+// enriched-sprint-planning).
+export type PlanItem = {
+  title: string;
+  rationale: string;
+  acceptance_criteria: string;
+  estimated_effort: "xs" | "s" | "m" | "l" | "xl";
+  suggested_owner_role: string | null;
+  subtasks: PlanItem[];
+};
+export const PlanItemSchema: z.ZodType<PlanItem> = z.lazy(() =>
+  z.object({
+    title: z.string(),
+    rationale: z.string().optional().default(""),
+    acceptance_criteria: z.string().optional().default(""),
+    estimated_effort: z.enum(["xs", "s", "m", "l", "xl"]).optional().default("m"),
+    suggested_owner_role: z.string().nullable().optional().transform((v) => v ?? null),
+    subtasks: z.array(PlanItemSchema).optional().default([]),
+  }),
+);
 
 export const StructuredSprintPlanSchema = z.object({
   goal: z.string(),
@@ -206,6 +219,9 @@ export const StructuredSprintPlanSchema = z.object({
   ops: z.array(PlanItemSchema).optional().default([]),
   docs: z.array(PlanItemSchema).optional().default([]),
   risks: z.array(z.string()).optional().default([]),
+  // Meeting minutes from the multi-voice debate (Phase A). Empty list
+  // for legacy / fallback paths.
+  discussion: z.array(z.string()).optional().default([]),
 });
 export type StructuredSprintPlan = z.infer<typeof StructuredSprintPlanSchema>;
 
@@ -219,15 +235,28 @@ export const TaskSchema = z.object({
   description: z.string(),
   acceptance_criteria: z.string(),
   owner_role: z.string(),
-  owner_agent_id: z.string(),
+  // owner_agent_id / owner_display_name may be null when the Task is
+  // `unassigned` (Phase D — every eligible candidate at WIP cap; the
+  // backlog sweep assigns later).
+  owner_agent_id: z.string().nullable(),
   owner_display_name: z.string().nullable(),
   estimated_effort: z.enum(["xs", "s", "m", "l", "xl"]),
-  status: z.enum(["queued", "in_progress", "review", "done", "blocked", "cancelled"]),
+  status: z.enum([
+    "unassigned",
+    "queued",
+    "in_progress",
+    "review",
+    "done",
+    "blocked",
+    "cancelled",
+  ]),
   pr_url: z.string().nullable(),
   pr_number: z.number().nullable(),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
   completed_at: z.string().datetime().nullable(),
+  // Catch-all populated by refinement (e.g. parent_plan_item for subtasks).
+  payload: z.record(z.string(), z.unknown()).optional().default({}),
 });
 export type Task = z.infer<typeof TaskSchema>;
 
