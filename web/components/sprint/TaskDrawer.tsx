@@ -6,7 +6,10 @@ import { prettyRole } from "@/lib/roles";
 
 type MemoryResponse = { memory: AgentMemory[] };
 
-async function fetchMemory(agentId: string): Promise<MemoryResponse> {
+async function fetchMemory(agentId: string | null): Promise<MemoryResponse> {
+  // Unassigned Tasks have no owner; skip the fetch and return an empty
+  // memory block so the drawer still renders cleanly.
+  if (!agentId) return { memory: [] };
   const r = await fetch(`/api/agent-memory/${encodeURIComponent(agentId)}`, {
     cache: "no-store",
   });
@@ -16,9 +19,15 @@ async function fetchMemory(agentId: string): Promise<MemoryResponse> {
 
 export function TaskDrawer({
   task,
+  discussion = [],
   onClose,
 }: {
   task: Task;
+  // Meeting minutes from the parent Decision's structured_plan
+  // (Phase A of enriched-sprint-planning). Empty for legacy / fallback
+  // plans; renders a collapsible "Planning discussion" section when
+  // populated.
+  discussion?: string[];
   onClose: () => void;
 }) {
   const memory = useQuery({
@@ -61,24 +70,66 @@ export function TaskDrawer({
           <Pill label={prettyRole(task.owner_role)} />
         </div>
 
-        <section className="mt-5 rounded-lg border border-[var(--line)] bg-[var(--bg-surface)] p-4">
+        <section
+          className={`mt-5 rounded-lg border p-4 ${
+            task.status === "unassigned"
+              ? "border-amber-300 bg-amber-50/60"
+              : "border-[var(--line)] bg-[var(--bg-surface)]"
+          }`}
+        >
           <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
             Owner
           </div>
-          <div className="mt-2 text-sm font-medium text-[var(--text-primary)]">
-            {task.owner_display_name ?? prettyRole(task.owner_role)}
-          </div>
-          <div className="text-xs text-[var(--text-muted)]">{task.owner_agent_id}</div>
-          {memory.data.memory.length > 0 && (
+          {task.status === "unassigned" ? (
+            <>
+              <div className="mt-2 text-sm font-medium text-amber-900">
+                ⏳ No owner yet — sitting in backlog
+              </div>
+              <div className="mt-1 text-xs text-amber-800/80">
+                Every eligible{" "}
+                <span className="font-mono">{task.owner_role}</span> is at
+                their WIP cap. The backlog-sweep cron (every 10 min) will
+                assign this task as soon as a slot opens.
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="mt-2 text-sm font-medium text-[var(--text-primary)]">
+                {task.owner_display_name ?? prettyRole(task.owner_role)}
+              </div>
+              <div className="text-xs text-[var(--text-muted)]">
+                {task.owner_agent_id}
+              </div>
+              {memory.data.memory.length > 0 && (
+                <ul className="mt-3 space-y-1.5">
+                  {memory.data.memory.slice(0, 3).map((record) => (
+                    <li key={record.id} className="rounded bg-white/70 px-2 py-1 text-xs leading-5">
+                      {record.summary}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </section>
+
+        {discussion.length > 0 && (
+          <details className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--bg-surface)] p-4">
+            <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+              Planning discussion ({discussion.length})
+            </summary>
             <ul className="mt-3 space-y-1.5">
-              {memory.data.memory.slice(0, 3).map((record) => (
-                <li key={record.id} className="rounded bg-white/70 px-2 py-1 text-xs leading-5">
-                  {record.summary}
+              {discussion.map((line, i) => (
+                <li
+                  key={i}
+                  className="rounded bg-white/70 px-2 py-1.5 text-xs leading-5 text-[var(--text-primary)]"
+                >
+                  {line}
                 </li>
               ))}
             </ul>
-          )}
-        </section>
+          </details>
+        )}
 
         <section className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--bg-surface)] p-4">
           <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
