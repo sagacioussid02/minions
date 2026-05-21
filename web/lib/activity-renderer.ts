@@ -79,5 +79,17 @@ export function deepLinks(e: ActivityEvent): Array<{ label: string; href: string
     const m = /\/pull\/(\d+)/.exec(prUrl);
     out.push({ label: m ? `#${m[1]}` : "PR", href: prUrl });
   }
+  // crew-transcripts: agent_spoke rows link to the full per-run conversation,
+  // anchored to this message's position in the thread.
+  if (e.event === "agent_spoke" && e.run_id) {
+    const seqRaw = e.payload?.["sequence"];
+    const seq = typeof seqRaw === "number" ? seqRaw : undefined;
+    out.push({
+      label: "transcript",
+      href: seq !== undefined
+        ? `/stage/transcripts/${encodeURIComponent(e.run_id)}#msg-${seq}`
+        : `/stage/transcripts/${encodeURIComponent(e.run_id)}`,
+    });
+  }
   return out;
 }

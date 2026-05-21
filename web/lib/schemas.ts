@@ -363,6 +363,29 @@ export const AgilePanelSchema = z.object({
 });
 export type AgilePanel = z.infer<typeof AgilePanelSchema>;
 
+// ---------- Crew transcripts ----------
+
+export const CrewTranscriptMessageSchema = z.object({
+  id: z.string(),
+  run_id: z.string(),
+  project: z.string(),
+  crew: z.string(),
+  agent_role: z.string(),
+  agent_display_name: z.string().nullable(),
+  sequence: z.number().int().nonnegative(),
+  role_in_conversation: z.enum([
+    "pitch",
+    "rebuttal",
+    "synthesis",
+    "review",
+    "task_output",
+    "other",
+  ]),
+  content: z.string(),
+  created_at: z.string().datetime(),
+});
+export type CrewTranscriptMessage = z.infer<typeof CrewTranscriptMessageSchema>;
+
 // ---------- Spokesperson interviews ----------
 
 export const InterviewCitationSchema = z.object({

@@ -1612,3 +1612,69 @@ export async function listAgilePanel(project?: string): Promise<AgilePanel> {
     })),
   };
 }
+
+// ---------- Crew transcripts ----------
+
+import type { CrewTranscriptMessage } from "./schemas";
+
+function _mapTranscriptRow(payload: Record<string, unknown>): CrewTranscriptMessage {
+  return {
+    id: String(payload.id ?? ""),
+    run_id: String(payload.run_id ?? ""),
+    project: String(payload.project ?? ""),
+    crew: String(payload.crew ?? ""),
+    agent_role: String(payload.agent_role ?? ""),
+    agent_display_name:
+      payload.agent_display_name == null
+        ? null
+        : String(payload.agent_display_name),
+    sequence:
+      typeof payload.sequence === "number"
+        ? payload.sequence
+        : Number(payload.sequence ?? 0),
+    role_in_conversation:
+      (String(payload.role_in_conversation ?? "other") as
+        | "pitch"
+        | "rebuttal"
+        | "synthesis"
+        | "review"
+        | "task_output"
+        | "other"),
+    content: String(payload.content ?? ""),
+    created_at: String(payload.created_at ?? new Date().toISOString()),
+  };
+}
+
+export async function listTranscriptByRun(
+  runId: string,
+): Promise<CrewTranscriptMessage[]> {
+  const s = sql();
+  const hasTable = (await s`
+    SELECT to_regclass('public.crew_transcripts') IS NOT NULL AS ok
+  `) as Array<{ ok: boolean }>;
+  if (!hasTable[0]?.ok) return [];
+  const rows = (await s`
+    SELECT payload FROM crew_transcripts
+    WHERE run_id = ${runId}
+    ORDER BY sequence ASC
+  `) as Array<{ payload: Record<string, unknown> }>;
+  return rows.map(({ payload }) => _mapTranscriptRow(payload));
+}
+
+export async function listTranscriptsForProject(
+  project: string,
+  limit = 50,
+): Promise<CrewTranscriptMessage[]> {
+  const s = sql();
+  const hasTable = (await s`
+    SELECT to_regclass('public.crew_transcripts') IS NOT NULL AS ok
+  `) as Array<{ ok: boolean }>;
+  if (!hasTable[0]?.ok) return [];
+  const rows = (await s`
+    SELECT payload FROM crew_transcripts
+    WHERE project = ${project}
+    ORDER BY created_at DESC
+    LIMIT ${Math.min(Math.max(limit, 1), 200)}
+  `) as Array<{ payload: Record<string, unknown> }>;
+  return rows.map(({ payload }) => _mapTranscriptRow(payload));
+}

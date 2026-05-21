@@ -121,6 +121,8 @@ The dashboard now ships five pages — **🤖 Agents**, **📡 Activity** (live 
 
 `web/` is a Next.js (App Router) operator console that reads from the same Neon Postgres as the Python crews. The home page is the **Live Floor** — every project gets its own panel, every agent appears as a card that breathes when idle and glows when running, the activity stream scrolls underneath. Designed to make a 60-agent org legible at a glance.
 
+The console also includes **Stage** at `/stage`: a stakeholder-friendly view that pins who is speaking now, shows a chat-like transcript of crew activity, and groups live agents into tiered floor huddles.
+
 ```bash
 cd web
 pnpm install
