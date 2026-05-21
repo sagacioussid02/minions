@@ -105,7 +105,16 @@ export function SprintBoard({ initial }: { initial: Board }) {
           />
         ))}
       </div>
-      {selectedTask && <TaskDrawer task={selectedTask} onClose={() => setSelectedTask(null)} />}
+      {selectedTask && (
+        <TaskDrawer
+          task={selectedTask}
+          discussion={
+            board.cards.find((card) => card.decision_id === selectedTask.decision_id)
+              ?.structured_plan?.discussion ?? []
+          }
+          onClose={() => setSelectedTask(null)}
+        />
+      )}
     </div>
   );
 }
@@ -208,6 +217,7 @@ function SprintHeaderStrip({ cards }: { cards: SprintCard[] }) {
           .filter((value): value is number => value !== null)
           .sort((a, b) => b - a)[0];
         const tasks = projectCards.flatMap((card) => card.tasks);
+        const unassigned = tasks.filter((task) => task.status === "unassigned").length;
         const queued = tasks.filter((task) => task.status === "queued").length;
         const review = tasks.filter((task) => task.status === "review").length;
         const blocked = tasks.filter((task) => task.status === "blocked").length;
@@ -226,6 +236,9 @@ function SprintHeaderStrip({ cards }: { cards: SprintCard[] }) {
             </div>
             <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
               <Pill label={`${tasks.length} tasks`} tone="muted" />
+              {unassigned > 0 && (
+                <Pill label={`${unassigned} in backlog`} tone="warn" />
+              )}
               <Pill label={`${queued} queued`} tone="muted" />
               <Pill label={`${review} review`} tone="success" />
               {blocked > 0 && <Pill label={`${blocked} blocked`} tone="danger" />}
@@ -522,22 +535,58 @@ function StructuredPlanMini({
               <ul className="mt-1 space-y-1">
                 {items.slice(0, 3).map((item) => {
                   const task = taskByTitle.get(item.title.toLowerCase());
+                  const isUnassigned = task?.status === "unassigned";
+                  const ownerLabel = task?.owner_display_name
+                    ? task.owner_display_name
+                    : isUnassigned
+                      ? "no owner — picked up automatically"
+                      : null;
+                  const subtaskCount = (item.subtasks || []).length;
                   return (
                     <li key={`${key}-${item.title}`}>
                       <button
                         type="button"
                         disabled={!task}
                         onClick={() => task && onTaskSelect(task)}
-                        className="flex w-full items-center gap-1.5 rounded bg-white/70 px-2 py-1 text-left text-[10px] text-[var(--text-primary)] disabled:cursor-default disabled:opacity-80"
-                        title={item.rationale}
+                        className={`flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-[10px] text-[var(--text-primary)] disabled:cursor-default disabled:opacity-80 ${
+                          isUnassigned
+                            ? "border border-dashed border-amber-300 bg-amber-50/60"
+                            : "bg-white/70"
+                        }`}
+                        title={ownerLabel ? `${item.rationale}\nOwner: ${ownerLabel}` : item.rationale}
                       >
-                        <span className="min-w-0 flex-1 truncate">{item.title}</span>
+                        <span className="min-w-0 flex-1 truncate">
+                          {item.title}
+                          {subtaskCount > 0 && (
+                            <span className="ml-1 text-[9px] text-[var(--text-muted)]">
+                              +{subtaskCount} subtask{subtaskCount === 1 ? "" : "s"}
+                            </span>
+                          )}
+                        </span>
                         <span className="rounded bg-[var(--bg-surface)] px-1 font-mono text-[9px] uppercase text-[var(--text-muted)]">
                           {item.estimated_effort}
                         </span>
                         {task && (
-                          <span className="rounded bg-sky-50 px-1 text-[9px] uppercase text-[var(--accent)]">
-                            {task.status}
+                          <span
+                            className={`rounded px-1 text-[9px] uppercase ${
+                              isUnassigned
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-sky-50 text-[var(--accent)]"
+                            }`}
+                          >
+                            {isUnassigned ? "backlog" : task.status}
+                          </span>
+                        )}
+                        {ownerLabel && (
+                          <span
+                            className={`truncate rounded px-1 text-[9px] ${
+                              isUnassigned
+                                ? "text-amber-800"
+                                : "text-[var(--text-muted)]"
+                            }`}
+                            style={{ maxWidth: "8rem" }}
+                          >
+                            {isUnassigned ? "⏳" : "👤"} {ownerLabel}
                           </span>
                         )}
                       </button>

@@ -1042,7 +1042,8 @@ async function listTasksForDecisions(decisionIds: string[]): Promise<Task[]> {
       pr_number,
       created_at,
       updated_at,
-      completed_at
+      completed_at,
+      payload
     FROM tasks
     WHERE decision_id::text = ANY(${decisionIds})
     ORDER BY created_at ASC
@@ -1056,7 +1057,7 @@ async function listTasksForDecisions(decisionIds: string[]): Promise<Task[]> {
     description: string;
     acceptance_criteria: string | null;
     owner_role: string;
-    owner_agent_id: string;
+    owner_agent_id: string | null;
     owner_display_name: string | null;
     estimated_effort: Task["estimated_effort"];
     status: Task["status"];
@@ -1065,6 +1066,7 @@ async function listTasksForDecisions(decisionIds: string[]): Promise<Task[]> {
     created_at: Date;
     updated_at: Date;
     completed_at: Date | null;
+    payload: Record<string, unknown> | null;
   }>;
   return rows.map(rowToTask);
 }
@@ -1094,7 +1096,8 @@ export async function listTasksForProject(project: string, sprintNumber?: number
       pr_number,
       created_at,
       updated_at,
-      completed_at
+      completed_at,
+      payload
     FROM tasks
     WHERE project = ${project}
       AND (${sprintNumber ?? null}::int IS NULL OR sprint_number = ${sprintNumber ?? null})
@@ -1156,7 +1159,7 @@ function rowToTask(row: {
   description: string;
   acceptance_criteria: string | null;
   owner_role: string;
-  owner_agent_id: string;
+  owner_agent_id: string | null;
   owner_display_name: string | null;
   estimated_effort: Task["estimated_effort"];
   status: Task["status"];
@@ -1165,6 +1168,7 @@ function rowToTask(row: {
   created_at: Date;
   updated_at: Date;
   completed_at: Date | null;
+  payload: Record<string, unknown> | null;
 }): Task {
   return {
     ...row,
@@ -1172,6 +1176,7 @@ function rowToTask(row: {
     created_at: row.created_at.toISOString(),
     updated_at: row.updated_at.toISOString(),
     completed_at: row.completed_at ? row.completed_at.toISOString() : null,
+    payload: row.payload ?? {},
   };
 }
 
@@ -1606,4 +1611,70 @@ export async function listAgilePanel(project?: string): Promise<AgilePanel> {
       created_at: String(payload.created_at ?? new Date().toISOString()),
     })),
   };
+}
+
+// ---------- Crew transcripts ----------
+
+import type { CrewTranscriptMessage } from "./schemas";
+
+function _mapTranscriptRow(payload: Record<string, unknown>): CrewTranscriptMessage {
+  return {
+    id: String(payload.id ?? ""),
+    run_id: String(payload.run_id ?? ""),
+    project: String(payload.project ?? ""),
+    crew: String(payload.crew ?? ""),
+    agent_role: String(payload.agent_role ?? ""),
+    agent_display_name:
+      payload.agent_display_name == null
+        ? null
+        : String(payload.agent_display_name),
+    sequence:
+      typeof payload.sequence === "number"
+        ? payload.sequence
+        : Number(payload.sequence ?? 0),
+    role_in_conversation:
+      (String(payload.role_in_conversation ?? "other") as
+        | "pitch"
+        | "rebuttal"
+        | "synthesis"
+        | "review"
+        | "task_output"
+        | "other"),
+    content: String(payload.content ?? ""),
+    created_at: String(payload.created_at ?? new Date().toISOString()),
+  };
+}
+
+export async function listTranscriptByRun(
+  runId: string,
+): Promise<CrewTranscriptMessage[]> {
+  const s = sql();
+  const hasTable = (await s`
+    SELECT to_regclass('public.crew_transcripts') IS NOT NULL AS ok
+  `) as Array<{ ok: boolean }>;
+  if (!hasTable[0]?.ok) return [];
+  const rows = (await s`
+    SELECT payload FROM crew_transcripts
+    WHERE run_id = ${runId}
+    ORDER BY sequence ASC
+  `) as Array<{ payload: Record<string, unknown> }>;
+  return rows.map(({ payload }) => _mapTranscriptRow(payload));
+}
+
+export async function listTranscriptsForProject(
+  project: string,
+  limit = 50,
+): Promise<CrewTranscriptMessage[]> {
+  const s = sql();
+  const hasTable = (await s`
+    SELECT to_regclass('public.crew_transcripts') IS NOT NULL AS ok
+  `) as Array<{ ok: boolean }>;
+  if (!hasTable[0]?.ok) return [];
+  const rows = (await s`
+    SELECT payload FROM crew_transcripts
+    WHERE project = ${project}
+    ORDER BY created_at DESC
+    LIMIT ${Math.min(Math.max(limit, 1), 200)}
+  `) as Array<{ payload: Record<string, unknown> }>;
+  return rows.map(({ payload }) => _mapTranscriptRow(payload));
 }
