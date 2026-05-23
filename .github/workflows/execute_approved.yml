@@ -1,12 +1,12 @@
 name: Execute approved decisions
 
-# Every 6h. Picks up approved Decisions whose engineer crew has not yet run
+# Every 8h. Picks up approved Decisions whose engineer crew has not yet run
 # and opens draft PRs (capped per invocation). Stays the operator out of the
 # manual `minions implement` loop.
 
 on:
   schedule:
-    - cron: '15 */6 * * *'
+    - cron: '15 */8 * * *'
   workflow_dispatch:
     inputs:
       dry-run:
