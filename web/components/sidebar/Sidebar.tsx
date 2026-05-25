@@ -112,6 +112,22 @@ export function Sidebar({
 }
 
 function CostGauge({ summary }: { summary: CostSummary }) {
+  const hasData = summary.week_to_date_usd > 0 || summary.today_usd > 0;
+  if (!hasData) {
+    return (
+      <div className="rounded-xl border border-[var(--line)] bg-[var(--bg-elevated)] p-4">
+        <div className="mb-2 text-sm uppercase tracking-wider text-[var(--text-muted)]">
+          Spend this week
+        </div>
+        <div className="text-sm text-[var(--text-muted)]">
+          No cost data recorded yet.
+        </div>
+        <div className="mt-1 text-xs text-[var(--text-muted)]">
+          Cap ${summary.week_cap_usd.toFixed(0)}/wk · cost callbacks not firing for CrewAI runs (tracked).
+        </div>
+      </div>
+    );
+  }
   const frac = Math.min(1, summary.fraction_of_week_cap || 0);
   const tone =
     frac >= 0.9
