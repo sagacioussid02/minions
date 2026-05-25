@@ -219,7 +219,7 @@ def _notifier() -> Notifier:
 def _resolve_project(name: str, manifests: dict[str, Manifest]) -> Manifest:
     if name in manifests:
         return manifests[name]
-    # Case-insensitive fallback so `Demo` matches `Demo`.
+    # Case-insensitive fallback so `demo` matches `Demo`.
     for k, v in manifests.items():
         if k.lower() == name.lower():
             return v
@@ -1419,7 +1419,7 @@ def _open_github_client(manifest: Manifest) -> GitHubClient | None:
 
 
 @github_app.command("check")
-def github_check(project: str = typer.Argument(..., help="Project name (e.g., Demo)")) -> None:
+def github_check(project: str = typer.Argument(..., help="Project name (e.g., demo)")) -> None:
     """Verify GitHub connectivity for a project — fetches repo metadata + a few open issues."""
     manifests = load_active_manifests(PROJECTS_DIR)
     manifest = _resolve_project(project, manifests)

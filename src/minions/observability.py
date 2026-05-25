@@ -17,7 +17,7 @@ LANGFUSE_SECRET_KEY=sk-lf-...
 LANGFUSE_HOST=https://cloud.langfuse.com   # or your self-hosted URL (optional)
 ```
 
-Then ``minions langfuse`` to verify, ``minions plan Demo --no-dry-run`` to
+Then ``minions langfuse`` to verify, ``minions plan demo --no-dry-run`` to
 generate your first trace.
 
 ## Why a lazy wrapper

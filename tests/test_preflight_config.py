@@ -70,14 +70,14 @@ def test_report_failed_step_returns_first_failure() -> None:
 
 
 def test_manifest_default_preflight_present() -> None:
-    m = load_manifest(REPO_ROOT / "projects" / "Demo.yaml")
+    m = load_manifest(REPO_ROOT / "projects" / "demo.yaml")
     assert isinstance(m.preflight, PreflightConfig)
     assert m.preflight.enabled is True
     assert m.preflight.install == ""  # autodetect-driven
 
 
 def test_manifest_preflight_override(tmp_path: Path) -> None:
-    src = REPO_ROOT / "projects" / "Demo.yaml"
+    src = REPO_ROOT / "projects" / "demo.yaml"
     data = yaml.safe_load(src.read_text())
     data["preflight"] = {
         "enabled": True,
@@ -86,7 +86,7 @@ def test_manifest_preflight_override(tmp_path: Path) -> None:
         "network": "deny",
         "timeout_seconds": 120,
     }
-    out = tmp_path / "Demo.yaml"
+    out = tmp_path / "demo.yaml"
     out.write_text(yaml.safe_dump(data))
     m = load_manifest(out)
     assert m.preflight.install == "npm ci"
@@ -96,10 +96,10 @@ def test_manifest_preflight_override(tmp_path: Path) -> None:
 
 
 def test_manifest_preflight_disabled(tmp_path: Path) -> None:
-    src = REPO_ROOT / "projects" / "Demo.yaml"
+    src = REPO_ROOT / "projects" / "demo.yaml"
     data = yaml.safe_load(src.read_text())
     data["preflight"] = {"enabled": False}
-    out = tmp_path / "Demo.yaml"
+    out = tmp_path / "demo.yaml"
     out.write_text(yaml.safe_dump(data))
     m = load_manifest(out)
     assert m.preflight.enabled is False
