@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 from rich import print as rprint
@@ -185,8 +186,12 @@ from minions.activity import set_log_path as _set_activity_log_path  # noqa: E40
 _set_activity_log_path(ACTIVITY_LOG_PATH, force_jsonl=False)
 
 
+if TYPE_CHECKING:
+    from minions.approval.store_factory import DecisionStoreLike
+
+
 def _store() -> DecisionStoreLike:
-    from minions.approval.store_factory import DecisionStoreLike, make_decision_store  # noqa: F401
+    from minions.approval.store_factory import make_decision_store
 
     return make_decision_store(DECISION_STORE_PATH)
 
@@ -203,9 +208,7 @@ def _notifier() -> Notifier:
         try:
             password = secrets_module.get_secret("gmail-app-password")
         except SecretNotFound as e:
-            rprint(
-                f"[red]MINIONS_NOTIFIER=gmail but no gmail-app-password secret:[/red] {e}"
-            )
+            rprint(f"[red]MINIONS_NOTIFIER=gmail but no gmail-app-password secret:[/red] {e}")
             rprint("[dim]Falling back to ConsoleNotifier for this run.[/dim]")
             return ConsoleNotifier()
         portfolio = load_portfolio_config(CONFIG_PATH)
@@ -295,9 +298,13 @@ def org() -> None:
     table.add_column("Tier", style="cyan")
 
     for agent in build_shared_agents(portfolio, SHARED_EXECUTIVE, "v0_frugal"):
-        table.add_row("Executive", agent.role.value, agent.display_name or "—", "—", agent.tier.value)
+        table.add_row(
+            "Executive", agent.role.value, agent.display_name or "—", "—", agent.tier.value
+        )
     for agent in build_shared_agents(portfolio, SHARED_SPECIALIST, "v0_frugal"):
-        table.add_row("Specialist", agent.role.value, agent.display_name or "—", "—", agent.tier.value)
+        table.add_row(
+            "Specialist", agent.role.value, agent.display_name or "—", "—", agent.tier.value
+        )
     for agent in build_shared_agents(portfolio, AUDIT, "v0_frugal"):
         table.add_row("Audit", agent.role.value, agent.display_name or "—", "—", agent.tier.value)
     for project_name, manifest in manifests.items():
@@ -321,15 +328,25 @@ def roster(
     if project:
         manifests = {project: _resolve_project(project, manifests)}
     for name, manifest in manifests.items():
-        unnamed = sum(1 for a in build_project_agents(manifest, manifest.cadence_profile) if not a.display_name)
+        unnamed = sum(
+            1
+            for a in build_project_agents(manifest, manifest.cadence_profile)
+            if not a.display_name
+        )
         rprint(
             f"\n[bold]{name}[/bold] (${manifest.monthly_budget_usd}/mo) "
-            + (f"[dim]({unnamed} unnamed seats — edit projects/{name.lower()}.yaml `agents:` to personalize)[/dim]" if unnamed else "[green](all named)[/green]")
+            + (
+                f"[dim]({unnamed} unnamed seats — edit projects/{name.lower()}.yaml `agents:` to personalize)[/dim]"
+                if unnamed
+                else "[green](all named)[/green]"
+            )
         )
         for agent in build_project_agents(manifest, manifest.cadence_profile):
             seat_suffix = f"#{agent.seat_index}" if agent.seat_index > 0 else ""
             display = agent.display_name or "[dim]<unnamed>[/dim]"
-            rprint(f"  - {agent.role.value:24s}{seat_suffix:3s}  {display:28s} → {agent.tier.value}")
+            rprint(
+                f"  - {agent.role.value:24s}{seat_suffix:3s}  {display:28s} → {agent.tier.value}"
+            )
 
 
 @app.command()
@@ -381,12 +398,12 @@ def implement(
         rprint(f"[red]Missing GitHub token:[/red] {e}")
         raise typer.Exit(1) from e
 
-    rprint(
-        f"\n[bold]Engineer crew working on[/bold] [cyan]{decision.summary}[/cyan]"
-    )
+    rprint(f"\n[bold]Engineer crew working on[/bold] [cyan]{decision.summary}[/cyan]")
     rprint(f"  Decision: {decision.id}")
     rprint(f"  Project:  {manifest.name} → {manifest.source.repo}")
-    rprint(f"  Mode:     {'[yellow]DRY RUN[/yellow]' if dry_run else '[red bold]LIVE[/red bold] (will open a real PR)'}\n")
+    rprint(
+        f"  Mode:     {'[yellow]DRY RUN[/yellow]' if dry_run else '[red bold]LIVE[/red bold] (will open a real PR)'}\n"
+    )
 
     from minions.budget import BudgetBreachError
 
@@ -643,11 +660,11 @@ def discover(
                 f"  [green]✓[/green] {o.project} — draft {(o.draft_id or '')[:8]} "
                 f"at {(o.commit_sha or '')[:8]} (freshness was {o.freshness})"
             )
-        elif o.status == "skipped_fresh":
-            rprint(f"  [yellow]⊘[/yellow] {o.project} — {o.reason}")
-        elif o.status == "skipped_target_missing":
-            rprint(f"  [yellow]⊘[/yellow] {o.project} — {o.reason}")
-        elif o.status == "throttled":
+        elif (
+            o.status == "skipped_fresh"
+            or o.status == "skipped_target_missing"
+            or o.status == "throttled"
+        ):
             rprint(f"  [yellow]⊘[/yellow] {o.project} — {o.reason}")
         elif o.status == "verifier_failed":
             rprint(f"  [red]✗[/red] {o.project} — verifier rejected: {o.reason}")
@@ -658,9 +675,7 @@ def discover(
 @dossier_app.command("show")
 def dossier_show(
     project: str = typer.Argument(..., help="Project name (case-insensitive)."),
-    full: bool = typer.Option(
-        False, "--full", help="Print the full dossier markdown body."
-    ),
+    full: bool = typer.Option(False, "--full", help="Print the full dossier markdown body."),
 ) -> None:
     """Print the latest merged dossier for a project, with freshness label."""
     from minions.dossiers.freshness import compute_freshness
@@ -754,9 +769,7 @@ def dossier_freshness() -> None:
 
     for name, manifest in manifests.items():
         latest = store.latest_merged(name)
-        report = compute_freshness(
-            latest, overrides=manifest.dossier.freshness_overrides
-        )
+        report = compute_freshness(latest, overrides=manifest.dossier.freshness_overrides)
         if latest is None:
             table.add_row(name, "—", "—", "—", report.label, report.reason)
         else:
@@ -809,9 +822,7 @@ def backlog_propose(
             rprint(f"[red]Missing API key:[/red] {e}")
             raise typer.Exit(1) from e
 
-    raw = run_backlog_proposer(
-        manifest, latest, api_key=api_key, dry_run=dry_run
-    )
+    raw = run_backlog_proposer(manifest, latest, api_key=api_key, dry_run=dry_run)
     if raw is None:
         rprint(
             f"[yellow]Dry-run: skipped LLM. Re-run with --no-dry-run to "
@@ -867,9 +878,7 @@ def backlog_create(
     if decision is None:
         raise typer.Exit(1)
     if not is_backlog_proposal_decision(decision):
-        rprint(
-            "[red]Decision is not a backlog proposal[/red] — wrong type or missing payload."
-        )
+        rprint("[red]Decision is not a backlog proposal[/red] — wrong type or missing payload.")
         raise typer.Exit(1)
     if decision.status is not DecisionStatus.APPROVED:
         rprint(
@@ -899,9 +908,7 @@ def backlog_create(
         rprint("[red]Failed to open GitHub client.[/red]")
         raise typer.Exit(1)
     with github:
-        outcome = create_issues_for_decision(
-            decision=decision, manifest=manifest, github=github
-        )
+        outcome = create_issues_for_decision(decision=decision, manifest=manifest, github=github)
     rprint(
         f"\n[bold]Backlog create[/bold] — "
         f"created {len(outcome.created)}, "
@@ -952,8 +959,12 @@ def transcripts_show(
         f"[dim]({len(rows)} message(s), run {run_id[:12]})[/dim]\n"
     )
     phase_color = {
-        "pitch": "cyan", "rebuttal": "yellow", "synthesis": "green",
-        "review": "magenta", "task_output": "white", "other": "dim",
+        "pitch": "cyan",
+        "rebuttal": "yellow",
+        "synthesis": "green",
+        "review": "magenta",
+        "task_output": "white",
+        "other": "dim",
     }
     for m in rows:
         color = phase_color.get(m.role_in_conversation, "white")
@@ -988,7 +999,8 @@ def transcripts_list(
         by_run.setdefault(m.run_id, []).append(m)
 
     table = Table(
-        title=f"Recent crew runs · {manifest.name}", show_lines=False,
+        title=f"Recent crew runs · {manifest.name}",
+        show_lines=False,
     )
     table.add_column("run", style="dim")
     table.add_column("crew")
@@ -1079,7 +1091,9 @@ def show_decision(decision_id: str = typer.Argument(...)) -> None:
     rprint(f"[bold]Proposer:[/bold]  {decision.proposer_agent_id} ({decision.proposer_role})")
     rprint(f"[bold]Created:[/bold]   {decision.created_at}")
     if decision.resolved_at is not None:
-        rprint(f"[bold]Resolved:[/bold]  {decision.resolved_at} ({decision.resolved_reason or '—'})")
+        rprint(
+            f"[bold]Resolved:[/bold]  {decision.resolved_at} ({decision.resolved_reason or '—'})"
+        )
     rprint(f"\n[bold]Rationale:[/bold]\n{decision.rationale}")
     rprint(f"\n[bold]Plan:[/bold]\n{decision.diff_or_plan or '(none)'}")
 
@@ -1102,7 +1116,9 @@ def approve_decision(
 @decisions_app.command("approve-all")
 def approve_all_decisions(
     project: str | None = typer.Option(None, "--project", "-p", help="Limit to one project."),
-    risk: str | None = typer.Option(None, "--risk", help="Limit to one risk level (low|medium|high)."),
+    risk: str | None = typer.Option(
+        None, "--risk", help="Limit to one risk level (low|medium|high)."
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
     reason: str | None = typer.Option("operator: bulk approve", "--reason", "-r"),
 ) -> None:
@@ -1150,9 +1166,7 @@ def sweep_decisions(
     if not timed_out:
         rprint(f"[green]No pending decisions older than {timeout_hours:g}h.[/green]")
         return
-    rprint(
-        f"[yellow]Auto-rejected {len(timed_out)} stale decision(s):[/yellow]"
-    )
+    rprint(f"[yellow]Auto-rejected {len(timed_out)} stale decision(s):[/yellow]")
     for d in timed_out:
         rprint(f"  [red]✗[/red] {str(d.id)[:8]} — {d.project} — {d.summary[:60]}")
 
@@ -1184,7 +1198,8 @@ def reject_dry_runs(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
     reason: str | None = typer.Option(
         "operator: dry-run noise — no real plan to execute",
-        "--reason", "-r",
+        "--reason",
+        "-r",
     ),
 ) -> None:
     """Reject every APPROVED Decision whose summary contains ``[DRY RUN]``.
@@ -1227,11 +1242,14 @@ def set_decision_priority(
     decision_id: str = typer.Argument(..., help="Decision id or prefix."),
     level: str = typer.Argument("p1", help="p1 | p2 | p3"),
     expedited: bool = typer.Option(
-        True, "--expedited/--no-expedited",
+        True,
+        "--expedited/--no-expedited",
         help="Mark as expedited to jump ahead of non-expedited work at the same priority.",
     ),
     by: str | None = typer.Option(
-        None, "--by", help="Role requesting the bump (e.g. cto, ceo, operator).",
+        None,
+        "--by",
+        help="Role requesting the bump (e.g. cto, ceo, operator).",
     ),
 ) -> None:
     """Stamp priority/expedited/requested-by on a Decision.
@@ -1284,10 +1302,7 @@ def anthropic_diag() -> None:
             "or run with [bold]MINIONS_DOTENV_OVERRIDE=1[/bold] to flip precedence."
         )
 
-    rprint(
-        f"[bold]Resolved key:[/bold] {api_key[:10]}…{api_key[-4:]} "
-        f"(length {len(api_key)})"
-    )
+    rprint(f"[bold]Resolved key:[/bold] {api_key[:10]}…{api_key[-4:]} (length {len(api_key)})")
     ok, message = anthropic_check.auth_check(api_key)
     if ok:
         rprint(f"[green]✓ {message}[/green]")
@@ -1361,7 +1376,9 @@ def secrets_backends() -> None:
 
 
 @secrets_app.command("check")
-def secrets_check(name: str = typer.Argument(..., help="Secret name (e.g. 'anthropic-api-key')")) -> None:
+def secrets_check(
+    name: str = typer.Argument(..., help="Secret name (e.g. 'anthropic-api-key')"),
+) -> None:
     """Try to retrieve a secret. Reports success without printing the value."""
     try:
         value = secrets_module.get_secret(name)
@@ -1396,9 +1413,7 @@ def _open_github_client(manifest: Manifest) -> GitHubClient | None:
         token = get_github_token()
     except SecretNotFound as e:
         rprint(f"[red]Missing GitHub token:[/red] {e}")
-        rprint(
-            "[dim]Set GITHUB_TOKEN env or create AWS secret minions/github-token.[/dim]"
-        )
+        rprint("[dim]Set GITHUB_TOKEN env or create AWS secret minions/github-token.[/dim]")
         raise typer.Exit(1) from e
     return GitHubClient(token=token, repo=repo)
 
@@ -1481,9 +1496,7 @@ def _find_by_prefix(decision_id: str) -> Decision | None:  # noqa: F821
 
 @cron_app.command("weekly")
 def cron_weekly(
-    dry_run: bool = typer.Option(
-        True, "--dry-run/--no-dry-run", help="Dry run skips LLM calls."
-    ),
+    dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run", help="Dry run skips LLM calls."),
     project: str | None = typer.Option(
         None,
         "--project",
@@ -1492,8 +1505,8 @@ def cron_weekly(
     ),
 ) -> None:
     """Manually trigger the Monday weekly planning sweep."""
-    from minions.agile.store_factory import make_agile_store
     from minions.agents.memory_store_factory import make_agent_memory_store
+    from minions.agile.store_factory import make_agile_store
     from minions.dossiers.store_factory import make_dossier_store
     from minions.scheduled import run_weekly_planning
 
@@ -1579,16 +1592,15 @@ def cron_daily(
 @cron_app.command("discovery")
 def cron_discovery(
     dry_run: bool = typer.Option(
-        True, "--dry-run/--no-dry-run",
-        help="Dry run skips LLM calls. Use --no-dry-run for real discovery runs."
+        True,
+        "--dry-run/--no-dry-run",
+        help="Dry run skips LLM calls. Use --no-dry-run for real discovery runs.",
     ),
     force: bool = typer.Option(
-        False, "--force",
-        help="Run discovery for every project regardless of freshness."
+        False, "--force", help="Run discovery for every project regardless of freshness."
     ),
     project: str | None = typer.Option(
-        None, "--project", "-p",
-        help="Limit the sweep to a single project (case-insensitive)."
+        None, "--project", "-p", help="Limit the sweep to a single project (case-insensitive)."
     ),
 ) -> None:
     """Weekly discovery sweep — runs the discoverer across active projects."""
@@ -1638,8 +1650,7 @@ def cron_crew_heartbeat() -> None:
 
     report = run_crew_heartbeat(projects_dir=PROJECTS_DIR)
     rprint(
-        f"\n[bold]Crew heartbeat[/bold] — "
-        f"checked_in {report.checked_in}, errored {report.errored}"
+        f"\n[bold]Crew heartbeat[/bold] — checked_in {report.checked_in}, errored {report.errored}"
     )
     for o in report.outcomes:
         tag = "[green]✓[/green]" if o.status == "checked_in" else "[red]✗[/red]"
@@ -1672,10 +1683,7 @@ def cron_scrum(
         questions_store=make_question_store(QUESTIONS_PATH),
         dry_run=dry_run,
     )
-    rprint(
-        f"\n[bold]Scrum ritual[/bold] — "
-        f"recorded {report.recorded}, errored {report.errored}"
-    )
+    rprint(f"\n[bold]Scrum ritual[/bold] — recorded {report.recorded}, errored {report.errored}")
     for o in report.outcomes:
         tag = "[green]✓[/green]" if o.status == "recorded" else "[red]✗[/red]"
         line = f"  {tag} {o.project}"
@@ -1690,7 +1698,9 @@ def cron_scrum(
 
 @cron_app.command("friday")
 def cron_friday(
-    send: bool = typer.Option(True, "--send/--no-send", help="Push the digest through the notifier."),
+    send: bool = typer.Option(
+        True, "--send/--no-send", help="Push the digest through the notifier."
+    ),
     days: int = typer.Option(7, "--days", help="Window in days for the digest summary."),
 ) -> None:
     """Manually trigger the Friday weekly digest."""
@@ -1704,16 +1714,16 @@ def cron_friday(
         open_github_client=_open_github_client,
         send=send,
     )
-    rprint(f"\n[dim]Pending {report.pending} · approved {report.approved} · "
-           f"rejected {report.rejected} · executed {report.executed}[/dim]")
+    rprint(
+        f"\n[dim]Pending {report.pending} · approved {report.approved} · "
+        f"rejected {report.rejected} · executed {report.executed}[/dim]"
+    )
     rprint(report.body)
 
 
 @cron_app.command("monthly")
 def cron_monthly(
-    dry_run: bool = typer.Option(
-        True, "--dry-run/--no-dry-run", help="Dry run skips LLM calls."
-    ),
+    dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run", help="Dry run skips LLM calls."),
 ) -> None:
     """Manually trigger the monthly executive portfolio review."""
     from minions.agile.store_factory import make_agile_store
@@ -1759,11 +1769,14 @@ def cron_monthly(
 @cron_app.command("post-deploy-verify")
 def cron_post_deploy_verify(
     dry_run: bool = typer.Option(
-        True, "--dry-run/--no-dry-run",
+        True,
+        "--dry-run/--no-dry-run",
         help="Dry run inspects state but never probes URLs or files revert decisions.",
     ),
     project: str | None = typer.Option(
-        None, "--project", "-p",
+        None,
+        "--project",
+        "-p",
         help="Limit the sweep to a single project (case-insensitive).",
     ),
 ) -> None:
@@ -1801,10 +1814,7 @@ def cron_post_deploy_verify(
             "skipped": "[dim]·[/dim]",
             "error": "[red]✗[/red]",
         }.get(o.status, "?")
-        details = (
-            f"{o.failed_probes}/{o.total_probes} probes failed"
-            if o.total_probes else ""
-        )
+        details = f"{o.failed_probes}/{o.total_probes} probes failed" if o.total_probes else ""
         revert = f"  revert={o.revert_decision_id[:8]}" if o.revert_decision_id else ""
         rprint(
             f"  {icon} {o.project} sha={(o.merge_sha or '?')[:8]} "
@@ -1815,12 +1825,14 @@ def cron_post_deploy_verify(
 @cron_app.command("pr-owner-sweep")
 def cron_pr_owner_sweep(
     dry_run: bool = typer.Option(
-        True, "--dry-run/--no-dry-run",
+        True,
+        "--dry-run/--no-dry-run",
         help="Dry run inspects state + reports what would happen but never "
         "dispatches the engineer crew, never writes Question Records.",
     ),
     max_dispatches: int = typer.Option(
-        5, "--max-dispatches",
+        5,
+        "--max-dispatches",
         help="Max number of engineer-crew dispatches per sweep tick.",
     ),
 ) -> None:
@@ -1886,19 +1898,20 @@ def cron_execute_approved(
         5, "--max-runs", help="Hard cap on engineer-crew runs per invocation."
     ),
     only_expedited: bool = typer.Option(
-        False, "--only-expedited",
+        False,
+        "--only-expedited",
         help="Fast lane: process only expedited approved Decisions (skip backlog). "
-             "Use for out-of-cadence triggers (workflow_dispatch / manual) when a "
-             "CTO investigation or PR-fix can't wait for the 6-hour cron.",
+        "Use for out-of-cadence triggers (workflow_dispatch / manual) when a "
+        "CTO investigation or PR-fix can't wait for the 6-hour cron.",
     ),
 ) -> None:
     """Run the engineer crew on approved Decisions, priority-ordered, capped.
 
     Ordering: p1 → p2 → p3, expedited-first within each tier, then FIFO.
     """
+    from minions.agents.memory_store_factory import make_agent_memory_store
     from minions.crews.engineer_runs_store_factory import make_engineer_runs_store
     from minions.scheduled import run_execute_approved
-    from minions.agents.memory_store_factory import make_agent_memory_store
     from minions.tasks.store_factory import make_task_store
 
     api_key: str | None = None
@@ -1979,7 +1992,11 @@ def list_questions(
     from minions.questions import make_question_store
 
     store = make_question_store(QUESTIONS_PATH)
-    qs = store.list_all() if status.lower() == "all" else store.list_by_status(QuestionStatus(status.lower()))
+    qs = (
+        store.list_all()
+        if status.lower() == "all"
+        else store.list_by_status(QuestionStatus(status.lower()))
+    )
     if not qs:
         rprint(f"[dim]no questions matching status={status}[/dim]")
         return
@@ -2027,7 +2044,9 @@ def show_question(question_id: str = typer.Argument(...)) -> None:
     if q.answer:
         rprint(f"\n[bold]Answer ({q.answered_by}):[/bold]\n{q.answer}")
     if q.escalated_at:
-        rprint(f"\n[yellow]Escalated[/yellow] at {q.escalated_at}: {q.escalation_reason or '(no reason given)'}")
+        rprint(
+            f"\n[yellow]Escalated[/yellow] at {q.escalated_at}: {q.escalation_reason or '(no reason given)'}"
+        )
 
 
 @questions_app.command("answer")
@@ -2092,7 +2111,9 @@ def ask_pm(
         rprint(f"[yellow]Escalated action owner:[/yellow] {record.escalated_to}")
 
 
-sprints_app = typer.Typer(no_args_is_help=True, help="Per-project sprint counter inspection + backfill.")
+sprints_app = typer.Typer(
+    no_args_is_help=True, help="Per-project sprint counter inspection + backfill."
+)
 app.add_typer(sprints_app, name="sprints")
 tasks_app = typer.Typer(no_args_is_help=True, help="Inspect refined sprint Tasks.")
 app.add_typer(tasks_app, name="tasks")
@@ -2104,8 +2125,12 @@ app.add_typer(agents_app, name="agents")
 def tasks_list(
     project: str | None = typer.Option(None, "--project", "-p"),
     sprint: int | None = typer.Option(None, "--sprint", "-s"),
-    owner: str | None = typer.Option(None, "--owner", help="Filter by owner agent_id, e.g. engineer@Demo"),
-    status: str | None = typer.Option(None, "--status", help="queued|in_progress|review|done|blocked|cancelled"),
+    owner: str | None = typer.Option(
+        None, "--owner", help="Filter by owner agent_id, e.g. engineer@Demo"
+    ),
+    status: str | None = typer.Option(
+        None, "--status", help="queued|in_progress|review|done|blocked|cancelled"
+    ),
 ) -> None:
     """Show Tasks with optional filters."""
     from minions.tasks.store_factory import make_task_store
@@ -2134,9 +2159,14 @@ def tasks_list(
     for t in rows:
         owner_label = t.owner_display_name or t.owner_agent_id
         table.add_row(
-            str(t.id)[:8] + "…", t.project,
+            str(t.id)[:8] + "…",
+            t.project,
             str(t.sprint_number) if t.sprint_number is not None else "—",
-            t.category, t.title[:48], owner_label, t.status, t.estimated_effort,
+            t.category,
+            t.title[:48],
+            owner_label,
+            t.status,
+            t.estimated_effort,
         )
     console.print(table)
 
@@ -2154,7 +2184,9 @@ def tasks_show(task_id: str = typer.Argument(...)) -> None:
     t = rows[0]
     rprint(f"[bold]ID:[/bold]        {t.id}")
     rprint(f"[bold]Project:[/bold]   {t.project}  ·  Sprint {t.sprint_number}")
-    rprint(f"[bold]Category:[/bold]  {t.category}  ·  effort {t.estimated_effort}  ·  status {t.status}")
+    rprint(
+        f"[bold]Category:[/bold]  {t.category}  ·  effort {t.estimated_effort}  ·  status {t.status}"
+    )
     rprint(f"[bold]Owner:[/bold]     {t.owner_display_name or '—'}  ({t.owner_agent_id})")
     rprint(f"[bold]Decision:[/bold]  {t.decision_id}")
     rprint(f"\n[bold]Title:[/bold]\n{t.title}")
@@ -2195,7 +2227,7 @@ def agents_name(
     except ValueError as e:
         rprint(f"[red]{e}[/red]")
         raise typer.Exit(1) from e
-    rprint(f"[green]✓[/green] {agent_id} → \"{display_name}\"")
+    rprint(f'[green]✓[/green] {agent_id} → "{display_name}"')
 
 
 @sprints_app.command("status")
@@ -2238,7 +2270,8 @@ def sprints_backfill(
     store = _store()
     all_decisions = store.list_all()
     candidates = [
-        d for d in all_decisions
+        d
+        for d in all_decisions
         if d.project.lower() == project.lower()
         and d.type.value == "feature"
         and "sprint proposal" in (d.summary or "").lower()
@@ -2255,12 +2288,10 @@ def sprints_backfill(
         default=-1,
     )
     start = last_assigned + 1
-    rprint(
-        f"[bold]{len(pending)} Decision(s) to stamp[/bold] starting at Sprint {start}:"
-    )
+    rprint(f"[bold]{len(pending)} Decision(s) to stamp[/bold] starting at Sprint {start}:")
     for i, d in enumerate(pending):
         rprint(f"  · {str(d.id)[:8]} → Sprint {start + i} ({d.summary[:60]})")
-    if not yes and not typer.confirm(f"\nProceed?", default=False):
+    if not yes and not typer.confirm("\nProceed?", default=False):
         rprint("[yellow]Aborted.[/yellow]")
         raise typer.Exit(1)
 
@@ -2273,7 +2304,9 @@ def sprints_backfill(
     # Bump until the counter matches; idempotent enough for one-off use.
     while (counter.current(project) or -1) < final_number:
         counter.bump(project)
-    rprint(f"[green]✓ stamped {len(pending)} Decision(s); counter now at {counter.current(project)}.[/green]")
+    rprint(
+        f"[green]✓ stamped {len(pending)} Decision(s); counter now at {counter.current(project)}.[/green]"
+    )
 
 
 @app.command("spokesperson-backfill")
@@ -2344,11 +2377,15 @@ def ask_executive(
     ),
     question: str = typer.Argument(..., help="What you want to ask."),
     project: str | None = typer.Option(
-        None, "--project", "-p",
+        None,
+        "--project",
+        "-p",
         help="Scope to one project. Omit for portfolio-level questions.",
     ),
     thread_id: str | None = typer.Option(
-        None, "--thread", "-t",
+        None,
+        "--thread",
+        "-t",
         help="Continue an existing thread (multi-turn conversation).",
     ),
 ) -> None:
@@ -2372,10 +2409,7 @@ def ask_executive(
 
     normalized = normalize_role(role)
     if normalized not in SPOKESPERSON_ROLES:
-        rprint(
-            f"[red]Unknown role:[/red] {role!r}. "
-            f"Allowed: {', '.join(SPOKESPERSON_ROLES)}."
-        )
+        rprint(f"[red]Unknown role:[/red] {role!r}. Allowed: {', '.join(SPOKESPERSON_ROLES)}.")
         raise typer.Exit(1)
 
     manifests = load_active_manifests(PROJECTS_DIR)
@@ -2407,12 +2441,9 @@ def ask_executive(
         labels = [c.label for c in answer.citations[:8]]
         rprint("[dim]Citations: " + ", ".join(labels) + "[/dim]")
     if result.task:
-        rprint(
-            f"\n[yellow]Follow-up proposal:[/yellow] {result.task.title}"
-        )
+        rprint(f"\n[yellow]Follow-up proposal:[/yellow] {result.task.title}")
     rprint(
-        f"\n[dim]Continue this thread: "
-        f"`minions ask {role} \"...\" --thread {result.thread.id}`[/dim]"
+        f'\n[dim]Continue this thread: `minions ask {role} "..." --thread {result.thread.id}`[/dim]'
     )
 
 
@@ -2480,9 +2511,9 @@ def cron_refine_approved() -> None:
     )
     for o in report.outcomes:
         tag = {
-            "refined":  "[green]✓[/green]",
-            "skipped":  "[dim]·[/dim]",
-            "error":    "[red]✗[/red]",
+            "refined": "[green]✓[/green]",
+            "skipped": "[dim]·[/dim]",
+            "error": "[red]✗[/red]",
         }[o.status]
         line = f"  {tag} {o.project} ({o.decision_id[:8]})"
         if o.task_count:
@@ -2523,9 +2554,10 @@ def cron_branch_sweep(
         help="Dry run reports 'would_delete' without touching branches.",
     ),
     min_age_minutes: int = typer.Option(
-        30, "--min-age-minutes",
+        30,
+        "--min-age-minutes",
         help="Skip branches whose tip commit is younger than this (protects "
-             "active runs that have not opened their PR yet).",
+        "active runs that have not opened their PR yet).",
     ),
 ) -> None:
     """Garbage-collect stranded ``minions/eng/*`` branches.
@@ -2843,9 +2875,7 @@ def audit_list(
     table.add_column("Auditor")
     table.add_column("Summary")
     for f in sorted(findings, key=lambda x: x.created_at, reverse=True):
-        sev_color = {"high": "red", "medium": "yellow", "advisory": "cyan"}.get(
-            f.severity, "white"
-        )
+        sev_color = {"high": "red", "medium": "yellow", "advisory": "cyan"}.get(f.severity, "white")
         table.add_row(
             str(f.id)[:8],
             f.created_at.strftime("%m-%d %H:%M"),
@@ -2873,9 +2903,7 @@ def audit_show(finding_id: str = typer.Argument(...)) -> None:
             rprint(f"  {m.id}")
         raise typer.Exit(1)
     f = matches[0]
-    sev_color = {"high": "red", "medium": "yellow", "advisory": "cyan"}.get(
-        f.severity, "white"
-    )
+    sev_color = {"high": "red", "medium": "yellow", "advisory": "cyan"}.get(f.severity, "white")
     rprint(f"\n[bold]{f.summary}[/bold]")
     rprint(
         f"[dim]id:[/dim]      {f.id}\n"
@@ -2933,8 +2961,7 @@ def db_status() -> None:
     if not has_database_url():
         rprint("[yellow]No database URL configured.[/yellow]")
         rprint(
-            "[dim]Set MINIONS_DATABASE_URL or DATABASE_URL, or store secret "
-            "'database-url'.[/dim]"
+            "[dim]Set MINIONS_DATABASE_URL or DATABASE_URL, or store secret 'database-url'.[/dim]"
         )
         raise typer.Exit(1)
 

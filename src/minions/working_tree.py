@@ -59,8 +59,7 @@ def resolve_working_tree(
         if local.is_dir():
             return local
         logger.info(
-            "manifest %s: source.path %s does not exist on this host; "
-            "falling back to clone of %s",
+            "manifest %s: source.path %s does not exist on this host; falling back to clone of %s",
             manifest.name,
             local,
             src.repo,

@@ -50,8 +50,7 @@ class AgentLearningStore:
 
     def list_all(self, include_inactive: bool = False) -> list[AgentLearningRecord]:
         records = [
-            AgentLearningRecord.model_validate(raw)
-            for raw in self._load()["records"].values()
+            AgentLearningRecord.model_validate(raw) for raw in self._load()["records"].values()
         ]
         if not include_inactive:
             records = [record for record in records if _is_active(record)]
@@ -84,8 +83,7 @@ class AgentLearningStore:
             records = [
                 record
                 for record in records
-                if record.project == project
-                or (include_global and record.project is None)
+                if record.project == project or (include_global and record.project is None)
             ]
         if kind is not None:
             records = [record for record in records if record.kind == kind]

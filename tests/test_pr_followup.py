@@ -6,12 +6,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from minions.approval.store import DecisionStore
 from minions.crews.engineer import EngineerResult
 from minions.crews.engineer_runs_store import EngineerRunRecord, EngineerRunStore
-from minions.models.decision import DecisionStatus, DecisionType
+from minions.models.decision import DecisionStatus
 from minions.notify.base import Notifier
 from minions.scheduled.pr_followup import run_pr_followup
 
@@ -37,7 +35,7 @@ class _FakeGH:
         self.ci_for = ci_for
         self.comments: list[tuple[int, str]] = []
 
-    def __enter__(self) -> "_FakeGH":
+    def __enter__(self) -> _FakeGH:
         return self
 
     def __exit__(self, *_: Any) -> None:
@@ -181,7 +179,7 @@ def test_dry_run_does_not_persist_decision_or_comment(tmp_path: Path) -> None:
 
     gh = _FakeGH(ci_for={9: ("failure", None)})
 
-    report = run_pr_followup(
+    run_pr_followup(
         projects_dir=PROJECTS_DIR,
         store=decisions,
         engineer_runs_store=runs,

@@ -34,7 +34,15 @@ def test_cto_request_auto_promotes_to_p1_expedited() -> None:
 
 
 def test_ceo_and_md_also_p1() -> None:
-    for role in ("ceo", "md", "managing_director", "chair", "board", "chief_product_officer", "coo"):
+    for role in (
+        "ceo",
+        "md",
+        "managing_director",
+        "chair",
+        "board",
+        "chief_product_officer",
+        "coo",
+    ):
         d = Decision(**_base_kwargs(requested_by_role=role))
         assert d.priority == "p1", role
         assert d.expedited is True, role
@@ -42,8 +50,13 @@ def test_ceo_and_md_also_p1() -> None:
 
 def test_principal_and_pm_are_p2_expedited() -> None:
     for role in (
-        "principal", "principal_engineer", "pm", "product_manager",
-        "portfolio_owner", "security_champion", "spokesperson",
+        "principal",
+        "principal_engineer",
+        "pm",
+        "product_manager",
+        "portfolio_owner",
+        "security_champion",
+        "spokesperson",
     ):
         d = Decision(**_base_kwargs(requested_by_role=role))
         assert d.priority == "p2", role

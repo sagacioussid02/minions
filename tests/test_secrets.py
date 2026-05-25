@@ -17,7 +17,6 @@ from minions.secrets import (
     get_token_signing_key,
 )
 
-
 # ---------- EnvBackend ----------
 
 

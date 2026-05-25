@@ -110,7 +110,7 @@ class HeadcountLimits(BaseModel):
 class HealthCheck(BaseModel):
     """One probe against the deployed site after a merge."""
 
-    path: str                                       # "/" or "/api/health"
+    path: str  # "/" or "/api/health"
     expect_status: int = 200
     expect_body_contains: str | None = None
     timeout_seconds: float = 10.0
@@ -127,7 +127,7 @@ class DeployConfig(BaseModel):
     ``risk=high`` Decision proposing rollback.
     """
 
-    target: str = "none"                            # "vercel" | "generic" | "none"
+    target: str = "none"  # "vercel" | "fly" | "render" | "none"
     production_url: str | None = None
     health_checks: list[HealthCheck] = Field(default_factory=list)
     # When True the verifier also fetches the first N <img src="…"> URLs

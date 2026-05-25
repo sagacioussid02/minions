@@ -21,20 +21,25 @@ def _plan() -> StructuredSprintPlan:
     return StructuredSprintPlan(
         goal="Ship audit log v2",
         features=[
-            PlanItem(title="Audit search endpoint", rationale="ops asked",
-                     acceptance_criteria="paginated", estimated_effort="m",
-                     suggested_owner_role="engineer"),
+            PlanItem(
+                title="Audit search endpoint",
+                rationale="ops asked",
+                acceptance_criteria="paginated",
+                estimated_effort="m",
+                suggested_owner_role="engineer",
+            ),
             PlanItem(title="Per-user drilldown", estimated_effort="l"),  # no suggested owner
         ],
         bugs=[
-            PlanItem(title="Cron noise", estimated_effort="s",
-                     suggested_owner_role="cloud_devops"),
+            PlanItem(title="Cron noise", estimated_effort="s", suggested_owner_role="cloud_devops"),
         ],
         ops=[
             PlanItem(title="Promote staging", estimated_effort="m"),  # default: cloud_devops
         ],
         docs=[
-            PlanItem(title="Update runbook", estimated_effort="xs"),  # default: documentation_engineer
+            PlanItem(
+                title="Update runbook", estimated_effort="xs"
+            ),  # default: documentation_engineer
         ],
     )
 
@@ -78,7 +83,9 @@ def test_owner_resolution_prefers_suggested_role(tmp_path: Path) -> None:
     # no suggested → category default (feature → engineer). Round-robin
     # picks the next free engineer seat (post-Phase-C multi-seat).
     assert by_title["Per-user drilldown"].owner_agent_id in {
-        "engineer@Demo", "engineer@Demo#1", "engineer@Demo#2",
+        "engineer@Demo",
+        "engineer@Demo#1",
+        "engineer@Demo#2",
     }
     # ops default
     assert by_title["Promote staging"].owner_agent_id == "cloud_devops@shared"
@@ -138,6 +145,7 @@ def test_naming_list_all(tmp_path: Path) -> None:
 
 # -- Phase B: subtask expansion ------------------------------------------------
 
+
 def test_subtasks_expand_to_one_task_each(tmp_path: Path) -> None:
     store = TaskStore(tmp_path / "tasks.json")
     plan = StructuredSprintPlan(
@@ -160,8 +168,9 @@ def test_subtasks_expand_to_one_task_each(tmp_path: Path) -> None:
     titles = [t.title for t in tasks]
     assert all(t.startswith("[Calculate Stripe totals server-side] ") for t in titles)
     # Parent linkage preserved on Task.payload for the UI drawer.
-    assert all(t.payload.get("parent_plan_item") == "Calculate Stripe totals server-side"
-               for t in tasks)
+    assert all(
+        t.payload.get("parent_plan_item") == "Calculate Stripe totals server-side" for t in tasks
+    )
 
 
 def test_subtask_overflow_falls_back_to_parents(tmp_path: Path) -> None:
@@ -202,6 +211,7 @@ def test_item_without_subtasks_behaves_as_before(tmp_path: Path) -> None:
 
 # -- Phase D: WIP cap + unassigned + load balancing ----------------------------
 
+
 def test_wip_cap_produces_unassigned_task(tmp_path: Path, monkeypatch) -> None:
     """When every eligible candidate is at MAX_WIP, Task lands unassigned.
 
@@ -209,6 +219,7 @@ def test_wip_cap_produces_unassigned_task(tmp_path: Path, monkeypatch) -> None:
     distributes across all 3 seats first, then overflows to unassigned.
     """
     import minions.crews.refinement as ref
+
     monkeypatch.setattr(ref, "MAX_WIP_PER_AGENT", 1)
 
     store = TaskStore(tmp_path / "tasks.json")
@@ -216,8 +227,7 @@ def test_wip_cap_produces_unassigned_task(tmp_path: Path, monkeypatch) -> None:
     plan = StructuredSprintPlan(
         goal="overload",
         features=[
-            PlanItem(title=f"feat {chr(65 + i)}", suggested_owner_role="engineer")
-            for i in range(5)
+            PlanItem(title=f"feat {chr(65 + i)}", suggested_owner_role="engineer") for i in range(5)
         ],
     )
     decision = _approved_sprint_decision(plan)
@@ -230,7 +240,9 @@ def test_wip_cap_produces_unassigned_task(tmp_path: Path, monkeypatch) -> None:
     assert len(unassigned) == 2
     # The 3 queued ones each landed on a distinct seat.
     assert {t.owner_agent_id for t in queued} == {
-        "engineer@Demo", "engineer@Demo#1", "engineer@Demo#2",
+        "engineer@Demo",
+        "engineer@Demo#1",
+        "engineer@Demo#2",
     }
     # The unassigned ones have no owner.
     assert all(t.owner_agent_id is None for t in unassigned)
@@ -239,9 +251,11 @@ def test_wip_cap_produces_unassigned_task(tmp_path: Path, monkeypatch) -> None:
 
 # -- Phase C: multi-seat roster + round-robin ---------------------------------
 
+
 def test_eligible_candidates_single_seat_default() -> None:
     """Roles without a seat declaration return the singleton base id."""
     from minions.crews.refinement import _eligible_candidates
+
     # `manager` has default 1 seat on Demo (no override in manifest).
     assert _eligible_candidates("manager", "Demo") == ["manager@Demo"]
 
@@ -249,6 +263,7 @@ def test_eligible_candidates_single_seat_default() -> None:
 def test_eligible_candidates_engineer_multi_seat() -> None:
     """Engineer reads `Manifest.team.engineers` (default 3)."""
     from minions.crews.refinement import _eligible_candidates
+
     # All seed projects ship engineers=3 by default in TeamOverrides.
     candidates = _eligible_candidates("engineer", "Demo")
     assert candidates == ["engineer@Demo", "engineer@Demo#1", "engineer@Demo#2"]
@@ -259,10 +274,7 @@ def test_round_robin_distributes_across_engineer_seats(tmp_path: Path) -> None:
     store = TaskStore(tmp_path / "tasks.json")
     plan = StructuredSprintPlan(
         goal="lots of feature work",
-        features=[
-            PlanItem(title=f"feat-{i}", suggested_owner_role="engineer")
-            for i in range(6)
-        ],
+        features=[PlanItem(title=f"feat-{i}", suggested_owner_role="engineer") for i in range(6)],
     )
     decision = _approved_sprint_decision(plan)
     tasks = refine_decision(decision, task_store=store)
@@ -278,6 +290,7 @@ def test_round_robin_distributes_across_engineer_seats(tmp_path: Path) -> None:
 def test_naming_fallback_for_unseeded_seat(tmp_path: Path) -> None:
     """When `engineer@Demo#9` isn't seeded, fall back to the base name + suffix."""
     from minions.agents.naming import resolve_display_name
+
     path = tmp_path / "names.yaml"
     set_display_name("engineer@Demo", "Sasha", path=path)
     assert resolve_display_name("engineer@Demo#9", path=path) == "Sasha #9"
@@ -286,6 +299,7 @@ def test_naming_fallback_for_unseeded_seat(tmp_path: Path) -> None:
 def test_naming_seeded_seat_uses_distinct_name(tmp_path: Path) -> None:
     """An explicit `engineer@Demo#1: Vera` registry entry wins over the fallback."""
     from minions.agents.naming import resolve_display_name
+
     path = tmp_path / "names.yaml"
     set_display_name("engineer@Demo", "Sasha", path=path)
     set_display_name("engineer@Demo#1", "Vera", path=path)

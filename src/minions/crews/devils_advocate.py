@@ -48,7 +48,7 @@ def attach_critique(
     decision: Decision,
     *,
     api_key: str | None = None,
-    portfolio: "PortfolioConfig | None" = None,
+    portfolio: PortfolioConfig | None = None,
     output_override: DevilsAdvocateCritique | None = None,
     memory_store: object | None = None,
 ) -> DevilsAdvocateCritique | None:
@@ -106,7 +106,7 @@ def critique(
     decision: Decision,
     *,
     api_key: str | None = None,
-    portfolio: "PortfolioConfig | None" = None,
+    portfolio: PortfolioConfig | None = None,
     output_override: DevilsAdvocateCritique | None = None,
 ) -> DevilsAdvocateCritique | None:
     """Generate a Devil's Advocate critique for a proposed Decision.
@@ -158,7 +158,7 @@ def critique(
         {decision.rationale}
 
         Plan:
-        {decision.diff_or_plan or '(none)'}
+        {decision.diff_or_plan or "(none)"}
 
         ## Your task
         Produce a DevilsAdvocateCritique with three fields:

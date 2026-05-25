@@ -79,8 +79,7 @@ class PostgresAgileStore:
                 cur.execute("SELECT payload FROM agile_rituals ORDER BY created_at DESC")
             else:
                 cur.execute(
-                    "SELECT payload FROM agile_rituals WHERE project = %s "
-                    "ORDER BY created_at DESC",
+                    "SELECT payload FROM agile_rituals WHERE project = %s ORDER BY created_at DESC",
                     (project,),
                 )
             rows = cur.fetchall()
@@ -135,8 +134,7 @@ class PostgresAgileStore:
                 cur.execute("SELECT payload FROM pm_answers ORDER BY created_at DESC")
             else:
                 cur.execute(
-                    "SELECT payload FROM pm_answers WHERE project = %s "
-                    "ORDER BY created_at DESC",
+                    "SELECT payload FROM pm_answers WHERE project = %s ORDER BY created_at DESC",
                     (project,),
                 )
             rows = cur.fetchall()

@@ -58,9 +58,7 @@ def parse_sections(markdown: str) -> dict[str, str]:
 
     out: dict[str, str] = {}
     for i, (line_idx, key) in enumerate(header_positions):
-        next_line = (
-            header_positions[i + 1][0] if i + 1 < len(header_positions) else len(lines)
-        )
+        next_line = header_positions[i + 1][0] if i + 1 < len(header_positions) else len(lines)
         section_body = "\n".join(lines[line_idx + 1 : next_line]).strip()
         if section_body:
             out[key] = section_body
@@ -106,15 +104,9 @@ def digest_from_draft(
         freshness=freshness.label,
         hot_spots_md=_truncate(sections.get("hot_spots", ""), limit=_MAX_FOCUS_CHARS),
         tech_debt_md=_truncate(sections.get("tech_debt", ""), limit=_MAX_FOCUS_CHARS),
-        recent_incidents_md=_truncate(
-            sections.get("incidents", ""), limit=_MAX_FOCUS_CHARS
-        ),
-        open_questions_md=_truncate(
-            sections.get("questions", ""), limit=_MAX_FOCUS_CHARS
-        ),
-        architecture_summary=_truncate(
-            sections.get("architecture", ""), limit=_MAX_PROSE_CHARS
-        ),
+        recent_incidents_md=_truncate(sections.get("incidents", ""), limit=_MAX_FOCUS_CHARS),
+        open_questions_md=_truncate(sections.get("questions", ""), limit=_MAX_FOCUS_CHARS),
+        architecture_summary=_truncate(sections.get("architecture", ""), limit=_MAX_PROSE_CHARS),
         data_summary=_truncate(sections.get("data", ""), limit=_MAX_PROSE_CHARS),
         infra_summary=_truncate(sections.get("infra", ""), limit=_MAX_PROSE_CHARS),
     )

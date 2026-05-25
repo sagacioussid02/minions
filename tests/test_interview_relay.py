@@ -34,35 +34,53 @@ def _result(**overrides: Any) -> EngineerResult:
 
 def test_relay_no_op_when_not_spike(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(interview_relay, "has_database_url", lambda: True)
-    monkeypatch.setattr(interview_relay, "_load_decision_payload",
-                        lambda decision_id: {"spike_source": None})
-    assert interview_relay.relay_spike_answer(
-        decision_id="abc", project="demo_four", engineer_result=_result(),
-    ) is None
+    monkeypatch.setattr(
+        interview_relay, "_load_decision_payload", lambda decision_id: {"spike_source": None}
+    )
+    assert (
+        interview_relay.relay_spike_answer(
+            decision_id="abc",
+            project="demo_four",
+            engineer_result=_result(),
+        )
+        is None
+    )
 
 
 def test_relay_no_op_when_missing_thread_id(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(interview_relay, "has_database_url", lambda: True)
     monkeypatch.setattr(
-        interview_relay, "_load_decision_payload",
+        interview_relay,
+        "_load_decision_payload",
         lambda decision_id: {"spike_source": "spokesperson_interview", "question": "Q"},
     )
-    assert interview_relay.relay_spike_answer(
-        decision_id="abc", project="demo_four", engineer_result=_result(),
-    ) is None
+    assert (
+        interview_relay.relay_spike_answer(
+            decision_id="abc",
+            project="demo_four",
+            engineer_result=_result(),
+        )
+        is None
+    )
 
 
 def test_relay_no_op_when_no_database(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(interview_relay, "has_database_url", lambda: False)
-    assert interview_relay.relay_spike_answer(
-        decision_id="abc", project="demo_four", engineer_result=_result(),
-    ) is None
+    assert (
+        interview_relay.relay_spike_answer(
+            decision_id="abc",
+            project="demo_four",
+            engineer_result=_result(),
+        )
+        is None
+    )
 
 
 def test_relay_inserts_when_thread_present(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(interview_relay, "has_database_url", lambda: True)
     monkeypatch.setattr(
-        interview_relay, "_load_decision_payload",
+        interview_relay,
+        "_load_decision_payload",
         lambda decision_id: {
             "spike_source": "spokesperson_interview",
             "thread_id": "11111111-1111-1111-1111-111111111111",
@@ -74,8 +92,9 @@ def test_relay_inserts_when_thread_present(monkeypatch: pytest.MonkeyPatch) -> N
     )
     captured: dict[str, Any] = {}
 
-    def fake_insert(*, message_id: str, thread_id: str, agent_role: str,
-                    payload: dict[str, Any]) -> None:
+    def fake_insert(
+        *, message_id: str, thread_id: str, agent_role: str, payload: dict[str, Any]
+    ) -> None:
         captured["message_id"] = message_id
         captured["thread_id"] = thread_id
         captured["agent_role"] = agent_role
@@ -84,7 +103,9 @@ def test_relay_inserts_when_thread_present(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(interview_relay, "_insert_message_and_touch_thread", fake_insert)
 
     msg_id = interview_relay.relay_spike_answer(
-        decision_id="abc", project="demo_four", engineer_result=_result(),
+        decision_id="abc",
+        project="demo_four",
+        engineer_result=_result(),
     )
 
     assert msg_id is not None

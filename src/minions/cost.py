@@ -267,9 +267,7 @@ def _pg_read_log() -> list[CostEntry]:
 # ---------------------------------------------------------------------------
 
 
-def cost_by_project(
-    *, since: datetime | None = None, path: Path | None = None
-) -> dict[str, float]:
+def cost_by_project(*, since: datetime | None = None, path: Path | None = None) -> dict[str, float]:
     """Sum costs per project, optionally filtered to entries on/after ``since``."""
     out: dict[str, float] = {}
     for e in read_log(path):

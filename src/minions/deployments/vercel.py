@@ -19,9 +19,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-VercelState = Literal[
-    "BUILDING", "READY", "ERROR", "CANCELED", "QUEUED", "INITIALIZING", "UNKNOWN"
-]
+VercelState = Literal["BUILDING", "READY", "ERROR", "CANCELED", "QUEUED", "INITIALIZING", "UNKNOWN"]
 TERMINAL_STATES: frozenset[str] = frozenset({"READY", "ERROR", "CANCELED"})
 
 _API = "https://api.vercel.com"
@@ -30,12 +28,12 @@ _API = "https://api.vercel.com"
 @dataclass(frozen=True)
 class VercelDeployment:
     id: str
-    state: str                  # see VercelState
-    url: str                    # default *.vercel.app preview/prod url
+    state: str  # see VercelState
+    url: str  # default *.vercel.app preview/prod url
     inspector_url: str | None
-    created_at: int             # ms since epoch
-    target: str | None          # "production" | "preview" | None
-    meta_sha: str | None        # commit sha from githubCommitSha
+    created_at: int  # ms since epoch
+    target: str | None  # "production" | "preview" | None
+    meta_sha: str | None  # commit sha from githubCommitSha
 
 
 def find_deployment_by_sha(
@@ -116,8 +114,13 @@ def wait_until_terminal(
         time.sleep(poll_seconds)
     if last is None:
         last = VercelDeployment(
-            id=deployment_id, state="UNKNOWN", url="",
-            inspector_url=None, created_at=0, target=None, meta_sha=None,
+            id=deployment_id,
+            state="UNKNOWN",
+            url="",
+            inspector_url=None,
+            created_at=0,
+            target=None,
+            meta_sha=None,
         )
     return last
 

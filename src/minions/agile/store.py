@@ -46,8 +46,7 @@ class AgileStore:
 
     def list_rituals(self, project: str | None = None) -> list[AgileRitualRecord]:
         records = [
-            AgileRitualRecord.model_validate(raw)
-            for raw in self._load()["rituals"].values()
+            AgileRitualRecord.model_validate(raw) for raw in self._load()["rituals"].values()
         ]
         if project is not None:
             records = [r for r in records if r.project == project]
@@ -70,8 +69,7 @@ class AgileStore:
 
     def list_pm_answers(self, project: str | None = None) -> list[PMAnswerRecord]:
         records = [
-            PMAnswerRecord.model_validate(raw)
-            for raw in self._load()["pm_answers"].values()
+            PMAnswerRecord.model_validate(raw) for raw in self._load()["pm_answers"].values()
         ]
         if project is not None:
             records = [r for r in records if r.project == project]

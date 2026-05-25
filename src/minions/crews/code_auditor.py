@@ -74,12 +74,12 @@ class CodeAuditOutput(BaseModel):
 
 @observe_crew("code_auditor")
 def audit_pr(
-    record: "EngineerRunRecord",
+    record: EngineerRunRecord,
     decision: Decision,
     *,
-    github: "GitHubClient",
+    github: GitHubClient,
     api_key: str | None = None,
-    portfolio: "PortfolioConfig | None" = None,
+    portfolio: PortfolioConfig | None = None,
     output_override: CodeAuditOutput | None = None,
     max_files: int = 10,
 ) -> AuditFinding | None:
@@ -158,18 +158,18 @@ def audit_pr(
     )
 
 
-def _decision_uuid(decision: Decision) -> "UUID":
+def _decision_uuid(decision: Decision) -> UUID:
     """Decision.id may be UUID or str depending on how it was built; normalize."""
     return decision.id if isinstance(decision.id, UUID) else UUID(str(decision.id))
 
 
 def _run_llm(
     *,
-    record: "EngineerRunRecord",
+    record: EngineerRunRecord,
     decision: Decision,
     files: list[dict[str, Any]],
     api_key: str,
-    portfolio: "PortfolioConfig | None",
+    portfolio: PortfolioConfig | None,
 ) -> CodeAuditOutput | None:
     from crewai import Crew, Process, Task
 

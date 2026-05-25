@@ -35,7 +35,7 @@ class HealthCheckResult(BaseModel):
     """Outcome of one probe against the deployed site."""
 
     url: str
-    kind: str                   # "path" | "image" | other
+    kind: str  # "path" | "image" | other
     expected_status: int = 200
     actual_status: int | None = None
     latency_ms: int | None = None
@@ -51,7 +51,7 @@ class DeploymentRecord(BaseModel):
     pr_number: int | None = None
     merge_sha: str
 
-    deploy_target: str          # "vercel" | "fly" | "render" | "none"
+    deploy_target: str  # "vercel" | "fly" | "render" | "none"
     target_deploy_id: str | None = None
     production_url: str | None = None
 

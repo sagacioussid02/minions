@@ -36,16 +36,10 @@ def _init_tiny_repo(tmp_path: Path) -> Path:
     root.mkdir()
     (root / "x.py").write_text("a\nb\n")
     subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
-    subprocess.run(
-        ["git", "-C", str(root), "config", "user.email", "t@t"], check=True
-    )
-    subprocess.run(
-        ["git", "-C", str(root), "config", "user.name", "t"], check=True
-    )
+    subprocess.run(["git", "-C", str(root), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "t"], check=True)
     subprocess.run(["git", "-C", str(root), "add", "."], check=True)
-    subprocess.run(
-        ["git", "-C", str(root), "commit", "-q", "-m", "x"], check=True
-    )
+    subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", "x"], check=True)
     return root
 
 
@@ -97,9 +91,7 @@ def test_skips_when_freshness_ok(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         lambda *a, **kw: pytest.fail("discoverer should not be called when fresh"),
     )
 
-    report = run_discovery_sweep(
-        projects_dir=pd, dossier_store=store, dry_run=False, force=False
-    )
+    report = run_discovery_sweep(projects_dir=pd, dossier_store=store, dry_run=False, force=False)
     assert len(report.outcomes) == 1
     assert report.outcomes[0].status == "skipped_fresh"
 
@@ -110,8 +102,11 @@ def test_force_runs_even_when_fresh(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     store = DossierDraftStore(tmp_path / "drafts.json")
     store.save(
         DossierDraft(
-            project="tiny", commit_sha="seed", status=DossierStatus.MERGED,
-            markdown="x", generated_at=datetime.now(UTC),
+            project="tiny",
+            commit_sha="seed",
+            status=DossierStatus.MERGED,
+            markdown="x",
+            generated_at=datetime.now(UTC),
         )
     )
 
@@ -124,8 +119,11 @@ def test_force_runs_even_when_fresh(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr("minions.scheduled.discovery.run_discoverer", _fake)
 
     report = run_discovery_sweep(
-        projects_dir=pd, dossier_store=store, api_key="k",
-        dry_run=False, force=True,
+        projects_dir=pd,
+        dossier_store=store,
+        api_key="k",
+        dry_run=False,
+        force=True,
     )
     assert called.get("yes")
     assert report.outcomes[0].status == "submitted"
@@ -146,9 +144,7 @@ def test_verifier_failure_surfaces_and_does_not_persist(
 
     monkeypatch.setattr("minions.scheduled.discovery.run_discoverer", _raise)
 
-    report = run_discovery_sweep(
-        projects_dir=pd, dossier_store=store, api_key="k", dry_run=False
-    )
+    report = run_discovery_sweep(projects_dir=pd, dossier_store=store, api_key="k", dry_run=False)
     assert report.outcomes[0].status == "verifier_failed"
     # Nothing persisted.
     assert store.list_for_project("tiny") == []
@@ -164,8 +160,11 @@ def test_budget_breach_throttles(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(
         "minions.scheduled.discovery.evaluate_budget",
         lambda manifest, **kw: BudgetState(
-            project=manifest.name, monthly_cap_usd=4.0,
-            month_to_date_usd=4.0, fraction=1.0, state="breach",
+            project=manifest.name,
+            monthly_cap_usd=4.0,
+            month_to_date_usd=4.0,
+            fraction=1.0,
+            state="breach",
         ),
     )
     monkeypatch.setattr(
@@ -174,8 +173,11 @@ def test_budget_breach_throttles(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     )
 
     report = run_discovery_sweep(
-        projects_dir=pd, dossier_store=store, api_key="k",
-        dry_run=False, force=True,
+        projects_dir=pd,
+        dossier_store=store,
+        api_key="k",
+        dry_run=False,
+        force=True,
     )
     assert report.outcomes[0].status == "throttled"
     assert "budget" in (report.outcomes[0].reason or "")
@@ -195,18 +197,14 @@ def test_dry_run_records_skipped_fresh_with_dry_run_reason(
         lambda *a, **kw: None,
     )
 
-    report = run_discovery_sweep(
-        projects_dir=pd, dossier_store=store, dry_run=True, force=True
-    )
+    report = run_discovery_sweep(projects_dir=pd, dossier_store=store, dry_run=True, force=True)
     out = report.outcomes[0]
     assert out.status == "skipped_fresh"
     assert "dry-run" in (out.reason or "")
     assert store.list_for_project("tiny") == []
 
 
-def test_successful_run_persists_drafted(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_successful_run_persists_drafted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = _init_tiny_repo(tmp_path)
     pd = _projects_dir(tmp_path, "tiny", root)
     store = DossierDraftStore(tmp_path / "drafts.json")
@@ -217,8 +215,11 @@ def test_successful_run_persists_drafted(
     )
 
     report = run_discovery_sweep(
-        projects_dir=pd, dossier_store=store, api_key="k",
-        dry_run=False, force=True,
+        projects_dir=pd,
+        dossier_store=store,
+        api_key="k",
+        dry_run=False,
+        force=True,
     )
     assert report.outcomes[0].status == "submitted"
     saved = store.list_for_project("tiny", status=DossierStatus.DRAFTED)

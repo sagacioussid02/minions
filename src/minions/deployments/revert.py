@@ -35,10 +35,7 @@ def file_revert_decision(
 ) -> Decision:
     """Submit a ``risk=high`` revert Decision keyed on the deployment record."""
     failed = [r for r in record.health_check_results if not r.ok]
-    summary = (
-        f"deploy revert: {record.project} prod broken after "
-        f"sha {record.merge_sha[:8]}"
-    )
+    summary = f"deploy revert: {record.project} prod broken after sha {record.merge_sha[:8]}"
     rationale = (
         f"Post-deploy verification ran {len(record.health_check_results)} "
         f"probe(s) against the {record.deploy_target} deployment of "
@@ -64,10 +61,8 @@ def file_revert_decision(
         "",
         "1. Click the failing URLs above to confirm the user-facing breakage.",
         "2. Either:",
-        "   - revert the merge commit "
-        f"(`git revert {record.merge_sha[:12]}` + open a PR), or",
-        "   - approve a hotfix Decision the engineer crew opens via the "
-        "normal planning flow.",
+        f"   - revert the merge commit (`git revert {record.merge_sha[:12]}` + open a PR), or",
+        "   - approve a hotfix Decision the engineer crew opens via the normal planning flow.",
         "3. Add an entry to LESSONS_LEARNED.md in this project's repo so "
         "the discoverer surfaces this foot-gun on future runs.",
     ]

@@ -31,7 +31,9 @@ if TYPE_CHECKING:
 
 
 def distinct_open_pr_count(
-    *, project: str, engineer_runs_store: EngineerRunStore,
+    *,
+    project: str,
+    engineer_runs_store: EngineerRunStore,
 ) -> int:
     """Count *distinct* open PR numbers the sweep is aware of for ``project``.
 
@@ -51,7 +53,10 @@ def distinct_open_pr_count(
 
 
 def has_open_fix_decision_for_pr(
-    *, project: str, pr_number: int, store: DecisionStore,
+    *,
+    project: str,
+    pr_number: int,
+    store: DecisionStore,
 ) -> bool:
     """True when a pending/approved pr_followup fix already targets ``pr_number``.
 

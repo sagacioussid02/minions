@@ -9,10 +9,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from minions import cost as cost_module
 from minions.cost import (
-    CostEntry,
     PRICING,
+    CostEntry,
     _litellm_cost_callback,
     append_entry,
     clear_attribution,
@@ -126,11 +125,7 @@ def test_append_and_read_round_trip(_isolated_log_path: Path) -> None:
 def test_read_log_skips_malformed_lines(_isolated_log_path: Path) -> None:
     p = _isolated_log_path
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(
-        "\n"
-        "{not json}\n"
-        f"{json.dumps(_entry(project='good').to_dict())}\n"
-    )
+    p.write_text(f"\n{{not json}}\n{json.dumps(_entry(project='good').to_dict())}\n")
     out = read_log()
     assert len(out) == 1
     assert out[0].project == "good"
@@ -167,8 +162,12 @@ def test_month_to_date_includes_only_current_month(_isolated_log_path: Path) -> 
 def test_week_to_date_starts_on_monday(_isolated_log_path: Path) -> None:
     # Wed 2026-05-13
     now = datetime(2026, 5, 13, 12, 0, tzinfo=UTC)
-    append_entry(_entry(project="x", cost_usd=1.00, timestamp=datetime(2026, 5, 10, tzinfo=UTC)))  # Sun before
-    append_entry(_entry(project="x", cost_usd=2.00, timestamp=datetime(2026, 5, 11, tzinfo=UTC)))  # Mon — included
+    append_entry(
+        _entry(project="x", cost_usd=1.00, timestamp=datetime(2026, 5, 10, tzinfo=UTC))
+    )  # Sun before
+    append_entry(
+        _entry(project="x", cost_usd=2.00, timestamp=datetime(2026, 5, 11, tzinfo=UTC))
+    )  # Mon — included
     append_entry(_entry(project="x", cost_usd=3.00, timestamp=datetime(2026, 5, 13, tzinfo=UTC)))
     assert week_to_date_cost("x", now=now) == pytest.approx(5.0)
 
@@ -183,7 +182,9 @@ def test_empty_log_returns_zero(_isolated_log_path: Path) -> None:
 
 def test_litellm_callback_records_with_attribution(_isolated_log_path: Path) -> None:
     set_attribution(project="demo_five", decision_id="dec-1", role="manager")
-    fake_response = SimpleNamespace(usage=SimpleNamespace(prompt_tokens=1000, completion_tokens=500))
+    fake_response = SimpleNamespace(
+        usage=SimpleNamespace(prompt_tokens=1000, completion_tokens=500)
+    )
     _litellm_cost_callback(
         kwargs={"model": "claude-sonnet-4-6"},
         completion_response=fake_response,
@@ -216,7 +217,9 @@ def test_litellm_callback_no_usage_skips(_isolated_log_path: Path) -> None:
     assert read_log() == []
 
 
-def test_init_cost_tracking_idempotent(monkeypatch: pytest.MonkeyPatch, _isolated_log_path: Path) -> None:
+def test_init_cost_tracking_idempotent(
+    monkeypatch: pytest.MonkeyPatch, _isolated_log_path: Path
+) -> None:
     """Registering twice should not create duplicate callbacks."""
     fake_litellm = SimpleNamespace(success_callback=[])
     monkeypatch.setitem(__import__("sys").modules, "litellm", fake_litellm)

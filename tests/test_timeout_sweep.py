@@ -5,8 +5,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-import pytest
-
 from minions.approval.service import sweep_timeouts
 from minions.approval.store import DecisionStore
 from minions.models.decision import Decision, DecisionStatus, DecisionType
@@ -28,7 +26,9 @@ class _Recorder:
         self.texts.append((subject, body))
 
 
-def _seed(store: DecisionStore, *, age_hours: float, status: DecisionStatus = DecisionStatus.PENDING) -> Decision:
+def _seed(
+    store: DecisionStore, *, age_hours: float, status: DecisionStatus = DecisionStatus.PENDING
+) -> Decision:
     d = Decision(
         project="p",
         type=DecisionType.FEATURE,
@@ -54,7 +54,7 @@ def test_sweep_rejects_only_old_pending(tmp_path: Path) -> None:
 
     assert [str(d.id) for d in timed_out] == [str(stale.id)]
     assert store.get(stale.id).status is DecisionStatus.REJECTED  # type: ignore[union-attr]
-    assert store.get(fresh.id).status is DecisionStatus.PENDING   # type: ignore[union-attr]
+    assert store.get(fresh.id).status is DecisionStatus.PENDING  # type: ignore[union-attr]
     assert len(notifier.resolved) == 1
 
 
@@ -97,7 +97,7 @@ def test_sweep_ttl_can_be_zero_for_testing(tmp_path: Path) -> None:
     """Setting ttl=0 should immediately reject any pending decision."""
     store = DecisionStore(tmp_path / "decisions.json")
     notifier = _Recorder()
-    fresh = _seed(store, age_hours=0.001)  # essentially "now"
+    _seed(store, age_hours=0.001)  # essentially "now"
     timed_out = sweep_timeouts(store=store, notifier=notifier, ttl_hours=0)
     assert len(timed_out) == 1
 

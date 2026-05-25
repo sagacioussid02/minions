@@ -377,7 +377,8 @@ def test_pr_review_loop_marks_dirty_pr_for_owner_sweep(
 
     # Zero new Decisions filed — owner sweep handles it.
     conflicts = [
-        d for d in decisions.list_by_status(DecisionStatus.APPROVED)
+        d
+        for d in decisions.list_by_status(DecisionStatus.APPROVED)
         if d.proposer_role == "conflict_resolution"
     ]
     assert conflicts == []

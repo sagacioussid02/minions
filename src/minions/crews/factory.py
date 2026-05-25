@@ -40,9 +40,7 @@ def make_crewai_agent(
     memory = ""
     if memory_store is not None:
         memory = recent_work_preamble(memory_store.list_hot(agent.name, char_cap=5000))
-    backstory = "\n\n".join(
-        part for part in [agent.backstory, memory, agent.system_prompt] if part
-    )
+    backstory = "\n\n".join(part for part in [agent.backstory, memory, agent.system_prompt] if part)
     pretty_role = agent.role.value.replace("_", " ").title()
     role_str = f"{agent.display_name}, {pretty_role}" if agent.display_name else pretty_role
     llm_kwargs: dict[str, object] = {"api_key": api_key}

@@ -66,10 +66,7 @@ def dedupe_candidates(
     dropped: list[tuple[BacklogCandidate, str]] = []
 
     existing_titles = [(iss.number, iss.title) for iss in existing_issues]
-    existing_cites = {
-        iss.number: _citations_from_text(iss.body)
-        for iss in existing_issues
-    }
+    existing_cites = {iss.number: _citations_from_text(iss.body) for iss in existing_issues}
 
     for cand in candidates:
         cand_cites = {c.split(":", 1)[0] + ":" + c.split(":", 1)[1] for c in cand.citations}
@@ -82,9 +79,7 @@ def dedupe_candidates(
                 break
         if title_hit:
             number, sim = title_hit
-            dropped.append(
-                (cand, f"title similarity {sim:.2f} with issue #{number}")
-            )
+            dropped.append((cand, f"title similarity {sim:.2f} with issue #{number}"))
             continue
         # Citation overlap check.
         overlap_hit: int | None = None
@@ -94,9 +89,7 @@ def dedupe_candidates(
                 break
         if overlap_hit is not None:
             shared = sorted(cand_cites & existing_cites[overlap_hit])
-            dropped.append(
-                (cand, f"shared anchor {shared[0]} with issue #{overlap_hit}")
-            )
+            dropped.append((cand, f"shared anchor {shared[0]} with issue #{overlap_hit}"))
             continue
         kept.append(cand)
 

@@ -14,7 +14,6 @@ All data is read fresh from cost log + decision store on every render. The
 from __future__ import annotations
 
 import os
-
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -26,7 +25,8 @@ from minions.dashboard.data import (
     SprintBoard,
     build_dashboard_data,
 )
-from minions.dashboard.styles import banner, inject as inject_css, risk_pill, status_pill
+from minions.dashboard.styles import banner, risk_pill, status_pill
+from minions.dashboard.styles import inject as inject_css
 from minions.models.decision import Decision, DecisionStatus
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -111,13 +111,9 @@ def render_agents(data: DashboardData) -> None:
         project_filter = st.multiselect("Project", projects, default=projects)
     statuses = ["active", "idle", "stale", "error"]
     with col2:
-        status_filter = st.multiselect(
-            "Status", statuses, default=["active", "idle", "stale"]
-        )
+        status_filter = st.multiselect("Status", statuses, default=["active", "idle", "stale"])
     with col3:
-        sort_by = st.selectbox(
-            "Sort by", ["status", "last activity", "cost (7d)", "calls (total)"]
-        )
+        sort_by = st.selectbox("Sort by", ["status", "last activity", "cost (7d)", "calls (total)"])
 
     visible = [
         a
@@ -127,7 +123,10 @@ def render_agents(data: DashboardData) -> None:
 
     def sort_key(a: AgentSummary) -> tuple[float, ...]:
         if sort_by == "status":
-            return (STATUS_ORDER[a.status], -(a.last_activity.timestamp() if a.last_activity else 0))
+            return (
+                STATUS_ORDER[a.status],
+                -(a.last_activity.timestamp() if a.last_activity else 0),
+            )
         if sort_by == "last activity":
             return (-(a.last_activity.timestamp() if a.last_activity else 0),)
         if sort_by == "cost (7d)":
@@ -155,13 +154,19 @@ def render_agents(data: DashboardData) -> None:
 _SHARED_LAYER_ROLES = {
     "Executive": {"ceo", "cto", "managing_director", "org_owner"},
     "Specialist": {"cloud_devops", "devsecops", "team_architect"},
-    "Audit": {"chief_auditor", "process_auditor", "code_auditor", "cost_auditor", "devils_advocate"},
+    "Audit": {
+        "chief_auditor",
+        "process_auditor",
+        "code_auditor",
+        "cost_auditor",
+        "devils_advocate",
+    },
 }
 
 
 def _render_tree(agents: list[AgentSummary]) -> None:
     """Render agents as a nested tree:
-        Operator → Layer (shared) / Project (project) → Role → Seat
+    Operator → Layer (shared) / Project (project) → Role → Seat
     """
     project_agents: dict[str, list[AgentSummary]] = {}
     shared_layer_agents: dict[str, list[AgentSummary]] = {n: [] for n in _SHARED_LAYER_ROLES}
@@ -181,12 +186,17 @@ def _render_tree(agents: list[AgentSummary]) -> None:
                 other_shared.append(a)
 
     st.markdown("### 👑 Owner")
-    st.caption(f'{os.getenv("OPERATOR_EMAIL", "operator@example.com")} — sole human-in-the-loop approver')
+    st.caption(
+        f"{os.getenv('OPERATOR_EMAIL', 'operator@example.com')} — sole human-in-the-loop approver"
+    )
 
     # Sidebar-style toggle: collapse all by default, or expand. Default expanded
     # because the whole point of the tree view is to *see* the hierarchy.
     expand_all = st.toggle(
-        "Expand all", value=True, key="agents_tree_expand", help="Toggle off to collapse every layer"
+        "Expand all",
+        value=True,
+        key="agents_tree_expand",
+        help="Toggle off to collapse every layer",
     )
 
     # Shared layers
@@ -207,9 +217,7 @@ def _render_tree(agents: list[AgentSummary]) -> None:
                 _render_tree_row(a)
 
     if other_shared:
-        with st.expander(
-            f"**Other shared** — {len(other_shared)} agents", expanded=expand_all
-        ):
+        with st.expander(f"**Other shared** — {len(other_shared)} agents", expanded=expand_all):
             for a in other_shared:
                 _render_tree_row(a)
 
@@ -246,11 +254,11 @@ def _render_tree_row(a: AgentSummary) -> None:
     with cols[0]:
         st.markdown(
             f'<div class="tree-row">'
-            f'{status_pill(a.status, running=a.running_now)} '
+            f"{status_pill(a.status, running=a.running_now)} "
             f'<span class="label">{primary}</span>'
             f'<span class="role">· {role_pretty}{seat_note}</span>'
             f'<span class="meta">last seen {last_seen}{cost_note} · next: {next_desc}</span>'
-            f'</div>',
+            f"</div>",
             unsafe_allow_html=True,
         )
     if cols[1].button("Details", key=f"tree-{a.scope}-{a.project}-{a.role}"):
@@ -289,9 +297,9 @@ def _render_sparkline(project: str, role: str) -> None:
         return  # don't bother rendering an empty sparkline
     import pandas as pd
 
-    df = pd.DataFrame(
-        {"day": [p[0] for p in points], "cost": [p[1] for p in points]}
-    ).set_index("day")
+    df = pd.DataFrame({"day": [p[0] for p in points], "cost": [p[1] for p in points]}).set_index(
+        "day"
+    )
     st.line_chart(df, height=60, use_container_width=True)
 
 
@@ -389,9 +397,7 @@ def _render_agent_detail(data: DashboardData) -> None:
         if agent.project:
             from minions.activity import history_for_role
 
-            history = history_for_role(
-                agent.project, agent.role, limit=20, path=ACTIVITY_LOG_PATH
-            )
+            history = history_for_role(agent.project, agent.role, limit=20, path=ACTIVITY_LOG_PATH)
             with st.expander(f"Recent crew activity ({len(history)})", expanded=True):
                 if not history:
                     st.caption("No activity events recorded yet.")
@@ -586,7 +592,9 @@ def _resolve_in_dashboard(d: Decision, *, action: str, reason: str | None) -> No
 def render_sprint_board(data: DashboardData) -> None:
     cols = st.columns([6, 2])
     cols[0].header("📊 Sprint board")
-    if cols[1].button("🔄 Sync PR status", help="Pull merge/close state from GitHub", use_container_width=True):
+    if cols[1].button(
+        "🔄 Sync PR status", help="Pull merge/close state from GitHub", use_container_width=True
+    ):
         _sync_in_dashboard()
 
     if not data.sprint_boards:
@@ -594,7 +602,7 @@ def render_sprint_board(data: DashboardData) -> None:
         return
 
     project_tabs = st.tabs(list(data.sprint_boards.keys()))
-    for tab, (project, board) in zip(project_tabs, data.sprint_boards.items(), strict=False):
+    for tab, (_project, board) in zip(project_tabs, data.sprint_boards.items(), strict=False):
         with tab:
             _render_board(board)
 
@@ -602,8 +610,6 @@ def render_sprint_board(data: DashboardData) -> None:
 def _sync_in_dashboard() -> None:
     """Run the PR-state sync in-process. Reuses the CLI's GitHub client factory."""
     try:
-        from minions.approval.store import DecisionStore
-        from minions.crews.engineer_runs_store import EngineerRunStore
         from minions.github.auth import get_github_token
         from minions.github.client import GitHubClient
         from minions.models.manifest import load_active_manifests
@@ -651,7 +657,9 @@ def _render_board(b: SprintBoard) -> None:
         f"{len(b.pr_open)} PR open · {len(b.done)} done"
     )
     if b.total == 0:
-        st.info(f"No decisions yet for {b.project}. Run `minions plan {b.project} --no-dry-run` to seed one.")
+        st.info(
+            f"No decisions yet for {b.project}. Run `minions plan {b.project} --no-dry-run` to seed one."
+        )
         return
 
     cols = st.columns(5)
@@ -667,9 +675,7 @@ def _render_board(b: SprintBoard) -> None:
 
 
 def _render_kanban_card(d: Decision) -> None:
-    risk_color = {"low": "#16a34a", "medium": "#ca8a04", "high": "#dc2626"}.get(
-        d.risk, "#94a3b8"
-    )
+    risk_color = {"low": "#16a34a", "medium": "#ca8a04", "high": "#dc2626"}.get(d.risk, "#94a3b8")
     proposer = d.proposer_display_name or d.proposer_agent_id
     with st.container(border=True):
         st.markdown(
@@ -700,7 +706,9 @@ def render_audit(data: DashboardData) -> None:
     open_count = sum(1 for f in findings if f.status == FindingStatus.OPEN)
     high = sum(1 for f in findings if f.severity == "high" and f.status == FindingStatus.OPEN)
     medium = sum(1 for f in findings if f.severity == "medium" and f.status == FindingStatus.OPEN)
-    advisory = sum(1 for f in findings if f.severity == "advisory" and f.status == FindingStatus.OPEN)
+    advisory = sum(
+        1 for f in findings if f.severity == "advisory" and f.status == FindingStatus.OPEN
+    )
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Open", open_count)

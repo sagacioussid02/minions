@@ -30,7 +30,11 @@ class ConsoleNotifier:
                 "\n[bold yellow]Devil's Advocate critique:[/bold yellow]\n"
                 f"  Counter-argument: {crit.counter_argument}\n"
                 f"  Failure modes: {', '.join(crit.failure_modes)}\n"
-                + (f"  Alternative considered: {crit.alternative_considered}\n" if crit.alternative_considered else "")
+                + (
+                    f"  Alternative considered: {crit.alternative_considered}\n"
+                    if crit.alternative_considered
+                    else ""
+                )
             )
 
         proposer_label = decision.proposer_display_name or decision.proposer_agent_id

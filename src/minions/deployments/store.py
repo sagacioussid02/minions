@@ -44,13 +44,9 @@ class DeploymentStore:
         return DeploymentRecord.model_validate(raw) if raw else None
 
     def list_all(self) -> list[DeploymentRecord]:
-        return [
-            DeploymentRecord.model_validate(v) for v in self._load_all().values()
-        ]
+        return [DeploymentRecord.model_validate(v) for v in self._load_all().values()]
 
-    def find_by_sha(
-        self, project: str, merge_sha: str
-    ) -> DeploymentRecord | None:
+    def find_by_sha(self, project: str, merge_sha: str) -> DeploymentRecord | None:
         for r in self.list_all():
             if r.project == project and r.merge_sha == merge_sha:
                 return r

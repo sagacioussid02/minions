@@ -43,7 +43,8 @@ def _full_markdown(commit: str = "abc") -> str:
 
 def _draft(project: str = "p", commit: str = "abcdef0123456789") -> DossierDraft:
     return DossierDraft(
-        project=project, commit_sha=commit,
+        project=project,
+        commit_sha=commit,
         markdown=_full_markdown(commit),
         status=DossierStatus.MERGED,
         generated_at=datetime.now(UTC),
@@ -53,8 +54,14 @@ def _draft(project: str = "p", commit: str = "abcdef0123456789") -> DossierDraft
 def test_parse_sections_picks_up_all_headers() -> None:
     sections = parse_sections(_full_markdown())
     for key in (
-        "architecture", "data", "infra", "hot_spots",
-        "tech_debt", "security", "incidents", "questions",
+        "architecture",
+        "data",
+        "infra",
+        "hot_spots",
+        "tech_debt",
+        "security",
+        "incidents",
+        "questions",
     ):
         assert key in sections, key
     assert "src/x.py:1" in sections["architecture"]
@@ -62,10 +69,7 @@ def test_parse_sections_picks_up_all_headers() -> None:
 
 
 def test_parse_sections_handles_missing_optional_subtitle() -> None:
-    md = (
-        "# Architecture\nx `a.py:1`.\n\n"
-        "# Recent incidents\n2026-04-01 thing.\n"
-    )
+    md = "# Architecture\nx `a.py:1`.\n\n# Recent incidents\n2026-04-01 thing.\n"
     sections = parse_sections(md)
     assert "incidents" in sections
 

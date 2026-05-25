@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import sys
 import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from minions import observability as obs
 
@@ -73,7 +73,7 @@ def test_observe_crew_is_noop_without_credentials(monkeypatch):
 
 def test_observe_crew_calls_real_observe_when_creds_present(monkeypatch):
     _set_langfuse_env(monkeypatch)
-    sentinel = MagicMock(side_effect=lambda *a, **kw: a[0] + a[1] if a else 0)
+    _sentinel = MagicMock(side_effect=lambda *a, **kw: a[0] + a[1] if a else 0)
 
     # Patch langfuse.observe so the wrapper exercises the real code path.
     fake_observe = MagicMock(return_value=lambda fn: lambda *a, **kw: fn(*a, **kw))

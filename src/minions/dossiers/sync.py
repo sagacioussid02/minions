@@ -53,15 +53,11 @@ class SyncReport:
 
     @property
     def rejected(self) -> int:
-        return sum(
-            1 for o in self.transitions if o.to_status is DossierStatus.REJECTED
-        )
+        return sum(1 for o in self.transitions if o.to_status is DossierStatus.REJECTED)
 
     @property
     def superseded(self) -> int:
-        return sum(
-            1 for o in self.transitions if o.to_status is DossierStatus.SUPERSEDED
-        )
+        return sum(1 for o in self.transitions if o.to_status is DossierStatus.SUPERSEDED)
 
 
 def sync_dossier_drafts(
@@ -107,10 +103,7 @@ def sync_dossier_drafts(
         )
         if outcome is not None:
             transitions.append(outcome)
-            if (
-                outcome.to_status is DossierStatus.MERGED
-                and learning_store is not None
-            ):
+            if outcome.to_status is DossierStatus.MERGED and learning_store is not None:
                 # The draft reference still points at the updated row (status
                 # was mutated by _transition above), so we re-fetch the prior
                 # merged dossier — *excluding* the one we just flipped — for
@@ -122,16 +115,16 @@ def sync_dossier_drafts(
                         exclude_id=str(draft.id),
                     )
                     record_understanding_delta(
-                        prior=prior, new=draft, learning_store=learning_store,
+                        prior=prior,
+                        new=draft,
+                        learning_store=learning_store,
                     )
 
     # Supersede: at most one non-terminal draft per project. If multiple
     # exist (newer drafts piled up while older ones sat unresolved), keep
     # only the newest and mark the rest superseded.
     transitions.extend(
-        _supersede_older_drafts(
-            dossier_store=dossier_store, drafts=dossier_store.list_all()
-        )
+        _supersede_older_drafts(dossier_store=dossier_store, drafts=dossier_store.list_all())
     )
 
     return SyncReport(transitions=transitions)
@@ -149,9 +142,7 @@ def _prior_merged_excluding(
     just-merged draft itself is in ``latest_merged`` already, so we have to
     skip it explicitly to find the genuine predecessor.
     """
-    merged = dossier_store.list_for_project(
-        project, status=DossierStatus.MERGED, limit=10
-    )
+    merged = dossier_store.list_for_project(project, status=DossierStatus.MERGED, limit=10)
     for candidate in merged:
         if str(candidate.id) != exclude_id:
             return candidate
@@ -274,8 +265,7 @@ def _supersede_older_drafts(
                 _transition(
                     older,
                     DossierStatus.SUPERSEDED,
-                    f"newer draft {keep.id} (at {keep.commit_sha[:8]}) "
-                    f"in flight for {project}",
+                    f"newer draft {keep.id} (at {keep.commit_sha[:8]}) in flight for {project}",
                     dossier_store=dossier_store,
                 )
             )

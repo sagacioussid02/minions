@@ -121,7 +121,9 @@ def build_org_evidence(
             f"{d.project} {d.status.value}: {d.summary}",
             str(d.id),
         )
-    for run in sorted(engineer_runs_store.list_all(), key=lambda item: item.completed_at, reverse=True)[:8]:
+    for run in sorted(
+        engineer_runs_store.list_all(), key=lambda item: item.completed_at, reverse=True
+    )[:8]:
         packet.add(
             "pull_request",
             f"engineer_run:{run.decision_id[:8]}",
@@ -145,7 +147,9 @@ def build_org_evidence(
         )
     by_project: dict[str, float] = {}
     for entry in read_cost_log(cost_log_path)[-200:]:
-        by_project[entry.project or "org"] = by_project.get(entry.project or "org", 0.0) + entry.cost_usd
+        by_project[entry.project or "org"] = (
+            by_project.get(entry.project or "org", 0.0) + entry.cost_usd
+        )
     for project, cost in sorted(by_project.items(), key=lambda item: item[1], reverse=True)[:8]:
         packet.add("cost", f"cost:{project}", f"Recent logged LLM spend ${cost:.4f}", project)
     if not packet.summary_lines:
@@ -181,7 +185,9 @@ def build_role_memory(
         if len(packet.citations) >= 4:
             break
 
-    runs = engineer_runs_store.list_by_project(project) if project else engineer_runs_store.list_all()
+    runs = (
+        engineer_runs_store.list_by_project(project) if project else engineer_runs_store.list_all()
+    )
     for run in sorted(runs, key=lambda item: item.completed_at, reverse=True):
         if role_key in {"principal_engineer", "engineer", "qa", "team_architect"}:
             packet.add(
@@ -217,9 +223,7 @@ def build_role_memory(
 
     if agile_store is not None:
         for ritual in agile_store.list_rituals(project):
-            ritual_text = " ".join(
-                [ritual.summary, *ritual.blockers, *ritual.next_actions]
-            ).lower()
+            ritual_text = " ".join([ritual.summary, *ritual.blockers, *ritual.next_actions]).lower()
             if role_key in ritual_text or role.replace("_", " ") in ritual_text:
                 packet.add(
                     "role_memory",

@@ -49,13 +49,15 @@ def test_required_steps_constants() -> None:
 
 def test_report_failed_step_returns_first_failure() -> None:
     r = PreflightReport(
-        project="p", commit_sha="abc",
+        project="p",
+        commit_sha="abc",
         network_posture=NetworkPosture.DENY,
         ok=False,
         steps=[
             PreflightStepResult(step="install", command="npm ci", exit_code=0, ok=True),
-            PreflightStepResult(step="build", command="npm run build",
-                                 exit_code=1, stderr_tail="boom", ok=False),
+            PreflightStepResult(
+                step="build", command="npm run build", exit_code=1, stderr_tail="boom", ok=False
+            ),
         ],
     )
     failed = r.failed_step
@@ -71,7 +73,7 @@ def test_manifest_default_preflight_present() -> None:
     m = load_manifest(REPO_ROOT / "projects" / "Demo.yaml")
     assert isinstance(m.preflight, PreflightConfig)
     assert m.preflight.enabled is True
-    assert m.preflight.install == ""   # autodetect-driven
+    assert m.preflight.install == ""  # autodetect-driven
 
 
 def test_manifest_preflight_override(tmp_path: Path) -> None:
@@ -114,9 +116,7 @@ def _write_npm_repo(root: Path, *, scripts: dict[str, str]) -> Path:
 
 
 def test_autodetect_npm_with_build_script(tmp_path: Path) -> None:
-    repo = _write_npm_repo(
-        tmp_path / "npm", scripts={"build": "next build", "test": "vitest"}
-    )
+    repo = _write_npm_repo(tmp_path / "npm", scripts={"build": "next build", "test": "vitest"})
     c = autodetect(repo)
     assert c.install == "npm ci"
     assert c.build == "npm run build"
@@ -220,15 +220,13 @@ def test_effective_config_manifest_wins_over_autodetect(tmp_path: Path) -> None:
     manifest = PreflightConfig(build="custom-build", network=NetworkPosture.DENY)
     eff = effective_config(manifest, repo)
     assert eff.build == "custom-build"  # manifest override
-    assert eff.install == "npm ci"      # autodetect fills blank
+    assert eff.install == "npm ci"  # autodetect fills blank
     assert eff.network is NetworkPosture.DENY  # policy always from manifest
 
 
 def test_effective_config_preserves_policy_knobs(tmp_path: Path) -> None:
     repo = _write_npm_repo(tmp_path / "npm", scripts={})
-    manifest = PreflightConfig(
-        enabled=False, timeout_seconds=10, block_on_test_failure=False
-    )
+    manifest = PreflightConfig(enabled=False, timeout_seconds=10, block_on_test_failure=False)
     eff = effective_config(manifest, repo)
     assert eff.enabled is False
     assert eff.timeout_seconds == 10

@@ -86,9 +86,7 @@ def run_crew_heartbeat(
                 )
             )
 
-    shared_roles = _unique(
-        role.value for role in [*SHARED_EXECUTIVE, *SHARED_SPECIALIST, *AUDIT]
-    )
+    shared_roles = _unique(role.value for role in [*SHARED_EXECUTIVE, *SHARED_SPECIALIST, *AUDIT])
     try:
         _append_checkin(
             project="",

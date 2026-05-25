@@ -32,8 +32,9 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +43,7 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 def has_credentials() -> bool:
     """True if Langfuse public + secret keys are present in the environment."""
-    return bool(
-        os.environ.get("LANGFUSE_PUBLIC_KEY")
-        and os.environ.get("LANGFUSE_SECRET_KEY")
-    )
+    return bool(os.environ.get("LANGFUSE_PUBLIC_KEY") and os.environ.get("LANGFUSE_SECRET_KEY"))
 
 
 def init_langfuse(*, verbose: bool = False) -> bool:

@@ -87,7 +87,10 @@ def _commit_drift(repo_root: Path, sha: str) -> int | None:
     try:
         out = subprocess.run(
             ["git", "-C", str(repo_root), "rev-list", "--count", f"{sha}..HEAD"],
-            check=True, capture_output=True, text=True, timeout=5,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         return int(out.stdout.strip() or 0)
     except (subprocess.SubprocessError, OSError, ValueError):

@@ -16,7 +16,9 @@ def test_empty_key_returns_false():
 
 
 def _mock_response(status: int, body: str = "") -> httpx.Response:
-    return httpx.Response(status, text=body, request=httpx.Request("GET", "https://api.anthropic.com/v1/models"))
+    return httpx.Response(
+        status, text=body, request=httpx.Request("GET", "https://api.anthropic.com/v1/models")
+    )
 
 
 def test_200_authenticated():

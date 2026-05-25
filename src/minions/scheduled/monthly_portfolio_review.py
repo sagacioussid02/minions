@@ -109,7 +109,8 @@ def run_monthly_portfolio_review(
             for project_stats in inputs.per_project:
                 project = project_stats.project
                 project_runs = [
-                    r for r in engineer_runs_store.list_by_project(project)
+                    r
+                    for r in engineer_runs_store.list_by_project(project)
                     if r.pr_state == "merged"
                 ][:8]
                 demo = AgileRitualRecord(

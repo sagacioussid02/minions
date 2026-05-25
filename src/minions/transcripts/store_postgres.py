@@ -26,19 +26,22 @@ class PostgresTranscriptStore:
                     payload = EXCLUDED.payload
                 """,
                 (
-                    str(msg.id), msg.run_id, msg.project, msg.crew,
-                    msg.agent_role, msg.sequence,
-                    msg.role_in_conversation, msg.created_at, Jsonb(payload),
+                    str(msg.id),
+                    msg.run_id,
+                    msg.project,
+                    msg.crew,
+                    msg.agent_role,
+                    msg.sequence,
+                    msg.role_in_conversation,
+                    msg.created_at,
+                    Jsonb(payload),
                 ),
             )
         return msg
 
     def list_all(self) -> list[CrewTranscriptMessage]:
         with connect() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT payload FROM crew_transcripts "
-                "ORDER BY created_at DESC LIMIT 5000"
-            )
+            cur.execute("SELECT payload FROM crew_transcripts ORDER BY created_at DESC LIMIT 5000")
             rows = cur.fetchall()
         return [
             CrewTranscriptMessage.model_validate(
@@ -50,8 +53,7 @@ class PostgresTranscriptStore:
     def list_by_run(self, run_id: str) -> list[CrewTranscriptMessage]:
         with connect() as conn, conn.cursor() as cur:
             cur.execute(
-                "SELECT payload FROM crew_transcripts WHERE run_id = %s "
-                "ORDER BY sequence ASC",
+                "SELECT payload FROM crew_transcripts WHERE run_id = %s ORDER BY sequence ASC",
                 (run_id,),
             )
             rows = cur.fetchall()
@@ -62,9 +64,7 @@ class PostgresTranscriptStore:
             for r in rows
         ]
 
-    def list_for_project(
-        self, project: str, *, limit: int = 50
-    ) -> list[CrewTranscriptMessage]:
+    def list_for_project(self, project: str, *, limit: int = 50) -> list[CrewTranscriptMessage]:
         with connect() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT payload FROM crew_transcripts WHERE project = %s "

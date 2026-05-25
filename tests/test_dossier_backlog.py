@@ -62,22 +62,30 @@ def _cand(
     source: str = "tech_debt",
 ) -> BacklogCandidate:
     return BacklogCandidate(
-        title=title, body=body, kind=kind,
-        source_section=source, citations=citations or [],
+        title=title,
+        body=body,
+        kind=kind,
+        source_section=source,
+        citations=citations or [],
     )
 
 
 def _issue(number: int, title: str, body: str | None = None) -> Issue:
     return Issue(
-        number=number, title=title, body=body or "",
-        state="open", html_url=f"https://x/issues/{number}",
+        number=number,
+        title=title,
+        body=body or "",
+        state="open",
+        html_url=f"https://x/issues/{number}",
     )
 
 
 def _draft(project: str) -> DossierDraft:
     return DossierDraft(
-        project=project, commit_sha="cafef00d" * 5,
-        markdown="# x\nSee `src/x.py:1`.", status=DossierStatus.MERGED,
+        project=project,
+        commit_sha="cafef00d" * 5,
+        markdown="# x\nSee `src/x.py:1`.",
+        status=DossierStatus.MERGED,
     )
 
 
@@ -137,7 +145,8 @@ def test_dedupe_strips_bracket_prefix() -> None:
 def test_build_applies_cap(tmp_path: Path) -> None:
     m = _manifest(tmp_path, "cap-test", cap=2)
     raw = BacklogProposal(
-        project=m.name, dossier_commit_sha="abc",
+        project=m.name,
+        dossier_commit_sha="abc",
         candidates=[_cand(f"item {i}", citations=[f"src/x.py:{i}"]) for i in range(5)],
     )
     out = build_backlog_proposal(raw=raw, manifest=m, existing_issues=[])
@@ -148,7 +157,8 @@ def test_build_applies_cap(tmp_path: Path) -> None:
 def test_build_zero_cap_yields_empty(tmp_path: Path) -> None:
     m = _manifest(tmp_path, "zero-cap", cap=0)
     raw = BacklogProposal(
-        project=m.name, dossier_commit_sha="abc",
+        project=m.name,
+        dossier_commit_sha="abc",
         candidates=[_cand("x")],
     )
     out = build_backlog_proposal(raw=raw, manifest=m, existing_issues=[])
@@ -158,7 +168,8 @@ def test_build_zero_cap_yields_empty(tmp_path: Path) -> None:
 def test_build_runs_dedupe_then_cap(tmp_path: Path) -> None:
     m = _manifest(tmp_path, "ded-cap", cap=2)
     raw = BacklogProposal(
-        project=m.name, dossier_commit_sha="abc",
+        project=m.name,
+        dossier_commit_sha="abc",
         candidates=[
             _cand("Refactor logging"),  # dropped by dedupe
             _cand("New thing A", citations=["src/a.py:1"]),
@@ -167,7 +178,8 @@ def test_build_runs_dedupe_then_cap(tmp_path: Path) -> None:
         ],
     )
     out = build_backlog_proposal(
-        raw=raw, manifest=m,
+        raw=raw,
+        manifest=m,
         existing_issues=[_issue(1, "Refactor logging")],
     )
     titles = [c.title for c in out.proposal.candidates]
@@ -184,13 +196,17 @@ def test_file_decision_round_trips_payload(tmp_path: Path) -> None:
     store = DecisionStore(tmp_path / "dec.json")
     notifier = _CapturingNotifier()
     raw = BacklogProposal(
-        project=m.name, dossier_commit_sha="cafe",
+        project=m.name,
+        dossier_commit_sha="cafe",
         candidates=[_cand("Add health endpoint", kind=BacklogKind.FEATURE)],
     )
     build = build_backlog_proposal(raw=raw, manifest=m, existing_issues=[])
     decision = file_backlog_decision(
-        build=build, manifest=m, dossier=_draft(m.name),
-        decision_store=store, notifier=notifier,
+        build=build,
+        manifest=m,
+        dossier=_draft(m.name),
+        decision_store=store,
+        notifier=notifier,
     )
     assert decision is not None
     assert decision.risk == "medium"
@@ -214,14 +230,15 @@ def test_file_decision_returns_none_when_empty(tmp_path: Path) -> None:
     m = _manifest(tmp_path, "empty", cap=5)
     store = DecisionStore(tmp_path / "dec.json")
     notifier = _CapturingNotifier()
-    raw = BacklogProposal(
-        project=m.name, dossier_commit_sha="x", candidates=[]
-    )
+    raw = BacklogProposal(project=m.name, dossier_commit_sha="x", candidates=[])
     build = build_backlog_proposal(raw=raw, manifest=m, existing_issues=[])
     assert (
         file_backlog_decision(
-            build=build, manifest=m, dossier=_draft(m.name),
-            decision_store=store, notifier=notifier,
+            build=build,
+            manifest=m,
+            dossier=_draft(m.name),
+            decision_store=store,
+            notifier=notifier,
         )
         is None
     )
@@ -230,9 +247,12 @@ def test_file_decision_returns_none_when_empty(tmp_path: Path) -> None:
 
 def test_proposal_from_decision_handles_non_backlog() -> None:
     d = Decision(
-        project="p", type=DecisionType.FEATURE,
-        summary="x", rationale="x",
-        proposer_role="manager", proposer_agent_id="manager@p",
+        project="p",
+        type=DecisionType.FEATURE,
+        summary="x",
+        rationale="x",
+        proposer_role="manager",
+        proposer_agent_id="manager@p",
     )
     assert not is_backlog_proposal_decision(d)
     assert proposal_from_decision(d) is None
@@ -259,8 +279,12 @@ class _FakeGitHub:
         n = len(self.created) + 100
         self.created.append({"title": title, "body": body, "labels": labels or []})
         return Issue(
-            number=n, title=title, body=body, state="open",
-            labels=labels or [], html_url=f"https://x/issues/{n}",
+            number=n,
+            title=title,
+            body=body,
+            state="open",
+            labels=labels or [],
+            html_url=f"https://x/issues/{n}",
         )
 
 
@@ -269,8 +293,11 @@ def _approved_decision(m, build) -> Decision:
     store = DecisionStore(Path("/tmp/__throwaway_dec.json"))
     notifier = _CapturingNotifier()
     d = file_backlog_decision(
-        build=build, manifest=m, dossier=_draft(m.name),
-        decision_store=store, notifier=notifier,
+        build=build,
+        manifest=m,
+        dossier=_draft(m.name),
+        decision_store=store,
+        notifier=notifier,
     )
     assert d is not None
     d.status = DecisionStatus.APPROVED
@@ -280,12 +307,15 @@ def _approved_decision(m, build) -> Decision:
 def test_create_issues_labels_and_footer(tmp_path: Path) -> None:
     m = _manifest(tmp_path, "create-test", cap=5)
     raw = BacklogProposal(
-        project=m.name, dossier_commit_sha="cafef00d",
+        project=m.name,
+        dossier_commit_sha="cafef00d",
         candidates=[
-            _cand("Add health endpoint", kind=BacklogKind.FEATURE,
-                  citations=["src/health.ts:1"]),
-            _cand("Tech debt: rip out old auth", kind=BacklogKind.TECH_DEBT,
-                  citations=["src/auth.ts:99"]),
+            _cand("Add health endpoint", kind=BacklogKind.FEATURE, citations=["src/health.ts:1"]),
+            _cand(
+                "Tech debt: rip out old auth",
+                kind=BacklogKind.TECH_DEBT,
+                citations=["src/auth.ts:99"],
+            ),
         ],
     )
     build = build_backlog_proposal(raw=raw, manifest=m, existing_issues=[])
@@ -308,10 +338,10 @@ def test_create_issues_labels_and_footer(tmp_path: Path) -> None:
 def test_create_redoes_dedupe_against_fresh_state(tmp_path: Path) -> None:
     m = _manifest(tmp_path, "fresh-dedupe", cap=5)
     raw = BacklogProposal(
-        project=m.name, dossier_commit_sha="x",
+        project=m.name,
+        dossier_commit_sha="x",
         candidates=[
-            _cand("Add health endpoint", kind=BacklogKind.FEATURE,
-                  citations=["src/health.ts:1"]),
+            _cand("Add health endpoint", kind=BacklogKind.FEATURE, citations=["src/health.ts:1"]),
         ],
     )
     build = build_backlog_proposal(raw=raw, manifest=m, existing_issues=[])
@@ -328,8 +358,12 @@ def test_create_redoes_dedupe_against_fresh_state(tmp_path: Path) -> None:
 def test_create_rejects_non_backlog_decision(tmp_path: Path) -> None:
     m = _manifest(tmp_path, "x", cap=5)
     d = Decision(
-        project=m.name, type=DecisionType.FEATURE, summary="x", rationale="x",
-        proposer_role="manager", proposer_agent_id="manager@x",
+        project=m.name,
+        type=DecisionType.FEATURE,
+        summary="x",
+        rationale="x",
+        proposer_role="manager",
+        proposer_agent_id="manager@x",
         status=DecisionStatus.APPROVED,
     )
     with pytest.raises(ValueError, match="not a backlog proposal"):

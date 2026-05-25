@@ -41,8 +41,7 @@ KIND_VALUE = "backlog_proposal"
 DOSSIER_SHA_KEY = "dossier_commit_sha"
 
 FOOTER_TEMPLATE = (
-    "\n\n---\nFiled by minions discoverer from PROJECT_DOSSIER.md "
-    "(commit {commit_sha})."
+    "\n\n---\nFiled by minions discoverer from PROJECT_DOSSIER.md (commit {commit_sha})."
 )
 
 
@@ -116,8 +115,7 @@ def file_backlog_decision(
         f"- Dossier commit: `{dossier.commit_sha}`",
         f"- Cycle cap: `{manifest.dossier.max_new_issues_per_cycle}` "
         f"({build.capped} dropped over cap)",
-        f"- Dedupe: {len(build.dedupe.dropped)} dropped, "
-        f"{len(build.dedupe.kept)} kept",
+        f"- Dedupe: {len(build.dedupe.dropped)} dropped, {len(build.dedupe.kept)} kept",
         "",
     ]
     if build.dedupe.dropped:
@@ -128,14 +126,10 @@ def file_backlog_decision(
 
     body_lines.append("### Candidates")
     for i, cand in enumerate(proposal.candidates, start=1):
-        body_lines.append(
-            f"#### {i}. [{cand.label()}] {cand.title}"
-        )
+        body_lines.append(f"#### {i}. [{cand.label()}] {cand.title}")
         body_lines.append(cand.body)
         if cand.citations:
-            body_lines.append(
-                "Cites: " + ", ".join(f"`{c}`" for c in cand.citations)
-            )
+            body_lines.append("Cites: " + ", ".join(f"`{c}`" for c in cand.citations))
         body_lines.append("")
 
     decision = Decision(
@@ -143,8 +137,7 @@ def file_backlog_decision(
         type=DecisionType.OTHER,
         risk="medium",
         summary=(
-            f"backlog: {len(proposal.candidates)} new GitHub issue(s) "
-            f"proposed for {manifest.name}"
+            f"backlog: {len(proposal.candidates)} new GitHub issue(s) proposed for {manifest.name}"
         ),
         rationale=(
             "Backlog proposer crew converted dossier findings into "
@@ -205,9 +198,7 @@ def create_issues_for_decision(
 
     created: list[IssueCreated] = []
     for cand in survivors:
-        body = cand.body + FOOTER_TEMPLATE.format(
-            commit_sha=proposal.dossier_commit_sha
-        )
+        body = cand.body + FOOTER_TEMPLATE.format(commit_sha=proposal.dossier_commit_sha)
         try:
             issue = github.create_issue(
                 title=cand.title,
@@ -245,9 +236,7 @@ def file_backlog_after_merge(
     if github is not None:
         with suppress(Exception):
             existing = github.list_open_issues(per_page=50)
-    build = build_backlog_proposal(
-        raw=raw, manifest=manifest, existing_issues=existing
-    )
+    build = build_backlog_proposal(raw=raw, manifest=manifest, existing_issues=existing)
     return file_backlog_decision(
         build=build,
         manifest=manifest,

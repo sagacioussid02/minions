@@ -50,9 +50,16 @@ BRANCH_PREFIX = "minions/eng/"
 # this on every commit on a branch before deletion.
 _RUN_ID_TRAILER_RE = re.compile(r"^Minions-Run-Id:\s*(\S+)\s*$", re.MULTILINE)
 
-SweepStatus = Literal["deleted", "kept_no_trailer", "kept_unknown_run_id",
-                      "kept_too_young", "kept_open_pr", "kept_outside_namespace",
-                      "would_delete", "error"]
+SweepStatus = Literal[
+    "deleted",
+    "kept_no_trailer",
+    "kept_unknown_run_id",
+    "kept_too_young",
+    "kept_open_pr",
+    "kept_outside_namespace",
+    "would_delete",
+    "error",
+]
 
 
 class BranchOutcome(BaseModel):
@@ -105,7 +112,7 @@ def _tip_commit_at(commits: list[dict]) -> datetime | None:
     if not commits:
         return None
     tip = commits[0]
-    date_str = (((tip.get("commit") or {}).get("author") or {}).get("date"))
+    date_str = ((tip.get("commit") or {}).get("author") or {}).get("date")
     if not isinstance(date_str, str):
         return None
     try:
@@ -118,7 +125,7 @@ def _tip_commit_at(commits: list[dict]) -> datetime | None:
 def run_branch_sweep(
     *,
     projects_dir: Path,
-    open_github_client: Callable[[Manifest], "GitHubClient | None"],
+    open_github_client: Callable[[Manifest], GitHubClient | None],
     dry_run: bool = True,
     min_age_minutes: int = 30,
     known_run_ids: set[str] | None = None,
@@ -139,9 +146,7 @@ def run_branch_sweep(
     started = datetime.now(tz=UTC).isoformat()
 
     if known_run_ids is None:
-        known_run_ids = {
-            e.run_id for e in read_log() if e.run_id
-        }
+        known_run_ids = {e.run_id for e in read_log() if e.run_id}
     age_cutoff = datetime.now(tz=UTC) - timedelta(minutes=min_age_minutes)
 
     manifests = load_active_manifests(projects_dir)
@@ -155,12 +160,14 @@ def run_branch_sweep(
         try:
             branches = gh.list_branches(prefix=BRANCH_PREFIX)
         except Exception as e:  # noqa: BLE001
-            outcomes.append(BranchOutcome(
-                repo=str(getattr(manifest, "repo", manifest.name)),
-                branch="*",
-                status="error",
-                reason=f"list_branches failed: {str(e)[:120]}",
-            ))
+            outcomes.append(
+                BranchOutcome(
+                    repo=str(getattr(manifest, "repo", manifest.name)),
+                    branch="*",
+                    status="error",
+                    reason=f"list_branches failed: {str(e)[:120]}",
+                )
+            )
             continue
 
         for ref in branches:
@@ -183,7 +190,7 @@ def run_branch_sweep(
 
 def _evaluate_one(
     *,
-    gh: "GitHubClient",
+    gh: GitHubClient,
     manifest: Manifest,
     branch_name: str,
     known_run_ids: set[str],
@@ -200,35 +207,54 @@ def _evaluate_one(
     try:
         pr = gh.find_pull_request_for_branch(branch=branch_name)
     except Exception as e:  # noqa: BLE001
-        return BranchOutcome(repo=repo, branch=branch_name, status="error",
-                              reason=f"PR lookup failed: {str(e)[:120]}")
+        return BranchOutcome(
+            repo=repo,
+            branch=branch_name,
+            status="error",
+            reason=f"PR lookup failed: {str(e)[:120]}",
+        )
     if pr is not None and (pr.state or "").lower() == "open":
-        return BranchOutcome(repo=repo, branch=branch_name, status="kept_open_pr",
-                              reason=f"PR #{pr.number} open")
+        return BranchOutcome(
+            repo=repo, branch=branch_name, status="kept_open_pr", reason=f"PR #{pr.number} open"
+        )
 
     # Guards 2 + 3 + 4 — need the commit list
     try:
         commits = gh.list_branch_commits(branch=branch_name, limit=100)
     except Exception as e:  # noqa: BLE001
-        return BranchOutcome(repo=repo, branch=branch_name, status="error",
-                              reason=f"commits fetch failed: {str(e)[:120]}")
+        return BranchOutcome(
+            repo=repo,
+            branch=branch_name,
+            status="error",
+            reason=f"commits fetch failed: {str(e)[:120]}",
+        )
 
     all_trailered, run_ids = _extract_run_ids(commits)
     if not all_trailered:
-        return BranchOutcome(repo=repo, branch=branch_name, status="kept_no_trailer",
-                              reason="one or more commits lack Minions-Run-Id trailer "
-                                     "(operator may have edited)")
+        return BranchOutcome(
+            repo=repo,
+            branch=branch_name,
+            status="kept_no_trailer",
+            reason="one or more commits lack Minions-Run-Id trailer (operator may have edited)",
+        )
 
     if not run_ids.issubset(known_run_ids):
         unknown = run_ids - known_run_ids
-        return BranchOutcome(repo=repo, branch=branch_name, status="kept_unknown_run_id",
-                              reason=f"run_id(s) not in engineer_runs: "
-                                     f"{', '.join(sorted(unknown))[:80]}")
+        return BranchOutcome(
+            repo=repo,
+            branch=branch_name,
+            status="kept_unknown_run_id",
+            reason=f"run_id(s) not in engineer_runs: {', '.join(sorted(unknown))[:80]}",
+        )
 
     tip = _tip_commit_at(commits)
     if tip is not None and tip > age_cutoff:
-        return BranchOutcome(repo=repo, branch=branch_name, status="kept_too_young",
-                              reason=f"tip at {tip.isoformat()}, < cutoff")
+        return BranchOutcome(
+            repo=repo,
+            branch=branch_name,
+            status="kept_too_young",
+            reason=f"tip at {tip.isoformat()}, < cutoff",
+        )
 
     if dry_run:
         return BranchOutcome(repo=repo, branch=branch_name, status="would_delete")
@@ -236,6 +262,7 @@ def _evaluate_one(
     try:
         gh.delete_branch(name=branch_name)
     except Exception as e:  # noqa: BLE001
-        return BranchOutcome(repo=repo, branch=branch_name, status="error",
-                              reason=f"delete failed: {str(e)[:120]}")
+        return BranchOutcome(
+            repo=repo, branch=branch_name, status="error", reason=f"delete failed: {str(e)[:120]}"
+        )
     return BranchOutcome(repo=repo, branch=branch_name, status="deleted")

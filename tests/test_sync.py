@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import json as json_lib
-from datetime import UTC, datetime
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import httpx
-import pytest
 
 from minions.crews.engineer import EngineerResult
 from minions.crews.engineer_runs_store import EngineerRunStore
@@ -79,10 +76,15 @@ def test_sync_record_marks_merged_and_writes_back(tmp_path: Path) -> None:
                 200,
                 json={
                     "number": 1,
-                    "title": "x", "body": "b", "state": "closed",
-                    "head": {"ref": "minions/eng/x"}, "base": {"ref": "main"},
-                    "draft": False, "html_url": "u",
-                    "merged": True, "merged_at": "2026-05-04T22:50:00Z",
+                    "title": "x",
+                    "body": "b",
+                    "state": "closed",
+                    "head": {"ref": "minions/eng/x"},
+                    "base": {"ref": "main"},
+                    "draft": False,
+                    "html_url": "u",
+                    "merged": True,
+                    "merged_at": "2026-05-04T22:50:00Z",
                     "closed_at": "2026-05-04T22:50:00Z",
                 },
             )
@@ -109,9 +111,16 @@ def test_sync_record_open_pr_unchanged_state(tmp_path: Path) -> None:
         return httpx.Response(
             200,
             json={
-                "number": 1, "title": "x", "body": "", "state": "open",
-                "head": {"ref": "x"}, "base": {"ref": "main"}, "draft": True,
-                "html_url": "u", "merged": False, "merged_at": None,
+                "number": 1,
+                "title": "x",
+                "body": "",
+                "state": "open",
+                "head": {"ref": "x"},
+                "base": {"ref": "main"},
+                "draft": True,
+                "html_url": "u",
+                "merged": False,
+                "merged_at": None,
             },
         )
 
@@ -128,9 +137,16 @@ def test_sync_record_closed_without_merge(tmp_path: Path) -> None:
         return httpx.Response(
             200,
             json={
-                "number": 1, "title": "x", "body": "", "state": "closed",
-                "head": {"ref": "x"}, "base": {"ref": "main"}, "draft": False,
-                "html_url": "u", "merged": False, "merged_at": None,
+                "number": 1,
+                "title": "x",
+                "body": "",
+                "state": "closed",
+                "head": {"ref": "x"},
+                "base": {"ref": "main"},
+                "draft": False,
+                "html_url": "u",
+                "merged": False,
+                "merged_at": None,
                 "closed_at": "2026-05-04T22:00:00Z",
             },
         )
@@ -225,9 +241,16 @@ def test_sync_backfills_pre_b2_executed_decisions(tmp_path: Path) -> None:
             return httpx.Response(
                 200,
                 json={
-                    "number": 42, "title": "x", "body": "", "state": "closed",
-                    "head": {"ref": "x"}, "base": {"ref": "main"}, "draft": False,
-                    "html_url": "u", "merged": True, "merged_at": "2026-05-05T10:00:00Z",
+                    "number": 42,
+                    "title": "x",
+                    "body": "",
+                    "state": "closed",
+                    "head": {"ref": "x"},
+                    "base": {"ref": "main"},
+                    "draft": False,
+                    "html_url": "u",
+                    "merged": True,
+                    "merged_at": "2026-05-05T10:00:00Z",
                 },
             )
         return httpx.Response(404)

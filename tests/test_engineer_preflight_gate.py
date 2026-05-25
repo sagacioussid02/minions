@@ -37,22 +37,36 @@ def _decision() -> Decision:
 
 def _passing_report() -> PreflightReport:
     return PreflightReport(
-        project="Demo", commit_sha="abc",
-        network_posture=NetworkPosture.ALLOW, ok=True,
-        steps=[PreflightStepResult(
-            step="build", command="true", exit_code=0, ok=True,
-        )],
+        project="Demo",
+        commit_sha="abc",
+        network_posture=NetworkPosture.ALLOW,
+        ok=True,
+        steps=[
+            PreflightStepResult(
+                step="build",
+                command="true",
+                exit_code=0,
+                ok=True,
+            )
+        ],
     )
 
 
 def _failing_report(step: str = "build") -> PreflightReport:
     return PreflightReport(
-        project="Demo", commit_sha="abc",
-        network_posture=NetworkPosture.ALLOW, ok=False,
-        steps=[PreflightStepResult(
-            step=step, command="false", exit_code=1,
-            stderr_tail="Cannot find module 'foo'", ok=False,
-        )],
+        project="Demo",
+        commit_sha="abc",
+        network_posture=NetworkPosture.ALLOW,
+        ok=False,
+        steps=[
+            PreflightStepResult(
+                step=step,
+                command="false",
+                exit_code=1,
+                stderr_tail="Cannot find module 'foo'",
+                ok=False,
+            )
+        ],
     )
 
 
@@ -69,9 +83,14 @@ def test_gate_passes_when_preflight_ok(monkeypatch: pytest.MonkeyPatch, tmp_path
     )
     m = load_manifest(REPO_ROOT / "projects" / "Demo.yaml")
     files, state, skip = _run_preflight_gate(
-        decision=_decision(), manifest=m, github=None,  # type: ignore[arg-type]
-        api_key="k", eng_min=None,  # type: ignore[arg-type]
-        allowed_files=[], task=None, retry_attempt=0,
+        decision=_decision(),
+        manifest=m,
+        github=None,  # type: ignore[arg-type]
+        api_key="k",
+        eng_min=None,  # type: ignore[arg-type]
+        allowed_files=[],
+        task=None,
+        retry_attempt=0,
     )
     assert skip is None
     assert state["ok"] is True
@@ -85,20 +104,28 @@ def test_gate_skips_silently_when_working_tree_fails(
         raise RuntimeError("clone failed")
 
     monkeypatch.setattr(
-        "minions.working_tree.resolve_working_tree", _raise, raising=False,
+        "minions.working_tree.resolve_working_tree",
+        _raise,
+        raising=False,
     )
     m = load_manifest(REPO_ROOT / "projects" / "Demo.yaml")
     files, state, skip = _run_preflight_gate(
-        decision=_decision(), manifest=m, github=None,  # type: ignore[arg-type]
-        api_key="k", eng_min=None,  # type: ignore[arg-type]
-        allowed_files=[], task=None, retry_attempt=0,
+        decision=_decision(),
+        manifest=m,
+        github=None,  # type: ignore[arg-type]
+        api_key="k",
+        eng_min=None,  # type: ignore[arg-type]
+        allowed_files=[],
+        task=None,
+        retry_attempt=0,
     )
     assert skip is None  # silent skip — PR still opens
     assert state["attempted"] is False
 
 
 def test_gate_returns_skip_when_no_api_key_for_retry(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
         "minions.working_tree.resolve_working_tree",
@@ -111,9 +138,14 @@ def test_gate_returns_skip_when_no_api_key_for_retry(
     )
     m = load_manifest(REPO_ROOT / "projects" / "Demo.yaml")
     files, state, skip = _run_preflight_gate(
-        decision=_decision(), manifest=m, github=None,  # type: ignore[arg-type]
-        api_key=None, eng_min=None,  # type: ignore[arg-type]
-        allowed_files=[], task=None, retry_attempt=0,
+        decision=_decision(),
+        manifest=m,
+        github=None,  # type: ignore[arg-type]
+        api_key=None,
+        eng_min=None,  # type: ignore[arg-type]
+        allowed_files=[],
+        task=None,
+        retry_attempt=0,
     )
     assert skip is not None
     assert "preflight failed" in skip

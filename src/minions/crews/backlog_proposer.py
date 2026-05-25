@@ -71,7 +71,8 @@ def run_backlog_proposer(
     if dry_run and output_override is None:
         logger.info(
             "backlog_proposer dry-run for %s at %s — no LLM",
-            manifest.name, dossier.commit_sha[:8],
+            manifest.name,
+            dossier.commit_sha[:8],
         )
         return None
 
@@ -81,9 +82,7 @@ def run_backlog_proposer(
     if api_key is None:
         raise ValueError("api_key required when dry_run=False and no override")
 
-    set_attribution(
-        project=manifest.name, decision_id=None, role="product_owner"
-    )
+    set_attribution(project=manifest.name, decision_id=None, role="product_owner")
     try:
         with crew_run(
             crew="backlog_proposer",
@@ -109,16 +108,12 @@ def _llm_propose(
     from minions.crews.factory import make_crewai_agent
 
     po = make_crewai_agent(
-        build_named_agent(
-            Role.PRODUCT_OWNER, project=manifest.name, manifest=manifest
-        ),
+        build_named_agent(Role.PRODUCT_OWNER, project=manifest.name, manifest=manifest),
         api_key=api_key,
         max_tokens=3000,
     )
     sre = make_crewai_agent(
-        build_named_agent(
-            Role.SR_ENGINEER, project=manifest.name, manifest=manifest
-        ),
+        build_named_agent(Role.SR_ENGINEER, project=manifest.name, manifest=manifest),
         api_key=api_key,
         max_tokens=3000,
     )
@@ -141,8 +136,10 @@ def _llm_propose(
     )
 
     crew = Crew(
-        agents=[po, sre], tasks=[propose_task, review_task],
-        process=Process.sequential, verbose=False,
+        agents=[po, sre],
+        tasks=[propose_task, review_task],
+        process=Process.sequential,
+        verbose=False,
     )
     result = crew.kickoff()
 
@@ -155,9 +152,7 @@ def _llm_propose(
     )
 
 
-def _propose_prompt(
-    manifest: Manifest, dossier: DossierDraft, max_candidates: int
-) -> str:
+def _propose_prompt(manifest: Manifest, dossier: DossierDraft, max_candidates: int) -> str:
     return textwrap.dedent(
         f"""\
         You are the Product Owner for project {manifest.name}. Read the
@@ -193,9 +188,7 @@ def _propose_prompt(
     )
 
 
-def _review_prompt(
-    manifest: Manifest, dossier: DossierDraft, max_candidates: int
-) -> str:
+def _review_prompt(manifest: Manifest, dossier: DossierDraft, max_candidates: int) -> str:
     return textwrap.dedent(
         f"""\
         You are the Senior Engineer. The Product Owner produced a draft set
@@ -255,9 +248,7 @@ def _parse_candidates(text: str) -> list[BacklogCandidate]:
         if not title or not body:
             continue
         citations = [
-            str(c).strip("` ")
-            for c in (item.get("citations") or [])
-            if isinstance(c, str)
+            str(c).strip("` ") for c in (item.get("citations") or []) if isinstance(c, str)
         ]
         out.append(
             BacklogCandidate(

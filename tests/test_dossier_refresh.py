@@ -163,12 +163,18 @@ def test_file_decision_is_idempotent_per_project(tmp_path: Path) -> None:
     draft2 = _draft(m.name, sha="bbbb2222")  # newer draft, different sha
 
     first = file_dossier_refresh_decision(
-        draft=draft1, manifest=m,
-        decision_store=store, dossier_store=drafts, notifier=notifier,
+        draft=draft1,
+        manifest=m,
+        decision_store=store,
+        dossier_store=drafts,
+        notifier=notifier,
     )
     second = file_dossier_refresh_decision(
-        draft=draft2, manifest=m,
-        decision_store=store, dossier_store=drafts, notifier=notifier,
+        draft=draft2,
+        manifest=m,
+        decision_store=store,
+        dossier_store=drafts,
+        notifier=notifier,
     )
 
     # Same Decision id returned both times.
@@ -178,9 +184,13 @@ def test_file_decision_is_idempotent_per_project(tmp_path: Path) -> None:
     # Only ONE row in the store.
     assert len(store.list_all()) == 1
     # find_open_refresh_decision sees it.
-    assert find_open_refresh_decision(
-        project=m.name, decision_store=store,
-    ) is not None
+    assert (
+        find_open_refresh_decision(
+            project=m.name,
+            decision_store=store,
+        )
+        is not None
+    )
 
 
 def test_file_decision_allows_new_after_executed(tmp_path: Path) -> None:
@@ -192,16 +202,22 @@ def test_file_decision_allows_new_after_executed(tmp_path: Path) -> None:
     notifier = _CapturingNotifier()
     m = _manifest("post-executed")
     first = file_dossier_refresh_decision(
-        draft=_draft(m.name, sha="aaaa1111"), manifest=m,
-        decision_store=store, dossier_store=drafts, notifier=notifier,
+        draft=_draft(m.name, sha="aaaa1111"),
+        manifest=m,
+        decision_store=store,
+        dossier_store=drafts,
+        notifier=notifier,
     )
     # Simulate the engineer crew having opened the PR.
     first.status = DecisionStatus.EXECUTED
     store.save(first)
 
     second = file_dossier_refresh_decision(
-        draft=_draft(m.name, sha="bbbb2222"), manifest=m,
-        decision_store=store, dossier_store=drafts, notifier=notifier,
+        draft=_draft(m.name, sha="bbbb2222"),
+        manifest=m,
+        decision_store=store,
+        dossier_store=drafts,
+        notifier=notifier,
     )
 
     assert second.id != first.id

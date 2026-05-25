@@ -30,7 +30,6 @@ from minions.approval.store import DecisionStore
 from minions.crews.engineer_runs_store import EngineerRunRecord, EngineerRunStore
 from minions.crews.qa import render_pr_comment as render_qa_comment
 from minions.crews.qa import run_qa_review
-from minions.models.decision import Decision, DecisionStatus, DecisionType
 from minions.models.manifest import Manifest, load_active_manifests
 from minions.notify.base import Notifier
 
@@ -108,7 +107,7 @@ def run_pr_followup(
     store: DecisionStore,
     engineer_runs_store: EngineerRunStore,
     notifier: Notifier,
-    open_github_client: "Callable[[Manifest], GitHubClient | None]",
+    open_github_client: Callable[[Manifest], GitHubClient | None],
     max_attempts: int = 1,
     dry_run: bool = False,
     api_key: str | None = None,
@@ -131,13 +130,15 @@ def run_pr_followup(
 
         github = open_github_client(manifest)
         if github is None:
-            outcomes.append(PRFollowupOutcome(
-                decision_id=record.decision_id,
-                project=record.project,
-                pr_url=record.pr_url,
-                status="error",
-                reason="failed to open GitHub client",
-            ))
+            outcomes.append(
+                PRFollowupOutcome(
+                    decision_id=record.decision_id,
+                    project=record.project,
+                    pr_url=record.pr_url,
+                    status="error",
+                    reason="failed to open GitHub client",
+                )
+            )
             continue
 
         try:
@@ -174,13 +175,15 @@ def run_pr_followup(
                                 pass
 
                     engineer_runs_store.update(record)
-                    outcomes.append(PRFollowupOutcome(
-                        decision_id=record.decision_id,
-                        project=record.project,
-                        pr_url=record.pr_url,
-                        ci_conclusion=conclusion,
-                        status="ok",
-                    ))
+                    outcomes.append(
+                        PRFollowupOutcome(
+                            decision_id=record.decision_id,
+                            project=record.project,
+                            pr_url=record.pr_url,
+                            ci_conclusion=conclusion,
+                            status="ok",
+                        )
+                    )
                     continue
 
                 # Dedupe + cap guards: prevent the runaway PR loop where
@@ -197,17 +200,19 @@ def run_pr_followup(
                     pr_number=record.pr_number,
                     store=store,
                 ):
-                    outcomes.append(PRFollowupOutcome(
-                        decision_id=record.decision_id,
-                        project=record.project,
-                        pr_url=record.pr_url,
-                        ci_conclusion=conclusion,
-                        status="skipped",
-                        reason=(
-                            f"a fix Decision is already pending/approved for "
-                            f"PR #{record.pr_number}"
-                        ),
-                    ))
+                    outcomes.append(
+                        PRFollowupOutcome(
+                            decision_id=record.decision_id,
+                            project=record.project,
+                            pr_url=record.pr_url,
+                            ci_conclusion=conclusion,
+                            status="skipped",
+                            reason=(
+                                f"a fix Decision is already pending/approved for "
+                                f"PR #{record.pr_number}"
+                            ),
+                        )
+                    )
                     continue
 
                 open_prs = distinct_open_pr_count(
@@ -216,29 +221,33 @@ def run_pr_followup(
                 )
                 cap = manifest.flow_control.max_open_prs
                 if open_prs >= cap:
-                    outcomes.append(PRFollowupOutcome(
-                        decision_id=record.decision_id,
-                        project=record.project,
-                        pr_url=record.pr_url,
-                        ci_conclusion=conclusion,
-                        status="skipped",
-                        reason=(
-                            f"open_pr_cap={cap} reached "
-                            f"({open_prs} open) — merge or close PRs first"
-                        ),
-                    ))
+                    outcomes.append(
+                        PRFollowupOutcome(
+                            decision_id=record.decision_id,
+                            project=record.project,
+                            pr_url=record.pr_url,
+                            ci_conclusion=conclusion,
+                            status="skipped",
+                            reason=(
+                                f"open_pr_cap={cap} reached "
+                                f"({open_prs} open) — merge or close PRs first"
+                            ),
+                        )
+                    )
                     continue
 
                 if record.followup_attempts >= max_attempts:
                     engineer_runs_store.update(record)
-                    outcomes.append(PRFollowupOutcome(
-                        decision_id=record.decision_id,
-                        project=record.project,
-                        pr_url=record.pr_url,
-                        ci_conclusion=conclusion,
-                        status="skipped",
-                        reason=f"followup_attempts={record.followup_attempts} ≥ max={max_attempts}",
-                    ))
+                    outcomes.append(
+                        PRFollowupOutcome(
+                            decision_id=record.decision_id,
+                            project=record.project,
+                            pr_url=record.pr_url,
+                            ci_conclusion=conclusion,
+                            status="skipped",
+                            reason=f"followup_attempts={record.followup_attempts} ≥ max={max_attempts}",
+                        )
+                    )
                     continue
 
                 # pr-ownership-sweep Phase 4: do NOT file a new "Fix CI
@@ -254,23 +263,27 @@ def run_pr_followup(
                 # the QA review on the success path. Don't touch the
                 # counter here — owner sweep owns it.
                 engineer_runs_store.update(record)
-                outcomes.append(PRFollowupOutcome(
+                outcomes.append(
+                    PRFollowupOutcome(
+                        decision_id=record.decision_id,
+                        project=record.project,
+                        pr_url=record.pr_url,
+                        ci_conclusion=conclusion,
+                        status="ok",
+                        reason="ci=failure (owner sweep will retry)",
+                    )
+                )
+                continue
+        except Exception as e:  # noqa: BLE001
+            outcomes.append(
+                PRFollowupOutcome(
                     decision_id=record.decision_id,
                     project=record.project,
                     pr_url=record.pr_url,
-                    ci_conclusion=conclusion,
-                    status="ok",
-                    reason="ci=failure (owner sweep will retry)",
-                ))
-                continue
-        except Exception as e:  # noqa: BLE001
-            outcomes.append(PRFollowupOutcome(
-                decision_id=record.decision_id,
-                project=record.project,
-                pr_url=record.pr_url,
-                status="error",
-                reason=f"{type(e).__name__}: {e}",
-            ))
+                    status="error",
+                    reason=f"{type(e).__name__}: {e}",
+                )
+            )
 
     return PRFollowupReport(
         started_at=started,

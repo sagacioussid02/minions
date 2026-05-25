@@ -16,7 +16,7 @@ def test_extract_image_urls_resolves_relative() -> None:
         '<img src="https://cdn.example.com/b.jpg"/>'
         '<img src="data:image/png;base64,xyz"/>'  # skipped
         '<img src="//assets.example.com/c.webp"/>'
-        '</html>'
+        "</html>"
     )
     urls = _extract_image_urls(html, "https://example.com", max_n=5)
     assert urls == [
@@ -34,17 +34,18 @@ def test_extract_image_urls_caps_max_n() -> None:
 
 def test_deployment_record_count_helpers() -> None:
     rec = DeploymentRecord(
-        project="p", merge_sha="abc", deploy_target="vercel",
+        project="p",
+        merge_sha="abc",
+        deploy_target="vercel",
         status=DeploymentStatus.UNHEALTHY,
         health_check_results=[
-            HealthCheckResult(url="https://x/", kind="path",
-                               actual_status=200, ok=True),
-            HealthCheckResult(url="https://x/api", kind="path",
-                               actual_status=500, ok=False,
-                               error="HTTP 500"),
-            HealthCheckResult(url="https://x/a.png", kind="image",
-                               actual_status=400, ok=False,
-                               error="HTTP 400"),
+            HealthCheckResult(url="https://x/", kind="path", actual_status=200, ok=True),
+            HealthCheckResult(
+                url="https://x/api", kind="path", actual_status=500, ok=False, error="HTTP 500"
+            ),
+            HealthCheckResult(
+                url="https://x/a.png", kind="image", actual_status=400, ok=False, error="HTTP 400"
+            ),
         ],
     )
     assert rec.healthy_count == 1

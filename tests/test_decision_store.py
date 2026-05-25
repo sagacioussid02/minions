@@ -57,6 +57,4 @@ def test_update_status_records_resolution(tmp_path):
 def test_update_status_missing_raises(tmp_path):
     store = DecisionStore(tmp_path / "decisions.json")
     with pytest.raises(KeyError):
-        store.update_status(
-            "00000000-0000-0000-0000-000000000000", DecisionStatus.APPROVED
-        )
+        store.update_status("00000000-0000-0000-0000-000000000000", DecisionStatus.APPROVED)

@@ -44,7 +44,7 @@ def _save(names: dict[str, str], path: Path | None = None) -> None:
     # Preserve the header comment so the file stays self-documenting.
     header = (
         "# Agent name registry. See src/minions/agents/naming.py for the API.\n"
-        "# Manage via:  minions agents name <agent_id> \"<Display Name>\"\n"
+        '# Manage via:  minions agents name <agent_id> "<Display Name>"\n'
     )
     p.write_text(header + yaml.safe_dump(body, sort_keys=False))
 

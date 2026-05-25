@@ -31,11 +31,11 @@ class QuestionRecord(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     project: str
 
-    asker_role: str          # role that needs an answer (e.g., "engineer")
-    asker_agent_id: str      # specific agent (e.g., "engineer@Demo")
-    target_role: str         # role expected to answer (e.g., "manager", "operator")
+    asker_role: str  # role that needs an answer (e.g., "engineer")
+    asker_agent_id: str  # specific agent (e.g., "engineer@Demo")
+    target_role: str  # role expected to answer (e.g., "manager", "operator")
 
-    question: str            # the actual question, one sentence preferred
+    question: str  # the actual question, one sentence preferred
     context: str | None = None  # optional longer-form context (logs, links)
 
     # Optional link back to the work-unit that triggered the question.

@@ -15,9 +15,15 @@ from minions.models.sprint_plan import PlanItem, StructuredSprintPlan
 def test_render_markdown_includes_all_sections() -> None:
     plan = StructuredSprintPlan(
         goal="Ship audit log v2",
-        features=[PlanItem(title="Search endpoint", rationale="ops asked",
-                           acceptance_criteria="paginates", estimated_effort="m",
-                           suggested_owner_role="engineer")],
+        features=[
+            PlanItem(
+                title="Search endpoint",
+                rationale="ops asked",
+                acceptance_criteria="paginates",
+                estimated_effort="m",
+                suggested_owner_role="engineer",
+            )
+        ],
         bugs=[PlanItem(title="Cron noise", estimated_effort="s")],
         ops=[PlanItem(title="Promote staging", estimated_effort="m")],
         risks=["Postgres FTS index migration is unfamiliar territory"],
@@ -53,7 +59,7 @@ def test_parser_accepts_bare_json() -> None:
 
 
 def test_parser_strips_markdown_fences() -> None:
-    text = "```json\n{\"goal\": \"g\", \"bugs\": [{\"title\": \"b\"}]}\n```"
+    text = '```json\n{"goal": "g", "bugs": [{"title": "b"}]}\n```'
     plan = _parse_structured_plan(text, project="Demo")
     assert plan.goal == "g"
     assert plan.bugs[0].title == "b"
@@ -139,9 +145,14 @@ def test_planitem_subtasks_round_trip_through_decision() -> None:
         ],
     )
     d = Decision(
-        project="Demo", type=DecisionType.FEATURE, summary="x", rationale="y",
-        proposer_role="manager", proposer_agent_id="manager@Demo",
-        structured_plan=plan, sprint_number=3,
+        project="Demo",
+        type=DecisionType.FEATURE,
+        summary="x",
+        rationale="y",
+        proposer_role="manager",
+        proposer_agent_id="manager@Demo",
+        structured_plan=plan,
+        sprint_number=3,
     )
     dumped = d.model_dump(mode="json")
     reloaded = Decision.model_validate(dumped)

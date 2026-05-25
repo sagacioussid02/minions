@@ -79,9 +79,7 @@ FORBIDDEN_PATH_PREFIXES: tuple[str, ...] = (
     ".aws/",
     ".ssh/",
 )
-FORBIDDEN_PATH_SUBSTRINGS: tuple[str, ...] = (
-    "credentials",
-)
+FORBIDDEN_PATH_SUBSTRINGS: tuple[str, ...] = ("credentials",)
 FORBIDDEN_PATH_SUFFIXES: tuple[str, ...] = (
     ".pem",
     ".key",
@@ -223,7 +221,11 @@ def _run_preflight_gate(
     from minions.working_tree import resolve_working_tree
 
     state: dict[str, object] = {
-        "attempted": True, "ok": None, "step": None, "tail": None, "retries": 0,
+        "attempted": True,
+        "ok": None,
+        "step": None,
+        "tail": None,
+        "retries": 0,
     }
     try:
         cache_dir = Path(__file__).resolve().parents[3] / "data" / "local" / "clones"
@@ -235,7 +237,9 @@ def _run_preflight_gate(
         return allowed_files, state, None
 
     report = run_preflight(
-        patches=allowed_files, manifest=manifest, repo_clone=repo_clone,
+        patches=allowed_files,
+        manifest=manifest,
+        repo_clone=repo_clone,
     )
     if report.ok:
         state["ok"] = True
@@ -248,15 +252,24 @@ def _run_preflight_gate(
     # If we have no api_key (e.g. an output_override flow), can't retry.
     if api_key is None:
         state["ok"] = False
-        return allowed_files, state, (
-            f"preflight failed on step '{state['step']}' and no api_key for retry"
+        return (
+            allowed_files,
+            state,
+            (f"preflight failed on step '{state['step']}' and no api_key for retry"),
         )
 
     # ONE retry — feed the failure back into the engineer.
     retry_output = _run_engineer_llm(
-        decision, manifest, eng_min, github, github.get_repo().default_branch,
-        api_key, task=task, retry_attempt=retry_attempt + 1,
-        is_conflict_resolution=False, existing_pr_number=None,
+        decision,
+        manifest,
+        eng_min,
+        github,
+        github.get_repo().default_branch,
+        api_key,
+        task=task,
+        retry_attempt=retry_attempt + 1,
+        is_conflict_resolution=False,
+        existing_pr_number=None,
         preflight_failure=report,
     )
     state["retries"] = 1
@@ -266,7 +279,9 @@ def _run_preflight_gate(
         return allowed_files, state, "preflight retry produced no allowed files"
 
     report2 = run_preflight(
-        patches=retry_allowed, manifest=manifest, repo_clone=repo_clone,
+        patches=retry_allowed,
+        manifest=manifest,
+        repo_clone=repo_clone,
     )
     if report2.ok:
         state["ok"] = True
@@ -274,10 +289,14 @@ def _run_preflight_gate(
 
     failed2 = report2.failed_step
     state["step"] = failed2.step if failed2 else state["step"]
-    state["tail"] = (failed2.stderr_tail or failed2.stdout_tail)[-2000:] if failed2 else state["tail"]
+    state["tail"] = (
+        (failed2.stderr_tail or failed2.stdout_tail)[-2000:] if failed2 else state["tail"]
+    )
     state["ok"] = False
-    return retry_allowed, state, (
-        f"preflight failed twice on step '{state['step']}' — operator action required"
+    return (
+        retry_allowed,
+        state,
+        (f"preflight failed twice on step '{state['step']}' — operator action required"),
     )
 
 
@@ -403,7 +422,11 @@ def run_engineer_crew(
     # the failure pasted into the engineer's prompt; on second failure the
     # PR is NOT opened.
     preflight_state: dict[str, object] = {
-        "attempted": False, "ok": None, "step": None, "tail": None, "retries": 0,
+        "attempted": False,
+        "ok": None,
+        "step": None,
+        "tail": None,
+        "retries": 0,
     }
     if (
         not dry_run
@@ -442,7 +465,8 @@ def run_engineer_crew(
     # new PR — the existing PR's CI re-runs on push.
     in_place = target_branch is not None
     branch_name = (
-        target_branch if in_place
+        target_branch
+        if in_place
         else (branch_name_for_task(decision, task) if task else branch_name_for_decision(decision))
     )
 
@@ -499,8 +523,8 @@ def run_engineer_crew(
         dry_summary = (
             f"[DRY RUN] would append commit to existing PR #{existing_pr_number} "
             f"on branch {branch_name} ({len(allowed_files)} files, retry {retry_attempt})"
-            if in_place else
-            f"[DRY RUN] would open draft PR for branch {branch_name} "
+            if in_place
+            else f"[DRY RUN] would open draft PR for branch {branch_name} "
             f"({len(allowed_files)} files)"
         )
         return EngineerResult(
@@ -663,9 +687,7 @@ def _run_engineer_live_path(
 
     review_comment = None
     if api_key is not None and pr_number is not None and pr_url is not None:
-        review_comment = _run_ttl_review(
-            decision, manifest, output, allowed_files, pr_url, api_key
-        )
+        review_comment = _run_ttl_review(decision, manifest, output, allowed_files, pr_url, api_key)
         try:
             github.comment_on_pull_request(number=pr_number, body=review_comment)
         except GitHubError:
@@ -679,19 +701,27 @@ def _run_engineer_live_path(
 
         eng_narrative = (output.pr_body or "").strip() or output.pr_title
         record_task_default(
-            run_id=run_id, project=manifest.name, crew="engineer",
+            run_id=run_id,
+            project=manifest.name,
+            crew="engineer",
             agent_role="engineer",
             agent_display_name=owner_agent_id,  # already namespaced (e.g. "engineer@Demo#1")
-            sequence=0, role_in_conversation="task_output",
-            task_output=eng_narrative, decision_id=str(decision.id),
+            sequence=0,
+            role_in_conversation="task_output",
+            task_output=eng_narrative,
+            decision_id=str(decision.id),
         )
         if review_comment:
             record_task_default(
-                run_id=run_id, project=manifest.name, crew="engineer",
+                run_id=run_id,
+                project=manifest.name,
+                crew="engineer",
                 agent_role="tech_team_lead",
                 agent_display_name=None,
-                sequence=1, role_in_conversation="review",
-                task_output=review_comment, decision_id=str(decision.id),
+                sequence=1,
+                role_in_conversation="review",
+                task_output=review_comment,
+                decision_id=str(decision.id),
             )
 
     return EngineerResult(
@@ -760,7 +790,7 @@ def _build_operator_review_comment(
         "1. Review the diff. The agent has **no merge capability** by design.\n"
         "2. If it looks good, mark the PR ready-for-review and merge.\n"
         "3. If not, close the PR and reject the underlying Decision with "
-        "`minions decisions reject <id> -r \"…\"` so the rationale is captured "
+        '`minions decisions reject <id> -r "…"` so the rationale is captured '
         "in the audit log.\n"
     )
 
@@ -783,7 +813,7 @@ def _dry_run_output(decision: Decision, *, task: SprintTask | None = None) -> En
             {task.description}
 
             Acceptance criteria:
-            {task.acceptance_criteria or '(none)'}
+            {task.acceptance_criteria or "(none)"}
             """
         ).strip()
     else:
@@ -944,7 +974,7 @@ def _run_engineer_llm(
             {task.description}
 
             Acceptance criteria:
-            {task.acceptance_criteria or '(none)'}
+            {task.acceptance_criteria or "(none)"}
             """
         )
         if task
@@ -1010,11 +1040,11 @@ def _run_engineer_llm(
             ## Preflight failure ({failed_step})
             stderr:
             ```
-            {(stderr_tail or '(empty)')[-2000:]}
+            {(stderr_tail or "(empty)")[-2000:]}
             ```
             stdout:
             ```
-            {(stdout_tail or '(empty)')[-1000:]}
+            {(stdout_tail or "(empty)")[-1000:]}
             ```
             """
         )
@@ -1033,7 +1063,7 @@ def _run_engineer_llm(
 
             ## Failing CI excerpt
             ```
-            {ci_log_excerpt or '(CI log not available — diagnose from the Acceptance criteria)'}
+            {ci_log_excerpt or "(CI log not available — diagnose from the Acceptance criteria)"}
             ```
             """
         )

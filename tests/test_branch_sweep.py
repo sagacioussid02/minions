@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 from minions.github.models import BranchRef, PullRequest
-from minions.models.manifest import load_active_manifests
 from minions.scheduled.branch_sweep import BRANCH_PREFIX, run_branch_sweep
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -68,8 +67,15 @@ class _FakeGithub:
     def find_pull_request_for_branch(self, *, branch: str) -> PullRequest | None:
         if branch in self.open_pr_branches:
             return PullRequest(
-                number=99, html_url="https://example/pr/99", state="open",
-                head=branch, base="main", draft=False, title="x", body=None, merged=False,
+                number=99,
+                html_url="https://example/pr/99",
+                state="open",
+                head=branch,
+                base="main",
+                draft=False,
+                title="x",
+                body=None,
+                merged=False,
             )
         return None
 
@@ -80,6 +86,7 @@ class _FakeGithub:
 def _open_factory(gh: _FakeGithub):
     def _open(_manifest):
         return gh
+
     return _open
 
 
@@ -93,10 +100,12 @@ def test_kept_when_commit_lacks_trailer(tmp_path: Path) -> None:
     branch = f"{BRANCH_PREFIX}some-work"
     gh = _FakeGithub(
         branches=[BranchRef(name=branch, sha="abc")],
-        commits_by_branch={branch: [
-            _commit(_trailered("first commit")),
-            _commit("operator hand-edit, no trailer"),  # untrailered → kept
-        ]},
+        commits_by_branch={
+            branch: [
+                _commit(_trailered("first commit")),
+                _commit("operator hand-edit, no trailer"),  # untrailered → kept
+            ]
+        },
     )
     report = run_branch_sweep(
         projects_dir=_one_manifest_dir(),
@@ -168,10 +177,12 @@ def test_deleted_when_all_guards_pass(tmp_path: Path) -> None:
     branch = f"{BRANCH_PREFIX}stranded"
     gh = _FakeGithub(
         branches=[BranchRef(name=branch, sha="abc")],
-        commits_by_branch={branch: [
-            _commit(_trailered("c2"), days_ago=2),
-            _commit(_trailered("c1"), days_ago=2),
-        ]},
+        commits_by_branch={
+            branch: [
+                _commit(_trailered("c2"), days_ago=2),
+                _commit(_trailered("c1"), days_ago=2),
+            ]
+        },
     )
     report = run_branch_sweep(
         projects_dir=_one_manifest_dir(),

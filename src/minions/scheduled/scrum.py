@@ -61,9 +61,7 @@ def run_scrum(
     for project in sorted(manifests):
         try:
             decisions = [
-                d
-                for d in store.list_all()
-                if d.project == project and d.created_at >= period_start
+                d for d in store.list_all() if d.project == project and d.created_at >= period_start
             ]
             runs = [
                 r
@@ -101,9 +99,7 @@ def run_scrum(
                     "blockers_preview": [b[:180] for b in blockers[:3]],
                     "next_actions_preview": [a[:180] for a in next_actions[:3]],
                     "decisions_count": len(decisions),
-                    "open_pr_count": sum(
-                        1 for r in runs if (r.pr_state or "open") == "open"
-                    ),
+                    "open_pr_count": sum(1 for r in runs if (r.pr_state or "open") == "open"),
                 }
                 append(
                     ActivityEntry(
@@ -143,9 +139,7 @@ def _blockers(decisions, runs, open_questions) -> list[str]:
         if run.ci_conclusion == "failure":
             blockers.append(f"PR #{run.pr_number or '?'} has failing CI")
         if run.review_status in {"changes_requested", "merge_blocked", "conflict_queued"}:
-            blockers.append(
-                f"PR #{run.pr_number or '?'} review status is {run.review_status}"
-            )
+            blockers.append(f"PR #{run.pr_number or '?'} review status is {run.review_status}")
     for decision in decisions:
         if decision.status is DecisionStatus.PENDING:
             blockers.append(f"Decision {str(decision.id)[:8]} is awaiting operator approval")

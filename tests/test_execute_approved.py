@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from minions.approval.store import DecisionStore
 from minions.approval.service import resolve
+from minions.approval.store import DecisionStore
 from minions.budget import BudgetBreachError, BudgetState
 from minions.crews.engineer import EngineerResult
 from minions.crews.engineer_runs_store import EngineerRunStore
@@ -64,6 +64,7 @@ def _success_runner(pr_url: str = "https://example/pr/1"):
             files_rejected=[],
             dry_run=False,
         )
+
     return runner
 
 
@@ -206,10 +207,15 @@ def test_budget_breach_is_per_decision_not_fatal(tmp_path: Path) -> None:
     def runner(decision: Decision, *_a: Any, **_k: Any) -> EngineerResult:
         calls.append(decision.project)
         if decision.project == p1:
-            raise BudgetBreachError(BudgetState(
-                project=p1, monthly_cap_usd=10.0, month_to_date_usd=10.5,
-                fraction=1.05, state="breach",
-            ))
+            raise BudgetBreachError(
+                BudgetState(
+                    project=p1,
+                    monthly_cap_usd=10.0,
+                    month_to_date_usd=10.5,
+                    fraction=1.05,
+                    state="breach",
+                )
+            )
         return EngineerResult(decision_id=str(decision.id), pr_url="https://ok", dry_run=False)
 
     report = run_execute_approved(
@@ -403,11 +409,14 @@ def test_in_place_fix_fields_pass_through_to_runner(tmp_path: Path) -> None:
     store.save(fix)
 
     captured: dict[str, Any] = {}
+
     def runner(decision: Decision, manifest: Any, **kw: Any) -> EngineerResult:
         captured.update(kw)
         return EngineerResult(
-            decision_id=str(decision.id), pr_url="https://github.com/x/repo/pull/99",
-            pr_number=99, dry_run=False,
+            decision_id=str(decision.id),
+            pr_url="https://github.com/x/repo/pull/99",
+            pr_number=99,
+            dry_run=False,
         )
 
     report = run_execute_approved(
@@ -438,13 +447,19 @@ def test_fresh_pr_decision_has_no_in_place_fields(tmp_path: Path) -> None:
     store.save(d)
 
     captured: dict[str, Any] = {}
+
     def runner(decision: Decision, manifest: Any, **kw: Any) -> EngineerResult:
         captured.update(kw)
         return EngineerResult(decision_id=str(decision.id), pr_url="https://x", dry_run=False)
 
     run_execute_approved(
-        projects_dir=PROJECTS_DIR, store=store, engineer_runs_store=runs,
-        open_github_client=_fake_github_client, dry_run=False, runner=runner, max_runs=1,
+        projects_dir=PROJECTS_DIR,
+        store=store,
+        engineer_runs_store=runs,
+        open_github_client=_fake_github_client,
+        dry_run=False,
+        runner=runner,
+        max_runs=1,
     )
 
     assert captured.get("target_branch") is None

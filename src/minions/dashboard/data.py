@@ -27,16 +27,13 @@ from minions.agents.roster import (
     build_project_agents,
     build_shared_agents,
 )
-from minions.approval.store import DecisionStore
-from minions.audit import AuditFindingStore
 from minions.config.portfolio import PortfolioConfig, load_portfolio_config
 from minions.cost import CostEntry, read_log
-from minions.crews.engineer_runs_store import EngineerRunRecord, EngineerRunStore
+from minions.crews.engineer_runs_store import EngineerRunRecord
 from minions.dashboard.schedule import NextRun, next_run_for_role
 from minions.models.audit import AuditFinding
 from minions.models.decision import Decision, DecisionStatus
 from minions.models.manifest import Manifest, load_active_manifests
-
 
 Status = Literal["active", "idle", "stale", "error"]
 
@@ -100,7 +97,7 @@ class SprintBoard:
     pending: list[Decision] = field(default_factory=list)
     approved: list[Decision] = field(default_factory=list)
     in_progress: list[Decision] = field(default_factory=list)  # Phase B will populate
-    pr_open: list[Decision] = field(default_factory=list)      # Phase B will populate
+    pr_open: list[Decision] = field(default_factory=list)  # Phase B will populate
     done: list[Decision] = field(default_factory=list)
 
     @property
@@ -318,9 +315,12 @@ def build_sprint_board(
     in_progress: list[Decision] = []
     for d in approved_raw:
         rec = runs.get(str(d.id))
-        if str(d.id) in in_flight_decision_ids:
-            in_progress.append(d)
-        elif rec is not None and rec.pr_url is None and not rec.dry_run:
+        if (
+            str(d.id) in in_flight_decision_ids
+            or rec is not None
+            and rec.pr_url is None
+            and not rec.dry_run
+        ):
             in_progress.append(d)
         else:
             approved.append(d)
@@ -335,9 +335,7 @@ def build_sprint_board(
             # Merged or closed PRs land in Done; only "open" stays in PR open.
             if rec and rec.pr_state in ("merged", "closed"):
                 done.append(d)
-            elif rec and rec.pr_url:
-                pr_open.append(d)
-            elif d.pr_url:  # decision row has the URL even without a run record
+            elif rec and rec.pr_url or d.pr_url:
                 pr_open.append(d)
             else:
                 in_progress.append(d)

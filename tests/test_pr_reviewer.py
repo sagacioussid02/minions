@@ -18,9 +18,12 @@ from minions.scheduled.pr_review_loop import StructuredReview
 
 def _decision() -> Decision:
     return Decision(
-        project="Demo", type=DecisionType.FEATURE,
-        summary="x", rationale="y",
-        proposer_role="manager", proposer_agent_id="manager@Demo",
+        project="Demo",
+        type=DecisionType.FEATURE,
+        summary="x",
+        rationale="y",
+        proposer_role="manager",
+        proposer_agent_id="manager@Demo",
         status=DecisionStatus.EXECUTED,
     )
 
@@ -28,30 +31,41 @@ def _decision() -> Decision:
 def _record() -> EngineerRunRecord:
     return EngineerRunRecord(
         decision_id="00000000-0000-4000-8000-000000000001",
-        project="Demo", completed_at=datetime.now(tz=UTC),
-        pr_url="https://x/p/1", pr_number=1, pr_state="open",
+        project="Demo",
+        completed_at=datetime.now(tz=UTC),
+        pr_url="https://x/p/1",
+        pr_number=1,
+        pr_state="open",
         branch_name="minions/eng/x",
     )
 
 
 def _reviewer(role: str = "ttl") -> PRReviewerAssignment:
     return PRReviewerAssignment(
-        role=role, agent_id=f"{role}@Demo", display_name=role.upper(),
+        role=role,
+        agent_id=f"{role}@Demo",
+        display_name=role.upper(),
     )
 
 
 def test_stub_fallback_when_no_api_key() -> None:
     review = run_pr_review(
-        role="ttl", decision=_decision(), record=_record(),
-        reviewer=_reviewer(), pr_files=[], prior_comments=[],
-        ci_conclusion="success", ci_details_url=None, api_key=None,
+        role="ttl",
+        decision=_decision(),
+        record=_record(),
+        reviewer=_reviewer(),
+        pr_files=[],
+        prior_comments=[],
+        ci_conclusion="success",
+        ci_details_url=None,
+        api_key=None,
     )
     # Stub path produces the legacy "acceptable shape" approve.
     assert review.role == "ttl"
     assert review.verdict in ("approve", "comment", "request_changes")
-    assert (
-        "acceptable shape" in review.summary.lower()
-        or review.verdict in ("comment", "request_changes")
+    assert "acceptable shape" in review.summary.lower() or review.verdict in (
+        "comment",
+        "request_changes",
     )
 
 

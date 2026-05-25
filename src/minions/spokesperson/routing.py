@@ -25,15 +25,64 @@ SPOKESPERSON_ROLES = [
 
 def classify_question(question: str) -> QuestionKind:
     q = question.lower()
-    if any(w in q for w in ["deploy", "deployment", "hosting", "hosted", "runtime", "infra", "server", "cloud"]):
+    if any(
+        w in q
+        for w in [
+            "deploy",
+            "deployment",
+            "hosting",
+            "hosted",
+            "runtime",
+            "infra",
+            "server",
+            "cloud",
+        ]
+    ):
         return "deployment"
-    if any(w in q for w in ["secret", "password", "token", "api key", "api_key", "rotate", "rotation", "vulnerability", "security"]):
+    if any(
+        w in q
+        for w in [
+            "secret",
+            "password",
+            "token",
+            "api key",
+            "api_key",
+            "rotate",
+            "rotation",
+            "vulnerability",
+            "security",
+        ]
+    ):
         return "security"
     if any(w in q for w in ["cost", "spend", "budget", "burn", "expensive", "usage"]):
         return "cost"
-    if any(w in q for w in ["architecture", "code", "stack", "database", "api", "framework", "library", "technical"]):
+    if any(
+        w in q
+        for w in [
+            "architecture",
+            "code",
+            "stack",
+            "database",
+            "api",
+            "framework",
+            "library",
+            "technical",
+        ]
+    ):
         return "technical"
-    if any(w in q for w in ["roadmap", "feature", "user", "workflow", "sprint", "demo", "status", "requirement"]):
+    if any(
+        w in q
+        for w in [
+            "roadmap",
+            "feature",
+            "user",
+            "workflow",
+            "sprint",
+            "demo",
+            "status",
+            "requirement",
+        ]
+    ):
         return "functional"
     if any(w in q for w in ["portfolio", "investor", "strategy", "priority", "staffing", "team"]):
         return "portfolio"

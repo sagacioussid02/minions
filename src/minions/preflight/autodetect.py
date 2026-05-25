@@ -25,19 +25,21 @@ def autodetect(repo_root: Path) -> PreflightConfig:
         return _from_npm(repo_root, install="npm ci")
     if (repo_root / "pnpm-lock.yaml").exists():
         return _from_npm(
-            repo_root, install="pnpm install --frozen-lockfile",
+            repo_root,
+            install="pnpm install --frozen-lockfile",
             runner="pnpm",
         )
     if (repo_root / "yarn.lock").exists():
         return _from_npm(
-            repo_root, install="yarn install --frozen-lockfile",
+            repo_root,
+            install="yarn install --frozen-lockfile",
             runner="yarn",
         )
     if (repo_root / "pyproject.toml").exists():
         return _from_pyproject(repo_root)
     if (repo_root / "Cargo.toml").exists():
         return PreflightConfig(
-            install="",                  # cargo resolves on build
+            install="",  # cargo resolves on build
             build="cargo build",
             test="cargo test",
             lint="cargo clippy --no-deps",
@@ -52,9 +54,7 @@ def autodetect(repo_root: Path) -> PreflightConfig:
     return PreflightConfig()
 
 
-def effective_config(
-    manifest_config: PreflightConfig, repo_root: Path
-) -> PreflightConfig:
+def effective_config(manifest_config: PreflightConfig, repo_root: Path) -> PreflightConfig:
     """Merge the operator's manifest block over autodetect.
 
     Non-empty fields on ``manifest_config`` win. Empty fields fall back
@@ -81,9 +81,7 @@ def effective_config(
 # ---------------------------------------------------------------------------
 
 
-def _from_npm(
-    repo_root: Path, *, install: str, runner: str = "npm"
-) -> PreflightConfig:
+def _from_npm(repo_root: Path, *, install: str, runner: str = "npm") -> PreflightConfig:
     """Build a config from a Node lockfile + ``package.json``."""
     scripts = _read_package_scripts(repo_root)
 
@@ -96,9 +94,7 @@ def _from_npm(
         typecheck = f"{runner} run typecheck" if runner == "npm" else f"{runner} typecheck"
     elif (repo_root / "tsconfig.json").exists():
         typecheck = (
-            f"{runner} exec tsc -- --noEmit"
-            if runner == "npm"
-            else f"{runner} exec tsc --noEmit"
+            f"{runner} exec tsc -- --noEmit" if runner == "npm" else f"{runner} exec tsc --noEmit"
         )
 
     test = ""
@@ -123,9 +119,7 @@ def _from_npm(
 def _from_pyproject(repo_root: Path) -> PreflightConfig:
     """uv-aware Python preflight defaults."""
     install = "uv sync --frozen"
-    if (repo_root / "uv.lock").exists() is False and (
-        repo_root / "poetry.lock"
-    ).exists():
+    if (repo_root / "uv.lock").exists() is False and (repo_root / "poetry.lock").exists():
         install = "poetry install --no-root"
     typecheck = ""
     if any(_pyproject_has(repo_root, key) for key in ("[tool.mypy]", "mypy =")):
@@ -136,7 +130,7 @@ def _from_pyproject(repo_root: Path) -> PreflightConfig:
     return PreflightConfig(
         install=install,
         typecheck=typecheck,
-        build="",                # Python projects rarely "build" pre-test
+        build="",  # Python projects rarely "build" pre-test
         test="pytest -q",
         lint=lint,
     )

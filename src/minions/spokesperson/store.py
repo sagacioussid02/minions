@@ -52,8 +52,7 @@ class InterviewStore:
 
     def list_threads(self, project: str | None = None) -> list[InterviewThreadRecord]:
         records = [
-            InterviewThreadRecord.model_validate(raw)
-            for raw in self._load()["threads"].values()
+            InterviewThreadRecord.model_validate(raw) for raw in self._load()["threads"].values()
         ]
         if project is not None:
             records = [r for r in records if r.project == project]
@@ -95,8 +94,7 @@ class InterviewStore:
 
     def list_tasks(self, thread_id: UUID | str | None = None) -> list[InterviewTaskProposal]:
         records = [
-            InterviewTaskProposal.model_validate(raw)
-            for raw in self._load()["tasks"].values()
+            InterviewTaskProposal.model_validate(raw) for raw in self._load()["tasks"].values()
         ]
         if thread_id is not None:
             records = [r for r in records if str(r.thread_id) == str(thread_id)]

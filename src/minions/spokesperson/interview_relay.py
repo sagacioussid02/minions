@@ -72,11 +72,17 @@ def relay_spike_answer(
         if isinstance(question, str) and question.strip():
             thread_id = _find_thread_for_question(question)
         if not thread_id:
-            logger.debug("interview_relay: decision %s has no thread_id and "
-                         "no matching prior operator message", decision_id[:8])
+            logger.debug(
+                "interview_relay: decision %s has no thread_id and "
+                "no matching prior operator message",
+                decision_id[:8],
+            )
             return None
-        logger.info("interview_relay: decision %s — inferred thread %s from "
-                    "matching operator question", decision_id[:8], thread_id[:8])
+        logger.info(
+            "interview_relay: decision %s — inferred thread %s from matching operator question",
+            decision_id[:8],
+            thread_id[:8],
+        )
 
     answer_text = _compose_answer(
         question=str(payload.get("question") or ""),
@@ -115,14 +121,19 @@ def relay_spike_answer(
     except Exception as e:  # noqa: BLE001
         logger.warning(
             "interview_relay: insert failed for decision %s thread %s: %s",
-            decision_id[:8], thread_id[:8], e,
+            decision_id[:8],
+            thread_id[:8],
+            e,
         )
         return None
 
     logger.info(
         "interview_relay: relayed answer for decision %s into thread %s "
         "(spokesperson=%s, message=%s)",
-        decision_id[:8], thread_id[:8], spokesperson_role, message_id[:8],
+        decision_id[:8],
+        thread_id[:8],
+        spokesperson_role,
+        message_id[:8],
     )
     return message_id
 
@@ -132,6 +143,7 @@ def relay_spike_answer(
 
 def _load_decision_payload(decision_id: str) -> dict[str, Any] | None:
     from minions.db.connection import connect
+
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT payload FROM decisions WHERE id = %s::uuid",
@@ -160,6 +172,7 @@ def _find_thread_for_question(question: str) -> str | None:
     that stashes ``thread_id`` directly in the Decision payload.
     """
     from minions.db.connection import connect
+
     try:
         with connect() as conn, conn.cursor() as cur:
             cur.execute(
@@ -192,6 +205,7 @@ def _insert_message_and_touch_thread(
     from psycopg.types.json import Jsonb
 
     from minions.db.connection import connect
+
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -235,7 +249,9 @@ def _compose_answer(
     files_line = ""
     if result.files_changed:
         files_preview = ", ".join(result.files_changed[:6])
-        suffix = "" if len(result.files_changed) <= 6 else f" (+{len(result.files_changed) - 6} more)"
+        suffix = (
+            "" if len(result.files_changed) <= 6 else f" (+{len(result.files_changed) - 6} more)"
+        )
         files_line = f"\n\nFiles inspected: {files_preview}{suffix}."
 
     confidence_line = ""
@@ -255,24 +271,29 @@ def _compose_answer(
 def _citations_from_result(result: EngineerResult) -> list[dict[str, Any]]:
     citations: list[dict[str, Any]] = []
     if result.pr_url:
-        citations.append({
-            "source_type": "pr",
-            "label": _pr_label(result.pr_url),
-            "reference": result.pr_url,
-            "excerpt": "Investigation PR (engineer crew findings).",
-        })
+        citations.append(
+            {
+                "source_type": "pr",
+                "label": _pr_label(result.pr_url),
+                "reference": result.pr_url,
+                "excerpt": "Investigation PR (engineer crew findings).",
+            }
+        )
     for f in result.files_changed[:8]:
-        citations.append({
-            "source_type": "code_scan",
-            "label": f,
-            "reference": f,
-            "excerpt": f"Inspected during the SPIKE: {f}",
-        })
+        citations.append(
+            {
+                "source_type": "code_scan",
+                "label": f,
+                "reference": f,
+                "excerpt": f"Inspected during the SPIKE: {f}",
+            }
+        )
     return citations
 
 
 def _pr_label(pr_url: str) -> str:
     import re
+
     m = re.search(r"/pull/(\d+)", pr_url)
     return f"PR #{m.group(1)}" if m else "PR"
 

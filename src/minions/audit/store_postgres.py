@@ -60,9 +60,7 @@ class PostgresAuditFindingStore:
 
     def list_all(self) -> list[AuditFinding]:
         with connect() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT payload FROM audit_findings ORDER BY created_at DESC"
-            )
+            cur.execute("SELECT payload FROM audit_findings ORDER BY created_at DESC")
             rows = cur.fetchall()
         return [
             AuditFinding.model_validate(r[0] if isinstance(r[0], dict) else json.loads(r[0]))
@@ -72,8 +70,7 @@ class PostgresAuditFindingStore:
     def list_open(self) -> list[AuditFinding]:
         with connect() as conn, conn.cursor() as cur:
             cur.execute(
-                "SELECT payload FROM audit_findings WHERE status = %s "
-                "ORDER BY created_at DESC",
+                "SELECT payload FROM audit_findings WHERE status = %s ORDER BY created_at DESC",
                 (FindingStatus.OPEN.value,),
             )
             rows = cur.fetchall()

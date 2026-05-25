@@ -36,7 +36,7 @@ from typing import Any, Protocol
 logger = logging.getLogger(__name__)
 
 
-class SecretNotFound(RuntimeError):
+class SecretNotFound(RuntimeError):  # noqa: N818  # stable public name; renaming churns callers
     """Raised when a requested secret cannot be located in any backend."""
 
 
@@ -237,9 +237,7 @@ def get_vercel_token(project: str | None = None) -> str:
        ``minions/vercel-token``
     """
     if project:
-        scoped = os.environ.get(
-            f"MINIONS_SECRET_VERCEL_TOKEN_{project.upper().replace('-', '_')}"
-        )
+        scoped = os.environ.get(f"MINIONS_SECRET_VERCEL_TOKEN_{project.upper().replace('-', '_')}")
         if scoped:
             return scoped
     for env_name in ("MINIONS_SECRET_VERCEL_TOKEN", "VERCEL_TOKEN"):

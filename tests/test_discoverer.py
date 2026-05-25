@@ -46,19 +46,15 @@ def _init_repo(tmp_path: Path) -> tuple[Path, str]:
     (root / "README.md").write_text("# tiny\n\nA tiny repo.\n")
 
     subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
-    subprocess.run(
-        ["git", "-C", str(root), "config", "user.email", "test@test"], check=True
-    )
-    subprocess.run(
-        ["git", "-C", str(root), "config", "user.name", "Test"], check=True
-    )
+    subprocess.run(["git", "-C", str(root), "config", "user.email", "test@test"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "Test"], check=True)
     subprocess.run(["git", "-C", str(root), "add", "."], check=True)
-    subprocess.run(
-        ["git", "-C", str(root), "commit", "-q", "-m", "init"], check=True
-    )
+    subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", "init"], check=True)
     sha = subprocess.run(
         ["git", "-C", str(root), "rev-parse", "HEAD"],
-        check=True, capture_output=True, text=True,
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout.strip()
     return root, sha
 
@@ -183,9 +179,17 @@ def test_collect_repo_readings_captures_commit_and_tree(tmp_path: Path) -> None:
 
 def test_assemble_dossier_emits_frontmatter_and_body() -> None:
     readings = RepoReadings(
-        project="p", root=Path("/tmp"), commit_sha="abc1234",
-        tree_summary="", package_files="", ci_files="", infra_files="",
-        readme_excerpt="", recent_commits="", high_churn_files="", todo_top_files="",
+        project="p",
+        root=Path("/tmp"),
+        commit_sha="abc1234",
+        tree_summary="",
+        package_files="",
+        ci_files="",
+        infra_files="",
+        readme_excerpt="",
+        recent_commits="",
+        high_churn_files="",
+        todo_top_files="",
     )
     out = assemble_dossier(
         readings=readings,
@@ -213,9 +217,17 @@ def test_assemble_dossier_emits_frontmatter_and_body() -> None:
 def test_dry_run_returns_none(tmp_path: Path) -> None:
     root, sha = _init_repo(tmp_path)
     readings = RepoReadings(
-        project="tiny", root=root, commit_sha=sha,
-        tree_summary="", package_files="", ci_files="", infra_files="",
-        readme_excerpt="", recent_commits="", high_churn_files="", todo_top_files="",
+        project="tiny",
+        root=root,
+        commit_sha=sha,
+        tree_summary="",
+        package_files="",
+        ci_files="",
+        infra_files="",
+        readme_excerpt="",
+        recent_commits="",
+        high_churn_files="",
+        todo_top_files="",
     )
 
     class _M:
@@ -228,9 +240,17 @@ def test_dry_run_returns_none(tmp_path: Path) -> None:
 def test_override_produces_draft_when_verifier_passes(tmp_path: Path) -> None:
     root, sha = _init_repo(tmp_path)
     readings = RepoReadings(
-        project="tiny", root=root, commit_sha=sha,
-        tree_summary="", package_files="", ci_files="", infra_files="",
-        readme_excerpt="", recent_commits="", high_churn_files="", todo_top_files="",
+        project="tiny",
+        root=root,
+        commit_sha=sha,
+        tree_summary="",
+        package_files="",
+        ci_files="",
+        infra_files="",
+        readme_excerpt="",
+        recent_commits="",
+        high_churn_files="",
+        todo_top_files="",
     )
 
     class _M:
@@ -253,9 +273,17 @@ def test_override_produces_draft_when_verifier_passes(tmp_path: Path) -> None:
 def test_override_raises_on_bad_citation(tmp_path: Path) -> None:
     root, sha = _init_repo(tmp_path)
     readings = RepoReadings(
-        project="tiny", root=root, commit_sha=sha,
-        tree_summary="", package_files="", ci_files="", infra_files="",
-        readme_excerpt="", recent_commits="", high_churn_files="", todo_top_files="",
+        project="tiny",
+        root=root,
+        commit_sha=sha,
+        tree_summary="",
+        package_files="",
+        ci_files="",
+        infra_files="",
+        readme_excerpt="",
+        recent_commits="",
+        high_churn_files="",
+        todo_top_files="",
     )
     bad = _full_dossier(sha, citations=["See `src/missing.py:5`."])
 

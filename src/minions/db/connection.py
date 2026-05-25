@@ -41,7 +41,7 @@ def has_database_url() -> bool:
 
 
 @contextmanager
-def connect() -> Iterator["Connection"]:
+def connect() -> Iterator[Connection]:
     """Open a Postgres connection using the resolved URL.
 
     Yields a ``psycopg.Connection`` with autocommit OFF so callers can

@@ -36,8 +36,13 @@ from minions.models.dossier import DossierDraft, DossierStatus
 # --------------------------- fixtures ---------------------------------------
 
 
-def _md_full(*, hot_spots: str = "x `a.py:1`", tech_debt: str = "y `b.py:2`",
-             architecture: str = "arch `m.py:1`", incidents: str = "i `c.py:3`") -> str:
+def _md_full(
+    *,
+    hot_spots: str = "x `a.py:1`",
+    tech_debt: str = "y `b.py:2`",
+    architecture: str = "arch `m.py:1`",
+    incidents: str = "i `c.py:3`",
+) -> str:
     return (
         f"---\ncommit_sha: abc\n---\n\n"
         f"# Architecture\n{architecture}\n\n"
@@ -51,9 +56,14 @@ def _md_full(*, hot_spots: str = "x `a.py:1`", tech_debt: str = "y `b.py:2`",
     )
 
 
-def _draft(project: str, *, commit: str, markdown: str | None = None,
-           status: DossierStatus = DossierStatus.MERGED,
-           generated_at: datetime | None = None) -> DossierDraft:
+def _draft(
+    project: str,
+    *,
+    commit: str,
+    markdown: str | None = None,
+    status: DossierStatus = DossierStatus.MERGED,
+    generated_at: datetime | None = None,
+) -> DossierDraft:
     return DossierDraft(
         project=project,
         commit_sha=commit,
@@ -155,7 +165,9 @@ def test_no_change_refresh_still_emits_with_clear_marker(tmp_path: Path) -> None
     prior = _draft("p", commit="old", markdown=same)
     new = _draft("p", commit="new", markdown=same)
     ceo, cto = record_understanding_delta(
-        prior=prior, new=new, learning_store=store,
+        prior=prior,
+        new=new,
+        learning_store=store,
     )
     assert ceo is not None
     assert cto is not None
@@ -182,22 +194,29 @@ def _backlog_decision_with(proposal: BacklogProposal) -> Decision:
 def test_record_backlog_proposed_emits_cto_event(tmp_path: Path) -> None:
     store = AgentLearningStore(tmp_path / "learning.json")
     proposal = BacklogProposal(
-        project="p", dossier_commit_sha="cafe1234",
+        project="p",
+        dossier_commit_sha="cafe1234",
         candidates=[
             BacklogCandidate(
-                title="t1", body="b1", kind=BacklogKind.FEATURE,
+                title="t1",
+                body="b1",
+                kind=BacklogKind.FEATURE,
                 source_section="tech_debt",
             ),
             BacklogCandidate(
-                title="t2", body="b2", kind=BacklogKind.BUG,
+                title="t2",
+                body="b2",
+                kind=BacklogKind.BUG,
                 source_section="hot_spots",
             ),
         ],
     )
     decision = _backlog_decision_with(proposal)
     event = record_backlog_proposed(
-        decision=decision, proposal=proposal,
-        learning_store=store, created_count=2,
+        decision=decision,
+        proposal=proposal,
+        learning_store=store,
+        created_count=2,
     )
     assert event is not None
     assert event.agent_id == CTO_AGENT_ID
@@ -210,20 +229,27 @@ def test_record_backlog_proposed_emits_cto_event(tmp_path: Path) -> None:
 def test_record_backlog_proposed_dedupes(tmp_path: Path) -> None:
     store = AgentLearningStore(tmp_path / "learning.json")
     proposal = BacklogProposal(
-        project="p", dossier_commit_sha="cafe",
+        project="p",
+        dossier_commit_sha="cafe",
         candidates=[
             BacklogCandidate(
-                title="t", body="b", kind=BacklogKind.FEATURE,
+                title="t",
+                body="b",
+                kind=BacklogKind.FEATURE,
                 source_section="x",
             )
         ],
     )
     decision = _backlog_decision_with(proposal)
     record_backlog_proposed(
-        decision=decision, proposal=proposal, learning_store=store,
+        decision=decision,
+        proposal=proposal,
+        learning_store=store,
     )
     second = record_backlog_proposed(
-        decision=decision, proposal=proposal, learning_store=store,
+        decision=decision,
+        proposal=proposal,
+        learning_store=store,
     )
     assert second is None
     assert len(store.list_all()) == 1
@@ -234,8 +260,11 @@ def test_record_backlog_proposed_dedupes(tmp_path: Path) -> None:
 
 def _decision_for(draft: DossierDraft) -> Decision:
     d = Decision(
-        project=draft.project, type=DecisionType.DOSSIER_REFRESH, risk="low",
-        summary="x", rationale="x",
+        project=draft.project,
+        type=DecisionType.DOSSIER_REFRESH,
+        risk="low",
+        summary="x",
+        rationale="x",
         proposer_role="cloud_devops",
         proposer_agent_id=f"discoverer@{draft.project}",
         status=DecisionStatus.EXECUTED,
@@ -255,26 +284,38 @@ def test_sync_merge_emits_executive_events(tmp_path: Path) -> None:
     learning = AgentLearningStore(tmp_path / "learn.json")
 
     # Seed a prior merged dossier so we exercise the *diff* path (not first).
-    prior = _draft("p", commit="old0000", status=DossierStatus.MERGED,
-                   generated_at=datetime.now(UTC) - timedelta(days=10))
+    prior = _draft(
+        "p",
+        commit="old0000",
+        status=DossierStatus.MERGED,
+        generated_at=datetime.now(UTC) - timedelta(days=10),
+    )
     drafts.save(prior)
 
     draft = _draft(
-        "p", commit="new0000", status=DossierStatus.PR_OPEN,
+        "p",
+        commit="new0000",
+        status=DossierStatus.PR_OPEN,
         markdown=_md_full(tech_debt="new debt `b.py:50`"),
     )
     drafts.save(draft)
     decision = _decision_for(draft)
     decisions.save(decision)
-    runs.update(EngineerRunRecord(
-        decision_id=str(decision.id), project="p",
-        completed_at=datetime.now(UTC),
-        pr_url="https://x/p/1", pr_state="merged",
-    ))
+    runs.update(
+        EngineerRunRecord(
+            decision_id=str(decision.id),
+            project="p",
+            completed_at=datetime.now(UTC),
+            pr_url="https://x/p/1",
+            pr_state="merged",
+        )
+    )
 
     report = sync_dossier_drafts(
-        dossier_store=drafts, decision_store=decisions,
-        engineer_runs_store=runs, learning_store=learning,
+        dossier_store=drafts,
+        decision_store=decisions,
+        engineer_runs_store=runs,
+        learning_store=learning,
     )
 
     assert report.merged == 1
@@ -295,14 +336,19 @@ def test_sync_without_learning_store_is_silent(tmp_path: Path) -> None:
     drafts.save(draft)
     decision = _decision_for(draft)
     decisions.save(decision)
-    runs.update(EngineerRunRecord(
-        decision_id=str(decision.id), project="p",
-        completed_at=datetime.now(UTC),
-        pr_url="https://x/p/1", pr_state="merged",
-    ))
+    runs.update(
+        EngineerRunRecord(
+            decision_id=str(decision.id),
+            project="p",
+            completed_at=datetime.now(UTC),
+            pr_url="https://x/p/1",
+            pr_state="merged",
+        )
+    )
     # No learning_store passed — should not raise, sync still works.
     report = sync_dossier_drafts(
-        dossier_store=drafts, decision_store=decisions,
+        dossier_store=drafts,
+        decision_store=decisions,
         engineer_runs_store=runs,
     )
     assert report.merged == 1

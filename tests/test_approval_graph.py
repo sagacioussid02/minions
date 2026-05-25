@@ -47,9 +47,7 @@ def test_graph_runs_to_interrupt_then_resumes_approve(tmp_path):
     assert store.get(decision.id).status is DecisionStatus.PENDING
 
     # Resume with operator's approval.
-    final = graph.invoke(
-        Command(resume={"action": "approve", "reason": "LGTM"}), config=config
-    )
+    final = graph.invoke(Command(resume={"action": "approve", "reason": "LGTM"}), config=config)
     assert final["resolved_status"] == "approved"
     assert store.get(decision.id).status is DecisionStatus.APPROVED
     assert store.get(decision.id).resolved_reason == "LGTM"

@@ -17,10 +17,10 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Field
 
 RoleInConversation = Literal[
-    "pitch",        # round-1 independent pitch (planning crew)
-    "rebuttal",     # round-2 rebuttal (planning crew)
-    "synthesis",    # manager/principal synthesis
-    "review",       # TTL / peer review
+    "pitch",  # round-1 independent pitch (planning crew)
+    "rebuttal",  # round-2 rebuttal (planning crew)
+    "synthesis",  # manager/principal synthesis
+    "review",  # TTL / peer review
     "task_output",  # plain per-task output (discoverer, engineer)
     "other",
 ]

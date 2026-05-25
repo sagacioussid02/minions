@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-import json as json_lib
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 from uuid import UUID
 
 import httpx
-import pytest
 
 from minions.audit import AuditFindingStore, audit_after_sync
 from minions.crews.code_auditor import (
-    CodeAuditOutput,
     _SAMPLE_RATES,
+    CodeAuditOutput,
     audit_pr,
     should_audit,
 )
@@ -168,7 +166,15 @@ def test_audit_pr_normalizes_invalid_severity(tmp_path: Path) -> None:
     def handler(req: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
-            json=[{"filename": "a.py", "status": "modified", "additions": 1, "deletions": 0, "patch": "+x"}],
+            json=[
+                {
+                    "filename": "a.py",
+                    "status": "modified",
+                    "additions": 1,
+                    "deletions": 0,
+                    "patch": "+x",
+                }
+            ],
         )
 
     bad = CodeAuditOutput(
@@ -196,7 +202,8 @@ def test_audit_pr_no_pr_number_returns_none(tmp_path: Path) -> None:
         project="p",
     )
     finding = audit_pr(
-        rec, _decision("high"),
+        rec,
+        _decision("high"),
         github=_client(lambda r: httpx.Response(500)),
         output_override=_override(),
     )
@@ -232,13 +239,23 @@ def test_audit_after_sync_only_audits_newly_merged(tmp_path: Path) -> None:
     def handler(req: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
-            json=[{"filename": "a.py", "status": "modified", "additions": 1, "deletions": 0, "patch": "+x"}],
+            json=[
+                {
+                    "filename": "a.py",
+                    "status": "modified",
+                    "additions": 1,
+                    "deletions": 0,
+                    "patch": "+x",
+                }
+            ],
         )
 
     # 'open → open' — should be skipped
     outcome_unchanged = SyncOutcome(
-        decision_id=_record().decision_id, project="p",
-        before="open", after="open",
+        decision_id=_record().decision_id,
+        project="p",
+        before="open",
+        after="open",
     )
     report = audit_after_sync(
         sync_outcomes=[outcome_unchanged],
@@ -265,12 +282,22 @@ def test_audit_after_sync_audits_high_risk_merge(tmp_path: Path) -> None:
     def handler(req: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
-            json=[{"filename": "a.py", "status": "modified", "additions": 1, "deletions": 0, "patch": "+x"}],
+            json=[
+                {
+                    "filename": "a.py",
+                    "status": "modified",
+                    "additions": 1,
+                    "deletions": 0,
+                    "patch": "+x",
+                }
+            ],
         )
 
     outcome_merged = SyncOutcome(
-        decision_id=_record().decision_id, project="p",
-        before="open", after="merged",
+        decision_id=_record().decision_id,
+        project="p",
+        before="open",
+        after="merged",
     )
     report = audit_after_sync(
         sync_outcomes=[outcome_merged],
@@ -287,21 +314,19 @@ def test_audit_after_sync_audits_high_risk_merge(tmp_path: Path) -> None:
 
 def test_audit_after_sync_skips_low_risk_when_not_sampled(tmp_path: Path) -> None:
     """Pick a decision id known to fall outside the 25% low-risk window."""
-    from minions.sync import SyncOutcome
-
     # Find an id that does NOT pass the low-risk gate.
     from minions.crews.code_auditor import should_audit
-    skipped_id = next(
-        f"never-{i}" for i in range(1000) if not should_audit(f"never-{i}", "low")
-    )
+    from minions.sync import SyncOutcome
+
+    skipped_id = next(f"never-{i}" for i in range(1000) if not should_audit(f"never-{i}", "low"))
     runs = EngineerRunStore(tmp_path / "runs.json")
-    runs.save(EngineerResult(decision_id=skipped_id, pr_url="u", pr_number=1, dry_run=False), project="p")
+    runs.save(
+        EngineerResult(decision_id=skipped_id, pr_url="u", pr_number=1, dry_run=False), project="p"
+    )
     findings = AuditFindingStore(tmp_path / "findings.json")
     decision_store = _DecisionStoreStub({skipped_id: _decision("low")})
 
-    outcome_merged = SyncOutcome(
-        decision_id=skipped_id, project="p", before="open", after="merged"
-    )
+    outcome_merged = SyncOutcome(decision_id=skipped_id, project="p", before="open", after="merged")
     report = audit_after_sync(
         sync_outcomes=[outcome_merged],
         runs_store=runs,

@@ -18,9 +18,7 @@ from minions.models.decision import Decision, DecisionStatus, DecisionType
 
 
 def _has_db_url() -> bool:
-    return bool(
-        os.environ.get("MINIONS_DATABASE_URL") or os.environ.get("DATABASE_URL")
-    )
+    return bool(os.environ.get("MINIONS_DATABASE_URL") or os.environ.get("DATABASE_URL"))
 
 
 def test_factory_forces_json_when_env_set(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -96,6 +94,7 @@ def test_postgres_cost_log_round_trip(monkeypatch: pytest.MonkeyPatch) -> None:
         # Without this, every pytest run accumulates a 'pg-cost-rt-*' row
         # which surfaces as a phantom project in the operator console.
         from minions.db.connection import connect as _conn
+
         with _conn() as _c, _c.cursor() as _cur:
             _cur.execute("DELETE FROM cost_log WHERE project = %s", (project,))
             _c.commit()
@@ -134,6 +133,7 @@ def test_postgres_activity_log_round_trip(monkeypatch: pytest.MonkeyPatch) -> No
         # a "pg-act-rt" project row that shows up in the Stage / Sprint Board
         # as a phantom agent + tasks.
         from minions.db.connection import connect as _conn
+
         with _conn() as _c, _c.cursor() as _cur:
             _cur.execute("DELETE FROM activity_log WHERE run_id = %s", (run_id,))
             _c.commit()
@@ -165,6 +165,7 @@ def test_postgres_audit_findings_round_trip() -> None:
         assert any(x.id == f.id for x in store.list_open())
     finally:
         from minions.db.connection import connect as _conn
+
         with _conn() as _c, _c.cursor() as _cur:
             _cur.execute("DELETE FROM audit_findings WHERE id = %s", (str(f.id),))
             _c.commit()
@@ -193,6 +194,7 @@ def test_postgres_engineer_runs_round_trip() -> None:
         assert fetched is not None and fetched.pr_state == "open"
     finally:
         from minions.db.connection import connect as _conn
+
         with _conn() as _c, _c.cursor() as _cur:
             _cur.execute("DELETE FROM engineer_runs WHERE decision_id = %s", (rec.decision_id,))
             _c.commit()
@@ -231,6 +233,7 @@ def test_postgres_dossier_drafts_round_trip() -> None:
         assert latest.pr_number == 77
     finally:
         from minions.db.connection import connect as _conn
+
         with _conn() as _c, _c.cursor() as _cur:
             _cur.execute("DELETE FROM dossier_drafts WHERE id = %s::uuid", (str(d.id),))
             _c.commit()
@@ -267,13 +270,12 @@ def test_postgres_decision_store_round_trip(monkeypatch: pytest.MonkeyPatch) -> 
         assert again.status == DecisionStatus.APPROVED
         assert again.resolved_reason == "test pass"
 
-        pending = [
-            x for x in store.list_by_status(DecisionStatus.APPROVED) if x.id == d.id
-        ]
+        pending = [x for x in store.list_by_status(DecisionStatus.APPROVED) if x.id == d.id]
         assert len(pending) == 1
     finally:
         # Prod-Neon cleanup — see the activity-log test for the same pattern.
         from minions.db.connection import connect as _conn
+
         with _conn() as _c, _c.cursor() as _cur:
             _cur.execute("DELETE FROM decisions WHERE id = %s::uuid", (str(d.id),))
             _c.commit()

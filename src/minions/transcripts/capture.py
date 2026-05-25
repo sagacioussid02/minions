@@ -75,7 +75,10 @@ def record_task(
     except Exception:  # noqa: BLE001 — capture is best-effort
         logger.warning(
             "transcripts.capture: failed to persist %s/%s sequence=%d",
-            crew, agent_role, sequence, exc_info=True,
+            crew,
+            agent_role,
+            sequence,
+            exc_info=True,
         )
 
     with suppress(Exception):
@@ -136,9 +139,7 @@ def _redact(text: str) -> str:
 def _disabled() -> bool:
     import os
 
-    return os.environ.get(
-        "MINIONS_CREW_TRANSCRIPTS_DISABLED", ""
-    ).lower() in {"1", "true", "yes"}
+    return os.environ.get("MINIONS_CREW_TRANSCRIPTS_DISABLED", "").lower() in {"1", "true", "yes"}
 
 
 def record_task_default(
@@ -164,13 +165,13 @@ def record_task_default(
         from minions.transcripts.store_factory import make_transcript_store
 
         default_path = (
-            Path(__file__).resolve().parents[3]
-            / "data" / "local" / "crew_transcripts.json"
+            Path(__file__).resolve().parents[3] / "data" / "local" / "crew_transcripts.json"
         )
         store = make_transcript_store(default_path)
     except Exception:  # noqa: BLE001
         logger.warning(
-            "transcripts.capture: could not build default store", exc_info=True,
+            "transcripts.capture: could not build default store",
+            exc_info=True,
         )
         return None
     return record_task(

@@ -56,21 +56,14 @@ class PostgresDeploymentStore:
 
     def list_all(self) -> list[DeploymentRecord]:
         with connect() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT payload FROM deployments "
-                "ORDER BY detected_at DESC LIMIT 1000"
-            )
+            cur.execute("SELECT payload FROM deployments ORDER BY detected_at DESC LIMIT 1000")
             rows = cur.fetchall()
         return [
-            DeploymentRecord.model_validate(
-                r[0] if isinstance(r[0], dict) else json.loads(r[0])
-            )
+            DeploymentRecord.model_validate(r[0] if isinstance(r[0], dict) else json.loads(r[0]))
             for r in rows
         ]
 
-    def find_by_sha(
-        self, project: str, merge_sha: str
-    ) -> DeploymentRecord | None:
+    def find_by_sha(self, project: str, merge_sha: str) -> DeploymentRecord | None:
         with connect() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT payload FROM deployments "
@@ -107,8 +100,6 @@ class PostgresDeploymentStore:
                 )
             rows = cur.fetchall()
         return [
-            DeploymentRecord.model_validate(
-                r[0] if isinstance(r[0], dict) else json.loads(r[0])
-            )
+            DeploymentRecord.model_validate(r[0] if isinstance(r[0], dict) else json.loads(r[0]))
             for r in rows
         ]

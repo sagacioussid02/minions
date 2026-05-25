@@ -52,7 +52,9 @@ class PostgresSprintCounterStore:
             SprintCounter(
                 project=str(r[0]),
                 current_sprint_number=int(r[1]),
-                updated_at=r[2] if isinstance(r[2], datetime) else datetime.fromisoformat(str(r[2])),
+                updated_at=r[2]
+                if isinstance(r[2], datetime)
+                else datetime.fromisoformat(str(r[2])),
             )
             for r in rows
         ]

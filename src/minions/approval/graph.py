@@ -57,9 +57,7 @@ def build_approval_graph(store: DecisionStore, notifier: Notifier):
         response = state.get("operator_response") or {}
         action = response.get("action", "reject")
         reason = response.get("reason")
-        new_status = (
-            DecisionStatus.APPROVED if action == "approve" else DecisionStatus.REJECTED
-        )
+        new_status = DecisionStatus.APPROVED if action == "approve" else DecisionStatus.REJECTED
         store.update_status(state["decision_id"], new_status, reason=reason)
         decision = store.get(state["decision_id"])
         if decision is not None:

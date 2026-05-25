@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from minions.activity import read_log as read_activity_log, set_log_path as set_activity_path
-from minions.cost import read_log as read_cost_log, set_log_path as set_cost_path
+from minions.activity import read_log as read_activity_log
+from minions.activity import set_log_path as set_activity_path
+from minions.cost import set_log_path as set_cost_path
 from minions.crews.devils_advocate import (
     _TRIGGER_RISKS,
     attach_critique,
@@ -55,7 +56,7 @@ def test_gate_skips_low() -> None:
 
 
 def test_trigger_risks_documented() -> None:
-    assert _TRIGGER_RISKS == frozenset({"medium", "high"})
+    assert frozenset({"medium", "high"}) == _TRIGGER_RISKS
 
 
 # ---- attach_critique behavior ---------------------------------------------

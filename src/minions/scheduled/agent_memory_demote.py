@@ -19,10 +19,7 @@ def run_agent_memory_demote(
     sprint_counter_store: SprintCounterStoreLike,
 ) -> AgentMemoryDemoteReport:
     counters = sprint_counter_store.list_all()
-    current = {
-        counter.project: counter.current_sprint_number
-        for counter in counters
-    }
+    current = {counter.project: counter.current_sprint_number for counter in counters}
     return AgentMemoryDemoteReport(
         demoted=memory_store.demote_hot_older_than(current),
         projects_seen=len(current),

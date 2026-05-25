@@ -66,10 +66,7 @@ def _dossier_grounding_note(profile: ProjectProfile | None) -> str:
             f"{digest.commit_sha[:8]}; refresh recommended)"
         )
     if freshness == "ok":
-        return (
-            f" (grounded against PROJECT_DOSSIER.md at commit "
-            f"{digest.commit_sha[:8]})"
-        )
+        return f" (grounded against PROJECT_DOSSIER.md at commit {digest.commit_sha[:8]})"
     return f" (dossier freshness={freshness})"
 
 
@@ -93,9 +90,7 @@ def build_queued_discovery_decision(
         project=manifest.name,
         type=DecisionType.DOSSIER_REFRESH,
         risk="low",
-        summary=(
-            f"discovery queued: dossier for {manifest.name} is {freshness} ({age})"
-        ),
+        summary=(f"discovery queued: dossier for {manifest.name} is {freshness} ({age})"),
         rationale=(
             "Planning refused to run because the project's dossier is "
             f"{freshness}. Auto-approved so the next `cron-discovery` sweep "
@@ -140,9 +135,7 @@ def run_planning_crew(
     project = manifest.name
     cadence = manifest.cadence_profile
 
-    dossier_freshness = (
-        profile.dossier_freshness if profile is not None else None
-    )
+    dossier_freshness = profile.dossier_freshness if profile is not None else None
 
     add_metadata(
         crew="planning",
@@ -170,9 +163,7 @@ def run_planning_crew(
         queued = build_queued_discovery_decision(
             manifest=manifest, freshness="very_stale", age_days=age_days
         )
-        raise PlanningRefusedStaleError(
-            project=project, freshness="very_stale", queued=queued
-        )
+        raise PlanningRefusedStaleError(project=project, freshness="very_stale", queued=queued)
 
     # Build the three planning agents (with display names from manifest, if set).
     po_min = build_named_agent(
@@ -185,7 +176,10 @@ def run_planning_crew(
 
     if dry_run:
         return _dry_run_proposal(
-            manifest, manager=mgr_min, base_sha=base_sha, profile=profile,
+            manifest,
+            manager=mgr_min,
+            base_sha=base_sha,
+            profile=profile,
             sprint_number=sprint_number,
         )
 
@@ -208,7 +202,8 @@ def run_planning_crew(
     except Exception:  # noqa: BLE001
         logger.warning(
             "debate planning failed for %s; falling back to legacy pipeline",
-            project, exc_info=True,
+            project,
+            exc_info=True,
         )
         proposal_text = _run_legacy_planning_pipeline(
             project=project,
@@ -288,9 +283,7 @@ def _run_debate_planning_pipeline(
     devops_min = build_named_agent(
         Role.CLOUD_DEVOPS, project=project, manifest=manifest, cadence=cadence
     )
-    eng_min = build_named_agent(
-        Role.ENGINEER, project=project, manifest=manifest, cadence=cadence
-    )
+    eng_min = build_named_agent(Role.ENGINEER, project=project, manifest=manifest, cadence=cadence)
 
     po = make_crewai_agent(po_min, api_key=api_key)
     princ = make_crewai_agent(princ_min, api_key=api_key)
@@ -321,7 +314,8 @@ def _run_debate_planning_pipeline(
 
             {grounding_rule}{profile_block}
         """),
-        agent=po, expected_output="Ranked markdown list with 3-5 user-facing items + rationale.",
+        agent=po,
+        expected_output="Ranked markdown list with 3-5 user-facing items + rationale.",
     )
     princ_pitch = Task(
         description=textwrap.dedent(f"""\
@@ -332,7 +326,8 @@ def _run_debate_planning_pipeline(
 
             {grounding_rule}{profile_block}
         """),
-        agent=princ, expected_output="Ranked markdown list with 3-5 tech-debt/arch items + rationale.",
+        agent=princ,
+        expected_output="Ranked markdown list with 3-5 tech-debt/arch items + rationale.",
     )
     devops_pitch = Task(
         description=textwrap.dedent(f"""\
@@ -343,7 +338,8 @@ def _run_debate_planning_pipeline(
 
             {grounding_rule}{profile_block}
         """),
-        agent=devops, expected_output="Ranked markdown list with 2-4 ops items + rationale.",
+        agent=devops,
+        expected_output="Ranked markdown list with 2-4 ops items + rationale.",
     )
     eng_pitch = Task(
         description=textwrap.dedent(f"""\
@@ -354,7 +350,8 @@ def _run_debate_planning_pipeline(
 
             {grounding_rule}{profile_block}
         """),
-        agent=eng, expected_output="Ranked markdown list with 2-4 friction items + rationale.",
+        agent=eng,
+        expected_output="Ranked markdown list with 2-4 friction items + rationale.",
     )
 
     # ---- Round 2 — rebuttals (each agent sees the other 3) ----------------
@@ -368,22 +365,26 @@ def _run_debate_planning_pipeline(
     """)
 
     po_rebut = Task(
-        description=rebut_template, agent=po,
+        description=rebut_template,
+        agent=po,
         expected_output="Short rebuttal — +1/-1/modify per other-agent item.",
         context=[princ_pitch, devops_pitch, eng_pitch],
     )
     princ_rebut = Task(
-        description=rebut_template, agent=princ,
+        description=rebut_template,
+        agent=princ,
         expected_output="Short rebuttal — +1/-1/modify per other-agent item.",
         context=[po_pitch, devops_pitch, eng_pitch],
     )
     devops_rebut = Task(
-        description=rebut_template, agent=devops,
+        description=rebut_template,
+        agent=devops,
         expected_output="Short rebuttal — +1/-1/modify per other-agent item.",
         context=[po_pitch, princ_pitch, eng_pitch],
     )
     eng_rebut = Task(
-        description=rebut_template, agent=eng,
+        description=rebut_template,
+        agent=eng,
         expected_output="Short rebuttal — +1/-1/modify per other-agent item.",
         context=[po_pitch, princ_pitch, devops_pitch],
     )
@@ -433,15 +434,29 @@ def _run_debate_planning_pipeline(
         """),
         agent=mgr,
         expected_output="Single JSON object conforming to StructuredSprintPlan. No prose.",
-        context=[po_pitch, princ_pitch, devops_pitch, eng_pitch,
-                 po_rebut, princ_rebut, devops_rebut, eng_rebut],
+        context=[
+            po_pitch,
+            princ_pitch,
+            devops_pitch,
+            eng_pitch,
+            po_rebut,
+            princ_rebut,
+            devops_rebut,
+            eng_rebut,
+        ],
     )
 
     crew = Crew(
         agents=[po, princ, devops, eng, mgr],
         tasks=[
-            po_pitch, princ_pitch, devops_pitch, eng_pitch,
-            po_rebut, princ_rebut, devops_rebut, eng_rebut,
+            po_pitch,
+            princ_pitch,
+            devops_pitch,
+            eng_pitch,
+            po_rebut,
+            princ_rebut,
+            devops_rebut,
+            eng_rebut,
             synthesis,
         ],
         process=Process.sequential,
@@ -453,8 +468,7 @@ def _run_debate_planning_pipeline(
         with crew_run(
             crew="planning",
             project=project,
-            agents=["product_owner", "principal_engineer", "cloud_devops",
-                    "engineer", "manager"],
+            agents=["product_owner", "principal_engineer", "cloud_devops", "engineer", "manager"],
         ) as run_id:
             result = crew.kickoff()
             # Phase 3 of crew-transcripts: persist each task's LLM output
@@ -474,9 +488,7 @@ def _run_debate_planning_pipeline(
                 ("rebuttal", eng_min, "engineer", eng_rebut.output),
                 ("synthesis", mgr_min, "manager", synthesis.output),
             ]
-            for seq, (role_in_conv, agent_min, role, output) in enumerate(
-                tasks_in_order
-            ):
+            for seq, (role_in_conv, agent_min, role, output) in enumerate(tasks_in_order):
                 record_task_default(
                     run_id=run_id,
                     project=project,
@@ -534,14 +546,16 @@ def _run_legacy_planning_pipeline(
 
             {grounding_rule}{profile_block}
         """),
-        agent=po, expected_output="Markdown list of up to 5 ranked candidates.",
+        agent=po,
+        expected_output="Markdown list of up to 5 ranked candidates.",
     )
     feasibility = Task(
         description=textwrap.dedent(f"""\
             Validate the candidate list for technical feasibility on '{project}'.
             Recommend keep/defer.
         """),
-        agent=princ, expected_output="Markdown 'keep' + 'defer' lists.",
+        agent=princ,
+        expected_output="Markdown 'keep' + 'defer' lists.",
         context=[discovery],
     )
     packaging = Task(
@@ -634,22 +648,27 @@ def _dry_run_proposal(
     # Synthetic structured plan so the demo's dry-run path renders the same
     # sectioned UI as a real run. None of these are real items.
     from minions.models.sprint_plan import PlanItem
+
     dry_plan = StructuredSprintPlan(
         goal=f"Dry-run smoke test of the planning pipeline for {manifest.name}",
-        features=[PlanItem(
-            title="(dry-run) feature placeholder",
-            rationale="A real run would mine open issues + roadmap signals.",
-            acceptance_criteria="A new feature lands behind a flag with tests.",
-            estimated_effort="m",
-            suggested_owner_role="engineer",
-        )],
-        tech_debt=[PlanItem(
-            title="(dry-run) tech-debt placeholder",
-            rationale="Principal would surface from code annotations + dep freshness.",
-            acceptance_criteria="Targeted refactor with no behaviour change; tests still green.",
-            estimated_effort="s",
-            suggested_owner_role="senior_engineer",
-        )],
+        features=[
+            PlanItem(
+                title="(dry-run) feature placeholder",
+                rationale="A real run would mine open issues + roadmap signals.",
+                acceptance_criteria="A new feature lands behind a flag with tests.",
+                estimated_effort="m",
+                suggested_owner_role="engineer",
+            )
+        ],
+        tech_debt=[
+            PlanItem(
+                title="(dry-run) tech-debt placeholder",
+                rationale="Principal would surface from code annotations + dep freshness.",
+                acceptance_criteria="Targeted refactor with no behaviour change; tests still green.",
+                estimated_effort="s",
+                suggested_owner_role="senior_engineer",
+            )
+        ],
         bugs=[],
         ops=[],
         docs=[],

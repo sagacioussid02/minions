@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-WARN_THRESHOLD = 0.80   # 80% of monthly cap
+WARN_THRESHOLD = 0.80  # 80% of monthly cap
 BREACH_THRESHOLD = 1.00  # 100% of monthly cap
 
 State = Literal["ok", "warn", "breach"]
@@ -62,7 +62,7 @@ class BudgetState:
 
 
 def evaluate(
-    manifest: "Manifest",
+    manifest: Manifest,
     *,
     cost_log_path: Path | None = None,
     now: datetime | None = None,
@@ -116,7 +116,7 @@ def _month_key(now: datetime) -> str:
 def maybe_notify(
     state: BudgetState,
     *,
-    notifier: "Notifier",
+    notifier: Notifier,
     notifications_path: Path,
     now: datetime | None = None,
 ) -> bool:

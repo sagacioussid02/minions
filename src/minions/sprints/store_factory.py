@@ -21,12 +21,16 @@ def make_sprint_counter_store(json_path: Path) -> SprintCounterStoreLike:
     backend = (os.environ.get("MINIONS_STORE_BACKEND") or "").lower()
     if backend == "postgres":
         from minions.sprints.store_postgres import PostgresSprintCounterStore
+
         return PostgresSprintCounterStore()
     if backend == "json":
         from minions.sprints.store import SprintCounterStore
+
         return SprintCounterStore(json_path)
     if has_database_url():
         from minions.sprints.store_postgres import PostgresSprintCounterStore
+
         return PostgresSprintCounterStore()
     from minions.sprints.store import SprintCounterStore
+
     return SprintCounterStore(json_path)

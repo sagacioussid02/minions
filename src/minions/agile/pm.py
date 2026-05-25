@@ -33,7 +33,8 @@ def answer_pm_question(
     q_lower = question.lower()
     docs = _docs_summary(manifest)
     decisions = [
-        d for d in decision_store.list_all()
+        d
+        for d in decision_store.list_all()
         if d.project == project and d.created_at >= datetime.now(tz=UTC) - timedelta(days=45)
     ][:6]
     runs = engineer_runs_store.list_by_project(project)[:6]
@@ -104,16 +105,8 @@ def _status_answer(project: str, decisions, runs, rituals) -> str:
     approved = sum(1 for d in decisions if d.status.value == "approved")
     open_prs = [r for r in runs if r.pr_state in {None, "open"}]
     merged = [r for r in runs if r.pr_state == "merged"]
-    blocker_bits = [
-        b
-        for ritual in rituals
-        for b in ritual.blockers
-    ][:3]
-    blocker_text = (
-        ", ".join(blocker_bits)
-        if blocker_bits
-        else "none recorded in recent rituals"
-    )
+    blocker_bits = [b for ritual in rituals for b in ritual.blockers][:3]
+    blocker_text = ", ".join(blocker_bits) if blocker_bits else "none recorded in recent rituals"
     return (
         f"{project} status: {pending} pending Decision(s), {approved} approved "
         f"Decision(s), {len(open_prs)} open PR(s), {len(merged)} recently merged PR(s). "
@@ -173,9 +166,7 @@ def _project_path(manifest: Manifest) -> Path | None:
 
 def _safe_secret_names(manifest: Manifest, question: str = "") -> list[str]:
     names: set[str] = {k for k in os.environ if SECRET_NAME_RE.search(k)}
-    secret_pattern = (
-        r"\b[A-Z][A-Z0-9_]*(?:SECRET|TOKEN|API_KEY|PAT|PASSWORD)[A-Z0-9_]*\b"
-    )
+    secret_pattern = r"\b[A-Z][A-Z0-9_]*(?:SECRET|TOKEN|API_KEY|PAT|PASSWORD)[A-Z0-9_]*\b"
     for token in re.findall(secret_pattern, question):
         names.add(token)
     root = _project_path(manifest)

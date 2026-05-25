@@ -40,19 +40,14 @@ class TranscriptStore:
         return msg
 
     def list_all(self) -> list[CrewTranscriptMessage]:
-        return [
-            CrewTranscriptMessage.model_validate(v)
-            for v in self._load_all().values()
-        ]
+        return [CrewTranscriptMessage.model_validate(v) for v in self._load_all().values()]
 
     def list_by_run(self, run_id: str) -> list[CrewTranscriptMessage]:
         rows = [m for m in self.list_all() if m.run_id == run_id]
         rows.sort(key=lambda m: m.sequence)
         return rows
 
-    def list_for_project(
-        self, project: str, *, limit: int = 50
-    ) -> list[CrewTranscriptMessage]:
+    def list_for_project(self, project: str, *, limit: int = 50) -> list[CrewTranscriptMessage]:
         rows = [m for m in self.list_all() if m.project == project]
         rows.sort(key=lambda m: m.created_at, reverse=True)
         return rows[:limit]

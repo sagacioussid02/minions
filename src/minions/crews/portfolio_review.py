@@ -186,9 +186,7 @@ def assemble_inputs(
     deferred_dir = projects_dir.parent / projects_dir.name / "_deferred"
     deferred: list[str] = []
     if deferred_dir.is_dir():
-        deferred = sorted(
-            p.stem for p in deferred_dir.iterdir() if p.suffix in (".yaml", ".yml")
-        )
+        deferred = sorted(p.stem for p in deferred_dir.iterdir() if p.suffix in (".yaml", ".yml"))
 
     weekly_cap = 50.0
     if portfolio is not None and getattr(portfolio, "budget_envelope", None) is not None:

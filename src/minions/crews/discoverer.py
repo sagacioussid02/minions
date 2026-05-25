@@ -55,9 +55,7 @@ CREW_VERSION = "discoverer/v1"
 # backticks. Used by the verifier to find every claim that must check out
 # against ``commit_sha``. Backticks anchor the match so we don't trip on
 # prose phrases that happen to contain a colon-digit substring.
-_CITATION_PATTERN = re.compile(
-    r"`([A-Za-z0-9_./\-]+\.[A-Za-z0-9]+):(\d+)(?:-(\d+))?`"
-)
+_CITATION_PATTERN = re.compile(r"`([A-Za-z0-9_./\-]+\.[A-Za-z0-9]+):(\d+)(?:-(\d+))?`")
 
 
 # ---------------------------------------------------------------------------
@@ -77,14 +75,14 @@ class RepoReadings:
     project: str
     root: Path
     commit_sha: str
-    tree_summary: str          # depth-limited directory listing
-    package_files: str         # newline-joined manifest paths + dep counts
+    tree_summary: str  # depth-limited directory listing
+    package_files: str  # newline-joined manifest paths + dep counts
     ci_files: str
-    infra_files: str           # deploy configs (vercel.json, fly.toml, etc.)
+    infra_files: str  # deploy configs (vercel.json, fly.toml, etc.)
     readme_excerpt: str
-    recent_commits: str        # `git log` excerpt, last ~30 commits
-    high_churn_files: str      # files most touched in last 90d
-    todo_top_files: str        # files with the most TODO/FIXME/XXX hits
+    recent_commits: str  # `git log` excerpt, last ~30 commits
+    high_churn_files: str  # files most touched in last 90d
+    todo_top_files: str  # files with the most TODO/FIXME/XXX hits
 
 
 def collect_repo_readings(manifest: Manifest, root: Path) -> RepoReadings:
@@ -189,9 +187,7 @@ def _check_section_order(body: str) -> str | None:
     return None
 
 
-def _check_citation(
-    root: Path, commit_sha: str, path: str, start: int, end: int
-) -> str | None:
+def _check_citation(root: Path, commit_sha: str, path: str, start: int, end: int) -> str | None:
     """Return None if citation is valid; else a problem string."""
     if end < start:
         return f"end line {end} < start line {start}"
@@ -282,14 +278,15 @@ def run_discoverer(
                 decision_id=None,
             ) as run_id:
                 markdown = _llm_produce_markdown(
-                    manifest, readings, api_key, run_id=run_id,
+                    manifest,
+                    readings,
+                    api_key,
+                    run_id=run_id,
                 )
         finally:
             clear_attribution()
 
-    verifier = verify_dossier(
-        markdown, root=readings.root, commit_sha=readings.commit_sha
-    )
+    verifier = verify_dossier(markdown, root=readings.root, commit_sha=readings.commit_sha)
     sections_present = _sections_in_markdown(markdown)
 
     draft = DossierDraft(
@@ -330,8 +327,11 @@ class DossierVerificationError(RuntimeError):
 
 
 def _llm_produce_markdown(
-    manifest: Manifest, readings: RepoReadings, api_key: str,
-    *, run_id: str | None = None,
+    manifest: Manifest,
+    readings: RepoReadings,
+    api_key: str,
+    *,
+    run_id: str | None = None,
 ) -> str:
     from crewai import Crew, Process, Task
 
@@ -339,29 +339,45 @@ def _llm_produce_markdown(
 
     # Retain MinionAgents so transcript capture can pick up display_name.
     architect_min = build_named_agent(
-        Role.TEAM_ARCHITECT, project=manifest.name, manifest=manifest,
+        Role.TEAM_ARCHITECT,
+        project=manifest.name,
+        manifest=manifest,
     )
     devops_min = build_named_agent(
-        Role.CLOUD_DEVOPS, project=manifest.name, manifest=manifest,
+        Role.CLOUD_DEVOPS,
+        project=manifest.name,
+        manifest=manifest,
     )
     security_min = build_named_agent(
-        Role.SECURITY_CHAMPION, project=manifest.name, manifest=manifest,
+        Role.SECURITY_CHAMPION,
+        project=manifest.name,
+        manifest=manifest,
     )
 
     architect = make_crewai_agent(
-        architect_min, api_key=api_key, max_tokens=4000,
+        architect_min,
+        api_key=api_key,
+        max_tokens=4000,
     )
     devops = make_crewai_agent(
-        devops_min, api_key=api_key, max_tokens=2000,
+        devops_min,
+        api_key=api_key,
+        max_tokens=2000,
     )
     security = make_crewai_agent(
-        security_min, api_key=api_key, max_tokens=2000,
+        security_min,
+        api_key=api_key,
+        max_tokens=2000,
     )
     principal_min = build_named_agent(
-        Role.PRINCIPAL, project=manifest.name, manifest=manifest,
+        Role.PRINCIPAL,
+        project=manifest.name,
+        manifest=manifest,
     )
     principal = make_crewai_agent(
-        principal_min, api_key=api_key, max_tokens=4000,
+        principal_min,
+        api_key=api_key,
+        max_tokens=4000,
     )
 
     context = _render_readings_for_prompt(readings)
@@ -432,12 +448,14 @@ def _llm_produce_markdown(
     if run_id:
         from minions.transcripts.capture import record_task_default
 
-        for seq, (agent_min, role_str, task) in enumerate([
-            (architect_min, "team_architect", arch_task),
-            (devops_min, "cloud_devops", devops_task),
-            (security_min, "security_champion", security_task),
-            (principal_min, "principal_engineer", principal_task),
-        ]):
+        for seq, (agent_min, role_str, task) in enumerate(
+            [
+                (architect_min, "team_architect", arch_task),
+                (devops_min, "cloud_devops", devops_task),
+                (security_min, "security_champion", security_task),
+                (principal_min, "principal_engineer", principal_task),
+            ]
+        ):
             record_task_default(
                 run_id=run_id,
                 project=manifest.name,
@@ -488,9 +506,7 @@ def assemble_dossier(
         "---\n\n"
     )
     body = "\n\n".join(
-        s.strip()
-        for s in (architect_md, devops_md, security_md, principal_md)
-        if s and s.strip()
+        s.strip() for s in (architect_md, devops_md, security_md, principal_md) if s and s.strip()
     )
     return frontmatter + body + "\n"
 
@@ -557,25 +573,25 @@ def _render_readings_for_prompt(r: RepoReadings) -> str:
         ```
 
         ### Package / dependency files
-        {r.package_files or '(none found)'}
+        {r.package_files or "(none found)"}
 
         ### CI files
-        {r.ci_files or '(none found)'}
+        {r.ci_files or "(none found)"}
 
         ### Infra / deploy files
-        {r.infra_files or '(none found)'}
+        {r.infra_files or "(none found)"}
 
         ### README excerpt
-        {r.readme_excerpt or '(no README)'}
+        {r.readme_excerpt or "(no README)"}
 
         ### Recent commits (most recent first)
-        {r.recent_commits or '(no git history)'}
+        {r.recent_commits or "(no git history)"}
 
         ### High-churn files (last 90d)
-        {r.high_churn_files or '(no git history)'}
+        {r.high_churn_files or "(no git history)"}
 
         ### Top TODO/FIXME-heavy files
-        {r.todo_top_files or '(none)'}
+        {r.todo_top_files or "(none)"}
         """
     )
 
@@ -587,9 +603,21 @@ def _render_readings_for_prompt(r: RepoReadings) -> str:
 
 _SKIP_DIRS: frozenset[str] = frozenset(
     {
-        "node_modules", ".venv", "venv", "__pycache__", ".git", ".next",
-        "dist", "build", ".pytest_cache", ".mypy_cache", ".ruff_cache",
-        "coverage", "target", ".turbo", ".cache",
+        "node_modules",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".git",
+        ".next",
+        "dist",
+        "build",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        "coverage",
+        "target",
+        ".turbo",
+        ".cache",
     }
 )
 
@@ -600,7 +628,10 @@ def _git_head(root: Path) -> str:
     try:
         out = subprocess.run(
             ["git", "-C", str(root), "rev-parse", "HEAD"],
-            check=True, capture_output=True, text=True, timeout=5,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         return out.stdout.strip()
     except (subprocess.SubprocessError, OSError):
@@ -613,7 +644,9 @@ def _git_path_exists(root: Path, sha: str, path: str) -> bool:
     try:
         subprocess.run(
             ["git", "-C", str(root), "cat-file", "-e", f"{sha}:{path}"],
-            check=True, capture_output=True, timeout=5,
+            check=True,
+            capture_output=True,
+            timeout=5,
         )
         return True
     except (subprocess.SubprocessError, OSError):
@@ -626,7 +659,10 @@ def _git_line_count(root: Path, sha: str, path: str) -> int | None:
     try:
         out = subprocess.run(
             ["git", "-C", str(root), "show", f"{sha}:{path}"],
-            check=True, capture_output=True, text=True, timeout=5,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         return out.stdout.count("\n") + 1
     except (subprocess.SubprocessError, OSError):
@@ -655,8 +691,12 @@ def _render_tree(root: Path, *, max_depth: int, max_entries: int) -> str:
 
 def _render_package_files(root: Path) -> str:
     names = (
-        "package.json", "pyproject.toml", "requirements.txt",
-        "Cargo.toml", "go.mod", "Gemfile",
+        "package.json",
+        "pyproject.toml",
+        "requirements.txt",
+        "Cargo.toml",
+        "go.mod",
+        "Gemfile",
     )
     found: list[str] = []
     for name in names:
@@ -682,9 +722,17 @@ def _render_ci_files(root: Path) -> str:
 
 def _render_infra_files(root: Path) -> str:
     candidates = (
-        "vercel.json", "fly.toml", "render.yaml", "Dockerfile", "docker-compose.yml",
-        "next.config.js", "next.config.ts", "next.config.mjs",
-        "firebase.json", "wrangler.toml", "serverless.yml",
+        "vercel.json",
+        "fly.toml",
+        "render.yaml",
+        "Dockerfile",
+        "docker-compose.yml",
+        "next.config.js",
+        "next.config.ts",
+        "next.config.mjs",
+        "firebase.json",
+        "wrangler.toml",
+        "serverless.yml",
     )
     found: list[str] = []
     for name in candidates:
@@ -713,7 +761,10 @@ def _render_recent_commits(root: Path, *, limit: int) -> str:
     try:
         out = subprocess.run(
             ["git", "-C", str(root), "log", f"-n{limit}", "--pretty=format:%h %s"],
-            check=True, capture_output=True, text=True, timeout=10,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
     except (subprocess.SubprocessError, OSError):
         return ""
@@ -726,10 +777,18 @@ def _render_high_churn(root: Path, *, days: int, limit: int) -> str:
     try:
         out = subprocess.run(
             [
-                "git", "-C", str(root), "log",
-                f"--since={days}.days", "--name-only", "--pretty=format:",
+                "git",
+                "-C",
+                str(root),
+                "log",
+                f"--since={days}.days",
+                "--name-only",
+                "--pretty=format:",
             ],
-            check=True, capture_output=True, text=True, timeout=15,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
     except (subprocess.SubprocessError, OSError):
         return ""

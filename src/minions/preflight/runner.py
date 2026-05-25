@@ -46,11 +46,21 @@ from minions.preflight.models import (
 logger = logging.getLogger(__name__)
 
 # Env vars we KEEP. Anything else is dropped.
-_ENV_ALLOWLIST: frozenset[str] = frozenset({
-    "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE",
-    "NODE_ENV", "PYTHONUNBUFFERED", "USER", "SHELL",
-    "TMPDIR", "TERM",
-})
+_ENV_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "NODE_ENV",
+        "PYTHONUNBUFFERED",
+        "USER",
+        "SHELL",
+        "TMPDIR",
+        "TERM",
+    }
+)
 # Anything matching these patterns is stripped even if allowlisted.
 _SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r".*_TOKEN$"),
@@ -73,7 +83,7 @@ MAX_TAIL_LINES = 200
 def run_preflight(
     *,
     patches: Iterable[object],  # crews.engineer.FilePatch (avoid import cycle)
-    manifest: object,           # models.manifest.Manifest
+    manifest: object,  # models.manifest.Manifest
     repo_clone: Path,
     target_branch: str | None = None,
 ) -> PreflightReport:
@@ -112,7 +122,7 @@ def run_preflight(
             if not command:
                 continue
             result = _run_step(
-                step=step_name,                   # type: ignore[arg-type]
+                step=step_name,  # type: ignore[arg-type]
                 command=command,
                 scratch=scratch,
                 timeout=config.timeout_seconds,
@@ -189,13 +199,14 @@ def _run_step(
             else (e.stdout or "")
         )
         stderr = (
-            e.stderr.decode("utf-8", errors="replace") if isinstance(e.stderr, bytes)
+            e.stderr.decode("utf-8", errors="replace")
+            if isinstance(e.stderr, bytes)
             else (e.stderr or "")
         ) + f"\n[preflight] step '{step}' timed out after {timeout}s"
     duration = time.monotonic() - start
     ok = (exit_code == 0) and not timed_out
     return PreflightStepResult(
-        step=step,                              # type: ignore[arg-type]
+        step=step,  # type: ignore[arg-type]
         command=command,
         exit_code=exit_code,
         stdout_tail=_tail(stdout),
@@ -220,9 +231,7 @@ def _tail(text: str, max_lines: int = MAX_TAIL_LINES) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _apply_network_sandbox(
-    command: str, *, posture: NetworkPosture, step: str
-) -> str:
+def _apply_network_sandbox(command: str, *, posture: NetworkPosture, step: str) -> str:
     """Wrap ``command`` per the network posture.
 
     ``deny``: try ``unshare -n`` on Linux; on macOS fall back to setting
@@ -244,12 +253,7 @@ def _apply_network_sandbox(
     logger.warning(
         "preflight: network sandbox falling back to proxy-blackhole (no `unshare` available)"
     )
-    return (
-        "HTTP_PROXY=http://127.0.0.1:1 "
-        "HTTPS_PROXY=http://127.0.0.1:1 "
-        "NO_PROXY= "
-        f"{command}"
-    )
+    return f"HTTP_PROXY=http://127.0.0.1:1 HTTPS_PROXY=http://127.0.0.1:1 NO_PROXY= {command}"
 
 
 # ---------------------------------------------------------------------------
@@ -274,9 +278,7 @@ def _is_secret(key: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _populate_scratch(
-    repo_clone: Path, scratch: Path, *, target_branch: str | None = None
-) -> None:
+def _populate_scratch(repo_clone: Path, scratch: Path, *, target_branch: str | None = None) -> None:
     """Copy ``repo_clone`` into ``scratch`` so we don't mutate the cache.
 
     Using ``cp -a`` (or ``shutil.copytree``) keeps the .git dir intact so
@@ -291,7 +293,9 @@ def _populate_scratch(
         with _SuppressSubproc():
             subprocess.run(
                 ["git", "-C", str(scratch), "checkout", target_branch],
-                check=False, capture_output=True, timeout=5,
+                check=False,
+                capture_output=True,
+                timeout=5,
             )
 
 
@@ -317,7 +321,10 @@ def _git_head(root: Path) -> str | None:
     with _SuppressSubproc():
         proc = subprocess.run(
             ["git", "-C", str(root), "rev-parse", "HEAD"],
-            check=False, capture_output=True, text=True, timeout=5,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         return proc.stdout.strip() or None
     return None
@@ -330,9 +337,7 @@ class _SuppressSubproc:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> bool:  # type: ignore[no-untyped-def]
-        return exc_type is not None and issubclass(
-            exc_type, (subprocess.SubprocessError, OSError)
-        )
+        return exc_type is not None and issubclass(exc_type, (subprocess.SubprocessError, OSError))
 
 
 __all__ = ["run_preflight"]

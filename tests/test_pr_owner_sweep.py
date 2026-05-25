@@ -31,10 +31,13 @@ class _SilentNotifier(Notifier):
 
 def _record(**kw: Any) -> EngineerRunRecord:
     defaults: dict[str, Any] = {
-        "decision_id": _FIXED_DECISION_ID, "project": "Demo",
+        "decision_id": _FIXED_DECISION_ID,
+        "project": "Demo",
         "completed_at": datetime.now(tz=UTC),
-        "pr_url": "https://x/p/1", "pr_number": 1,
-        "branch_name": "minions/eng/x", "pr_state": "open",
+        "pr_url": "https://x/p/1",
+        "pr_number": 1,
+        "branch_name": "minions/eng/x",
+        "pr_state": "open",
         "owner_agent_id": "engineer@Demo#1",
     }
     defaults.update(kw)
@@ -46,11 +49,15 @@ _FIXED_DECISION_ID = "00000000-0000-4000-8000-000000000001"
 
 def _decision() -> Decision:
     from uuid import UUID
+
     return Decision(
         id=UUID(_FIXED_DECISION_ID),
-        project="Demo", type=DecisionType.FEATURE,
-        summary="x", rationale="y",
-        proposer_role="manager", proposer_agent_id="manager@Demo",
+        project="Demo",
+        type=DecisionType.FEATURE,
+        summary="x",
+        rationale="y",
+        proposer_role="manager",
+        proposer_agent_id="manager@Demo",
         status=DecisionStatus.EXECUTED,
     )
 
@@ -58,13 +65,16 @@ def _decision() -> Decision:
 # --------------------------- pure helpers -----------------------------------
 
 
-@pytest.mark.parametrize(("ci", "merge", "expected"), [
-    (None, "clean", None),
-    ("success", "clean", None),
-    ("failure", "clean", "ci_failure"),
-    ("success", "dirty", "merge_conflict"),
-    ("failure", "dirty", "merge_conflict"),  # conflict wins
-])
+@pytest.mark.parametrize(
+    ("ci", "merge", "expected"),
+    [
+        (None, "clean", None),
+        ("success", "clean", None),
+        ("failure", "clean", "ci_failure"),
+        ("success", "dirty", "merge_conflict"),
+        ("failure", "dirty", "merge_conflict"),  # conflict wins
+    ],
+)
 def test_classify_failure(ci, merge, expected) -> None:
     assert _classify_failure(ci, merge) == expected
 
@@ -125,9 +135,13 @@ def test_healthy_pr_is_left_alone(tmp_path: Path) -> None:
 
     report = run_pr_owner_sweep(
         projects_dir=REPO_ROOT / "projects",
-        store=decisions, engineer_runs_store=runs,
-        questions_store=questions, open_github_client=open_gh,
-        notifier=_SilentNotifier(), dry_run=False, runner=_runner,
+        store=decisions,
+        engineer_runs_store=runs,
+        questions_store=questions,
+        open_github_client=open_gh,
+        notifier=_SilentNotifier(),
+        dry_run=False,
+        runner=_runner,
     )
     assert runner_called["n"] == 0
     assert len(report.outcomes) == 1
@@ -152,15 +166,21 @@ def test_failing_pr_redispatches_owner_in_place(tmp_path: Path) -> None:
         captured["retry_attempt"] = kw.get("retry_attempt")
         return EngineerResult(
             decision_id=_FIXED_DECISION_ID,
-            pr_url=rec.pr_url, pr_number=1, dry_run=False,
+            pr_url=rec.pr_url,
+            pr_number=1,
+            dry_run=False,
         )
 
     report = run_pr_owner_sweep(
         projects_dir=REPO_ROOT / "projects",
-        store=decisions, engineer_runs_store=runs,
-        questions_store=questions, open_github_client=open_gh,
-        notifier=_SilentNotifier(), api_key="k",
-        dry_run=False, runner=_runner,
+        store=decisions,
+        engineer_runs_store=runs,
+        questions_store=questions,
+        open_github_client=open_gh,
+        notifier=_SilentNotifier(),
+        api_key="k",
+        dry_run=False,
+        runner=_runner,
     )
     assert captured["target_branch"] == "minions/eng/x"
     assert captured["existing_pr_number"] == 1
@@ -191,9 +211,13 @@ def test_at_cap_escalates_and_skips_thereafter(tmp_path: Path) -> None:
 
     report = run_pr_owner_sweep(
         projects_dir=REPO_ROOT / "projects",
-        store=decisions, engineer_runs_store=runs,
-        questions_store=questions, open_github_client=open_gh,
-        notifier=_SilentNotifier(), dry_run=False, runner=_runner,
+        store=decisions,
+        engineer_runs_store=runs,
+        questions_store=questions,
+        open_github_client=open_gh,
+        notifier=_SilentNotifier(),
+        dry_run=False,
+        runner=_runner,
     )
     assert report.outcomes[0].status == "escalated"
     assert report.outcomes[0].question_id is not None
@@ -207,10 +231,14 @@ def test_at_cap_escalates_and_skips_thereafter(tmp_path: Path) -> None:
     # Re-run — must produce a skipped outcome (no new Q, no retry).
     report2 = run_pr_owner_sweep(
         projects_dir=REPO_ROOT / "projects",
-        store=decisions, engineer_runs_store=runs,
-        questions_store=questions, open_github_client=open_gh,
-        notifier=_SilentNotifier(), dry_run=False, runner=_runner,
+        store=decisions,
+        engineer_runs_store=runs,
+        questions_store=questions,
+        open_github_client=open_gh,
+        notifier=_SilentNotifier(),
+        dry_run=False,
+        runner=_runner,
     )
     assert report2.outcomes[0].status == "skipped"
     assert "awaiting operator" in (report2.outcomes[0].reason or "")
-    assert len(questions.list_all()) == 1   # idempotent
+    assert len(questions.list_all()) == 1  # idempotent

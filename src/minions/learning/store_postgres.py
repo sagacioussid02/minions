@@ -36,8 +36,7 @@ class PostgresAgentLearningStore:
                 """
             )
             cur.execute(
-                "CREATE INDEX IF NOT EXISTS agent_learning_agent_idx "
-                "ON agent_learning(agent_id)"
+                "CREATE INDEX IF NOT EXISTS agent_learning_agent_idx ON agent_learning(agent_id)"
             )
             cur.execute(
                 "CREATE INDEX IF NOT EXISTS agent_learning_role_project_kind_idx "
@@ -112,10 +111,7 @@ class PostgresAgentLearningStore:
         query = "SELECT payload FROM agent_learning"
         params: tuple[object, ...] = ()
         if not include_inactive:
-            query += (
-                " WHERE superseded_by IS NULL "
-                "AND (expires_at IS NULL OR expires_at > NOW())"
-            )
+            query += " WHERE superseded_by IS NULL AND (expires_at IS NULL OR expires_at > NOW())"
         query += (
             " ORDER BY CASE confidence "
             "WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, created_at DESC"

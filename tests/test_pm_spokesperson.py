@@ -15,14 +15,16 @@ def _manifest(tmp_path: Path) -> Manifest:
     (project / "README.md").write_text(
         "# Project\nUses SECRET_API_KEY for deployment but never prints it.\n"
     )
-    return Manifest.model_validate({
-        "name": "alpha",
-        "description": "Alpha helps users manage profile data.",
-        "source": {"kind": "local", "path": str(project), "default_branch": "main"},
-        "weekly_budget_usd": 1.0,
-        "monthly_budget_usd": 4.0,
-        "owner": "t@t",
-    })
+    return Manifest.model_validate(
+        {
+            "name": "alpha",
+            "description": "Alpha helps users manage profile data.",
+            "source": {"kind": "local", "path": str(project), "default_branch": "main"},
+            "weekly_budget_usd": 1.0,
+            "monthly_budget_usd": 4.0,
+            "owner": "t@t",
+        }
+    )
 
 
 def test_pm_answers_functionality_question(tmp_path: Path) -> None:

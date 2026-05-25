@@ -176,7 +176,7 @@ class Decision(BaseModel):
     # Structured plan (Phase 1 of openspec/sprint-tasks-memory). Populated
     # by the planning crew; rendered to the legacy `diff_or_plan` markdown
     # for back-compat with email + existing UI surfaces.
-    structured_plan: "StructuredSprintPlan | None" = None
+    structured_plan: StructuredSprintPlan | None = None
 
     # Cost-coupled approvals (e.g., team_composition + budget_raise) link via this field.
     paired_decision_id: UUID | None = None

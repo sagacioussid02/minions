@@ -35,14 +35,14 @@ def _migration_files() -> list[tuple[str, str]]:
     return out
 
 
-def applied_migrations(conn: "Connection") -> set[str]:
+def applied_migrations(conn: Connection) -> set[str]:
     with conn.cursor() as cur:
         cur.execute(_BOOTSTRAP_SCHEMA_MIGRATIONS)
         cur.execute("SELECT filename FROM schema_migrations")
         return {row[0] for row in cur.fetchall()}
 
 
-def apply_migrations(conn: "Connection | None" = None) -> list[str]:
+def apply_migrations(conn: Connection | None = None) -> list[str]:
     """Apply all pending migrations. Returns names of files applied."""
     if conn is None:
         with connect() as c:

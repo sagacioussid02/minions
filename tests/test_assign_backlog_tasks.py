@@ -49,11 +49,10 @@ def test_assigns_unassigned_task_when_slot_open(tmp_path: Path) -> None:
     assert saved.owner_display_name == "Sasha"
 
 
-def test_keeps_unassigned_when_all_candidates_at_cap(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_keeps_unassigned_when_all_candidates_at_cap(tmp_path: Path, monkeypatch) -> None:
     """If every eligible owner is already at WIP cap, leave the Task alone."""
     import minions.crews.refinement as ref
+
     monkeypatch.setattr(ref, "MAX_WIP_PER_AGENT", 0)  # nothing fits
 
     store = TaskStore(tmp_path / "tasks.json")

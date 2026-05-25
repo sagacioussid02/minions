@@ -216,11 +216,27 @@ def _keywords(question: str) -> set[str]:
     }
     q = question.lower()
     if any(w in q for w in ["deploy", "host", "runtime"]):
-        base.update({"deploy", "deployment", "vercel", "fly", "render", "railway", "docker", "compose", "kubernetes", "infra", "host"})
+        base.update(
+            {
+                "deploy",
+                "deployment",
+                "vercel",
+                "fly",
+                "render",
+                "railway",
+                "docker",
+                "compose",
+                "kubernetes",
+                "infra",
+                "host",
+            }
+        )
     if any(w in q for w in ["secret", "password", "token", "api key", "rotation"]):
         base.update({"secret", "token", "password", "env", "rotation", "clerk", "auth"})
     if any(w in q for w in ["stack", "tech", "framework"]):
-        base.update({"dependencies", "framework", "next", "react", "fastapi", "package", "pyproject"})
+        base.update(
+            {"dependencies", "framework", "next", "react", "fastapi", "package", "pyproject"}
+        )
     return base
 
 
@@ -231,9 +247,11 @@ def _candidate_files(root: Path) -> list[Path]:
             continue
         if not path.is_file():
             continue
-        if path.name in {"Dockerfile", "docker-compose.yml", "README.md", "package.json", "pyproject.toml"}:
-            out.append(path)
-        elif path.suffix.lower() in SCAN_EXTENSIONS:
+        if (
+            path.name
+            in {"Dockerfile", "docker-compose.yml", "README.md", "package.json", "pyproject.toml"}
+            or path.suffix.lower() in SCAN_EXTENSIONS
+        ):
             out.append(path)
         if len(out) >= 250:
             break
@@ -246,13 +264,23 @@ def _is_skipped_path(path: str) -> bool:
 
 def _is_scannable_path(path: str) -> bool:
     p = Path(path)
-    return p.name in {"Dockerfile", "docker-compose.yml", "README.md", "package.json", "pyproject.toml"} or p.suffix.lower() in SCAN_EXTENSIONS
+    return (
+        p.name
+        in {"Dockerfile", "docker-compose.yml", "README.md", "package.json", "pyproject.toml"}
+        or p.suffix.lower() in SCAN_EXTENSIONS
+    )
 
 
 def score_file(path: Path, keywords: set[str]) -> int:
     name = str(path).lower()
     score = sum(3 for k in keywords if k in name)
-    if path.name.lower() in {"readme.md", "package.json", "pyproject.toml", "dockerfile", "docker-compose.yml"}:
+    if path.name.lower() in {
+        "readme.md",
+        "package.json",
+        "pyproject.toml",
+        "dockerfile",
+        "docker-compose.yml",
+    }:
         score += 4
     text = _safe_read(path, limit=3000) or ""
     lower = text.lower()
@@ -263,7 +291,13 @@ def score_file(path: Path, keywords: set[str]) -> int:
 def score_github_path(path: str, keywords: set[str], client: ContentsClient, branch: str) -> int:
     name = path.lower()
     score = sum(3 for k in keywords if k in name)
-    if Path(path).name.lower() in {"readme.md", "package.json", "pyproject.toml", "dockerfile", "docker-compose.yml"}:
+    if Path(path).name.lower() in {
+        "readme.md",
+        "package.json",
+        "pyproject.toml",
+        "dockerfile",
+        "docker-compose.yml",
+    }:
         score += 4
     text = (client.get_text_file(path=path, branch=branch) or "")[:3000].lower()
     score += sum(1 for k in keywords if k in text)

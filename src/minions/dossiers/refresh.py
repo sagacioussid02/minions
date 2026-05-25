@@ -50,9 +50,7 @@ def target_path_for(manifest: Manifest) -> str:
     return f"data/dossiers/{manifest.name}.md"
 
 
-def build_dossier_engineer_output(
-    draft: DossierDraft, manifest: Manifest
-) -> EngineerOutput:
+def build_dossier_engineer_output(draft: DossierDraft, manifest: Manifest) -> EngineerOutput:
     """Wrap the draft markdown in an ``EngineerOutput`` for the engineer crew.
 
     Always a single-file PR. ``operation="update"`` is fine for both
@@ -83,9 +81,7 @@ def build_dossier_engineer_output(
     )
 
 
-def section_diff_summary(
-    new: DossierDraft, prior: DossierDraft | None
-) -> str:
+def section_diff_summary(new: DossierDraft, prior: DossierDraft | None) -> str:
     """Short, human-readable diff of section coverage for the Decision body."""
     new_sections = set(new.sections_present)
     if prior is None:
@@ -105,9 +101,7 @@ def section_diff_summary(
     return "; ".join(parts) or "no structural changes (body may still differ)"
 
 
-def find_open_refresh_decision(
-    *, project: str, decision_store: DecisionStore
-) -> Decision | None:
+def find_open_refresh_decision(*, project: str, decision_store: DecisionStore) -> Decision | None:
     """Return the existing pending/approved DOSSIER_REFRESH for this project, if any.
 
     Dedupe guard: an operator who runs ``minions discover <p> --no-dry-run``
@@ -150,16 +144,14 @@ def file_dossier_refresh_decision(
     so the execute-approved sweep can reconstruct the override later.
     """
     existing = find_open_refresh_decision(
-        project=manifest.name, decision_store=decision_store,
+        project=manifest.name,
+        decision_store=decision_store,
     )
     if existing is not None:
         return existing
 
     prior = dossier_store.latest_merged(manifest.name)
-    summary = (
-        f"dossier: refresh PROJECT_DOSSIER.md "
-        f"({draft.commit_sha[:8]}) for {manifest.name}"
-    )
+    summary = f"dossier: refresh PROJECT_DOSSIER.md ({draft.commit_sha[:8]}) for {manifest.name}"
     rationale = (
         "Discoverer crew produced a fresh PROJECT_DOSSIER.md. "
         "Approving opens a draft PR against the target repo. "
@@ -172,8 +164,7 @@ def file_dossier_refresh_decision(
         f"- Target path: `{target_path_for(manifest)}`",
         f"- Commit basis: `{draft.commit_sha}`",
         f"- Crew version: `{draft.crew_version}`",
-        f"- Sections present: "
-        f"{', '.join(s.value for s in draft.sections_present) or '(none)'}",
+        f"- Sections present: {', '.join(s.value for s in draft.sections_present) or '(none)'}",
         "",
         "### Verifier",
         "```",

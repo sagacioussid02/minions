@@ -58,10 +58,30 @@ _SKIP_DIRS: frozenset[str] = frozenset(
 )
 _SOURCE_EXTS: frozenset[str] = frozenset(
     {
-        ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
-        ".go", ".rs", ".rb", ".java", ".kt", ".swift",
-        ".c", ".cpp", ".h", ".hpp", ".cs",
-        ".sql", ".sh", ".vue", ".svelte", ".css", ".scss",
+        ".py",
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs",
+        ".go",
+        ".rs",
+        ".rb",
+        ".java",
+        ".kt",
+        ".swift",
+        ".c",
+        ".cpp",
+        ".h",
+        ".hpp",
+        ".cs",
+        ".sql",
+        ".sh",
+        ".vue",
+        ".svelte",
+        ".css",
+        ".scss",
     }
 )
 _TODO_PATTERN = re.compile(r"\b(TODO|FIXME|XXX|HACK)\b")
@@ -120,7 +140,7 @@ class ProjectProfile(BaseModel):
     # Populated by ``build_profile`` when a dossier store is supplied. The
     # planning crew consumes the digest as additional grounding; freshness
     # gates the planning crew's behaviour (see ``crews/planning.py``).
-    dossier_digest: "DossierDigest | None" = None
+    dossier_digest: DossierDigest | None = None
     dossier_freshness: str | None = None  # ok | stale | very_stale | none
 
     generated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
@@ -139,7 +159,10 @@ class ProjectProfile(BaseModel):
             for p in self.package_files:
                 dc = f" — {p.dep_count} deps" if p.dep_count is not None else ""
                 out.append(f"  - `{p.path}` ({p.kind}{dc})")
-        out.append(f"- CI configured: {self.has_ci}" + (f" ({', '.join(self.ci_files)})" if self.ci_files else ""))
+        out.append(
+            f"- CI configured: {self.has_ci}"
+            + (f" ({', '.join(self.ci_files)})" if self.ci_files else "")
+        )
         if self.tasks_md:
             t = self.tasks_md
             out.append(
@@ -242,9 +265,7 @@ def build_profile(
 
             latest = dossier_store.latest_merged(manifest.name)
             if latest is not None:
-                dossier_digest = digest_from_draft(
-                    latest, manifest=manifest, repo_root=root
-                )
+                dossier_digest = digest_from_draft(latest, manifest=manifest, repo_root=root)
                 dossier_freshness = dossier_digest.freshness
             else:
                 dossier_freshness = compute_freshness(
@@ -336,7 +357,9 @@ def _count_deps(path: Path, kind: str) -> int | None:
             return len(data.get("dependencies", {})) + len(data.get("devDependencies", {}))
         if kind == "python" and path.name == "requirements.txt":
             return sum(
-                1 for line in path.read_text().splitlines() if line.strip() and not line.startswith("#")
+                1
+                for line in path.read_text().splitlines()
+                if line.strip() and not line.startswith("#")
             )
         # pyproject.toml / Cargo.toml / go.mod / Gemfile — skip; not worth a TOML parse here.
         return None

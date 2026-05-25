@@ -44,8 +44,10 @@ def test_very_stale_past_30d() -> None:
 
 def test_custom_overrides_honored() -> None:
     tight = DossierFreshnessOverrides(
-        ok_max_age_days=2, stale_max_age_days=5,
-        ok_max_commit_drift=10, stale_max_commit_drift=20,
+        ok_max_age_days=2,
+        stale_max_age_days=5,
+        ok_max_commit_drift=10,
+        stale_max_commit_drift=20,
     )
     f = compute_freshness(_draft(3), overrides=tight)
     assert f.label == "stale"

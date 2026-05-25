@@ -82,7 +82,9 @@ def run_pr_review(
         from minions.crews.factory import make_crewai_agent
 
         minion = build_named_agent(
-            crew_role, project=decision.project, manifest=None,
+            crew_role,
+            project=decision.project,
+            manifest=None,
         )
         agent = make_crewai_agent(minion, api_key=api_key, max_tokens=2000)
 
@@ -105,14 +107,17 @@ def run_pr_review(
             output_pydantic=_SRModel,
         )
         crew = Crew(
-            agents=[agent], tasks=[task],
-            process=Process.sequential, verbose=False,
+            agents=[agent],
+            tasks=[task],
+            process=Process.sequential,
+            verbose=False,
         )
         result = crew.kickoff()
     except Exception:  # noqa: BLE001
         logger.warning(
             "pr_reviewer (%s) LLM dispatch failed; falling back to stub",
-            role, exc_info=True,
+            role,
+            exc_info=True,
         )
         return _stub(decision, record, reviewer, ci_conclusion, ci_details_url)
 
@@ -125,7 +130,8 @@ def run_pr_review(
         return loose
 
     logger.warning(
-        "pr_reviewer (%s) output unparseable; falling back to stub", role,
+        "pr_reviewer (%s) output unparseable; falling back to stub",
+        role,
     )
     return _stub(decision, record, reviewer, ci_conclusion, ci_details_url)
 
@@ -178,8 +184,7 @@ _ROLE_FRAMING: dict[str, str] = {
         "behavioral changes, hidden breaking changes, risky patterns."
     ),
     "qa_engineer": (
-        "QA Engineer. Care about: test coverage for the change, edge cases, "
-        "regression risk."
+        "QA Engineer. Care about: test coverage for the change, edge cases, regression risk."
     ),
     "security_champion": (
         "Security Champion. Care about: secret handling, auth changes, "
@@ -266,10 +271,7 @@ def _render_diff(pr_files: list[dict[str, Any]]) -> str:
         patch = f.get("patch") or "(binary or empty patch)"
         if isinstance(patch, str) and len(patch) > MAX_PATCH_CHARS_PER_FILE:
             patch = patch[:MAX_PATCH_CHARS_PER_FILE] + "\n…(patch truncated)"
-        block = (
-            f"### `{filename}` ({status}, +{adds}/-{dels})\n"
-            f"```diff\n{patch}\n```\n"
-        )
+        block = f"### `{filename}` ({status}, +{adds}/-{dels})\n```diff\n{patch}\n```\n"
         if used + len(block) > MAX_DIFF_CHARS:
             out.append("…(remaining files omitted to fit context)")
             break
@@ -286,10 +288,7 @@ def _render_comments(comments: list[dict[str, Any]]) -> str:
         body = (c.get("body") or "").strip()
         if len(body) > MAX_COMMENT_CHARS:
             body = body[:MAX_COMMENT_CHARS] + "…(truncated)"
-        out.append(
-            f"--- {c.get('user', '?')} @ {c.get('created_at', '?')} ---\n"
-            f"{body}"
-        )
+        out.append(f"--- {c.get('user', '?')} @ {c.get('created_at', '?')} ---\n{body}")
     return "\n\n".join(out)
 
 

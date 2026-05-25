@@ -4,8 +4,8 @@ GitHub client via httpx.MockTransport."""
 from __future__ import annotations
 
 import json as json_lib
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import httpx
 import pytest
@@ -136,7 +136,9 @@ def test_skips_unapproved_decision():
         dry_run=True,
     )
     assert result.skipped is True
-    assert "PENDING" in (result.skip_reason or "") or "pending" in (result.skip_reason or "").lower()
+    assert (
+        "PENDING" in (result.skip_reason or "") or "pending" in (result.skip_reason or "").lower()
+    )
     assert handler_called["n"] == 0  # never touched the API
 
 
@@ -157,7 +159,9 @@ def test_dry_run_returns_synthetic_pr_without_mutation():
             )
         if req.method == "GET" and req.url.path == "/repos/org/repo/git/ref/heads/main":
             return httpx.Response(200, json={"object": {"sha": "deadbeef"}})
-        if req.method == "GET" and req.url.path.startswith("/repos/org/repo/git/ref/heads/minions/"):
+        if req.method == "GET" and req.url.path.startswith(
+            "/repos/org/repo/git/ref/heads/minions/"
+        ):
             # Branch-exists check: our branch shouldn't exist yet.
             return httpx.Response(404, json={"message": "Not Found"})
         return httpx.Response(500, json={"message": "unexpected route in test"})
@@ -233,7 +237,9 @@ def test_live_path_creates_branch_commits_files_opens_pr():
                     "html_url": "https://github.com/org/repo/pull/1",
                 },
             )
-        return httpx.Response(500, json={"message": f"unexpected route in test: {req.method} {path}"})
+        return httpx.Response(
+            500, json={"message": f"unexpected route in test: {req.method} {path}"}
+        )
 
     client = _client(handler)
     override = EngineerOutput(
@@ -268,7 +274,9 @@ def test_live_path_creates_branch_commits_files_opens_pr():
     # Verify the right routes were hit.
     methods_paths = [(m, p) for m, p in routes if m in {"POST", "PUT"}]
     assert any(m == "POST" and p == "/repos/org/repo/git/refs" for m, p in methods_paths)
-    assert any(m == "PUT" and p == "/repos/org/repo/contents/CHANGELOG.md" for m, p in methods_paths)
+    assert any(
+        m == "PUT" and p == "/repos/org/repo/contents/CHANGELOG.md" for m, p in methods_paths
+    )
     assert any(m == "POST" and p == "/repos/org/repo/pulls" for m, p in methods_paths)
 
 
@@ -276,7 +284,15 @@ def test_refuses_when_branch_already_exists():
     def handler(req: httpx.Request) -> httpx.Response:
         path = req.url.path
         if req.method == "GET" and path == "/repos/org/repo":
-            return httpx.Response(200, json={"full_name": "org/repo", "default_branch": "main", "private": False, "html_url": "u"})
+            return httpx.Response(
+                200,
+                json={
+                    "full_name": "org/repo",
+                    "default_branch": "main",
+                    "private": False,
+                    "html_url": "u",
+                },
+            )
         if req.method == "GET" and path == "/repos/org/repo/git/ref/heads/main":
             return httpx.Response(200, json={"object": {"sha": "basesha"}})
         if req.method == "GET" and path.startswith("/repos/org/repo/git/ref/heads/minions/"):
@@ -305,7 +321,15 @@ def test_skips_when_only_forbidden_files():
     def handler(req: httpx.Request) -> httpx.Response:
         path = req.url.path
         if req.method == "GET" and path == "/repos/org/repo":
-            return httpx.Response(200, json={"full_name": "org/repo", "default_branch": "main", "private": False, "html_url": "u"})
+            return httpx.Response(
+                200,
+                json={
+                    "full_name": "org/repo",
+                    "default_branch": "main",
+                    "private": False,
+                    "html_url": "u",
+                },
+            )
         if req.method == "GET" and path == "/repos/org/repo/git/ref/heads/main":
             return httpx.Response(200, json={"object": {"sha": "basesha"}})
         return httpx.Response(500, json={"message": f"unexpected: {path}"})

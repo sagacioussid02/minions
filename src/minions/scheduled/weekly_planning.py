@@ -39,9 +39,7 @@ if TYPE_CHECKING:
 
 class PlanningOutcome(BaseModel):
     project: str
-    status: Literal[
-        "submitted", "skipped", "error", "throttled", "dossier_very_stale"
-    ]
+    status: Literal["submitted", "skipped", "error", "throttled", "dossier_very_stale"]
     decision_id: str | None = None
     error: str | None = None
     profile_summary: str | None = None  # short one-line context for the digest
@@ -99,9 +97,7 @@ def run_weekly_planning(
     if projects:
         wanted = {p.lower() for p in projects}
         manifests = {
-            name: manifest
-            for name, manifest in manifests.items()
-            if name.lower() in wanted
+            name: manifest for name, manifest in manifests.items() if name.lower() in wanted
         }
 
     outcomes: list[PlanningOutcome] = []
@@ -137,9 +133,7 @@ def run_weekly_planning(
                 gh = open_github_client(manifest)
             profile = None
             try:
-                profile = build_profile(
-                    manifest, github_client=gh, dossier_store=dossier_store
-                )
+                profile = build_profile(manifest, github_client=gh, dossier_store=dossier_store)
             except Exception:  # noqa: BLE001
                 profile = None
 
@@ -150,6 +144,7 @@ def run_weekly_planning(
             if sprints_path is not None:
                 try:
                     from minions.sprints.store_factory import make_sprint_counter_store
+
                     counter = make_sprint_counter_store(sprints_path)
                     sprint_number = counter.bump(manifest.name)
                 except Exception:  # noqa: BLE001
@@ -157,7 +152,10 @@ def run_weekly_planning(
 
             try:
                 decision = run_planning_crew(
-                    manifest, dry_run=dry_run, api_key=api_key, profile=profile,
+                    manifest,
+                    dry_run=dry_run,
+                    api_key=api_key,
+                    profile=profile,
                     sprint_number=sprint_number,
                 )
             except PlanningRefusedStaleError as refused:
@@ -202,7 +200,9 @@ def run_weekly_planning(
                                 f"Planned Sprint {decision.sprint_number} for {name}: "
                                 f"{decision.summary}."
                             ),
-                            details=decision.structured_plan.goal if decision.structured_plan else decision.diff_or_plan,
+                            details=decision.structured_plan.goal
+                            if decision.structured_plan
+                            else decision.diff_or_plan,
                         )
             if agile_store is not None:
                 ritual = AgileRitualRecord(

@@ -16,9 +16,13 @@ from minions.transcripts.store import TranscriptStore
 
 def _msg(run_id: str = "run-1", sequence: int = 0, project: str = "p") -> CrewTranscriptMessage:
     return CrewTranscriptMessage(
-        run_id=run_id, project=project, crew="planning",
-        agent_role="product_owner", agent_display_name="Wren",
-        sequence=sequence, role_in_conversation="pitch",
+        run_id=run_id,
+        project=project,
+        crew="planning",
+        agent_role="product_owner",
+        agent_display_name="Wren",
+        sequence=sequence,
+        role_in_conversation="pitch",
         content="Pitch body referencing `src/x.py:1`.",
     )
 
@@ -44,20 +48,26 @@ def test_list_for_project_caps_and_orders_recent_first(tmp_path: Path) -> None:
 
 
 def test_capture_persists_and_emits_activity(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     activity_log = tmp_path / "activity.jsonl"
     monkeypatch.delenv("MINIONS_CREW_TRANSCRIPTS_DISABLED", raising=False)
     # Force JSONL activity sink for the test rather than Postgres.
     from minions import activity as activity_module
+
     activity_module.set_log_path(activity_log, force_jsonl=True)
 
     store = TranscriptStore(tmp_path / "tr.json")
     out = record_task(
         store=store,
-        run_id="run-cap-1", project="Demo", crew="discoverer",
-        agent_role="team_architect", agent_display_name="Beni",
-        sequence=0, role_in_conversation="task_output",
+        run_id="run-cap-1",
+        project="Demo",
+        crew="discoverer",
+        agent_role="team_architect",
+        agent_display_name="Beni",
+        sequence=0,
+        role_in_conversation="task_output",
         task_output=type("_FakeTask", (), {"raw": "Architecture markdown body."})(),
         activity_log_path=activity_log,
     )
@@ -76,9 +86,14 @@ def test_capture_silenced_by_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("MINIONS_CREW_TRANSCRIPTS_DISABLED", "1")
     store = TranscriptStore(tmp_path / "tr.json")
     out = record_task(
-        store=store, run_id="r", project="p", crew="planning",
-        agent_role="product_owner", agent_display_name=None,
-        sequence=0, role_in_conversation="pitch",
+        store=store,
+        run_id="r",
+        project="p",
+        crew="planning",
+        agent_role="product_owner",
+        agent_display_name=None,
+        sequence=0,
+        role_in_conversation="pitch",
         task_output="anything",
     )
     assert out is None
@@ -90,9 +105,14 @@ def test_capture_truncates_to_max(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     store = TranscriptStore(tmp_path / "tr.json")
     huge = "x" * (MAX_MESSAGE_CHARS + 5000)
     out = record_task(
-        store=store, run_id="r", project="p", crew="planning",
-        agent_role="product_owner", agent_display_name=None,
-        sequence=0, role_in_conversation="pitch",
+        store=store,
+        run_id="r",
+        project="p",
+        crew="planning",
+        agent_role="product_owner",
+        agent_display_name=None,
+        sequence=0,
+        role_in_conversation="pitch",
         task_output=huge,
     )
     assert out is not None
@@ -103,9 +123,14 @@ def test_capture_extracts_str_fallback(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.delenv("MINIONS_CREW_TRANSCRIPTS_DISABLED", raising=False)
     store = TranscriptStore(tmp_path / "tr.json")
     out = record_task(
-        store=store, run_id="r", project="p", crew="x",
-        agent_role="r", agent_display_name=None,
-        sequence=0, role_in_conversation="other",
+        store=store,
+        run_id="r",
+        project="p",
+        crew="x",
+        agent_role="r",
+        agent_display_name=None,
+        sequence=0,
+        role_in_conversation="other",
         task_output="bare string output",
     )
     assert out is not None

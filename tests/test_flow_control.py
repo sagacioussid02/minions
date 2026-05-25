@@ -36,8 +36,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # --------------------------- distinct_open_pr_count -------------------------
 
 
-def _run(decision_id: str, *, pr_number: int | None,
-         pr_state: str | None, project: str = "p") -> EngineerRunRecord:
+def _run(
+    decision_id: str, *, pr_number: int | None, pr_state: str | None, project: str = "p"
+) -> EngineerRunRecord:
     return EngineerRunRecord(
         decision_id=decision_id,
         project=project,
@@ -80,8 +81,9 @@ def test_distinct_open_pr_count_filters_by_project(tmp_path: Path) -> None:
 # --------------------------- has_open_fix_decision_for_pr -------------------
 
 
-def _fix_decision(project: str, *, pr_number: int,
-                  status: DecisionStatus = DecisionStatus.PENDING) -> Decision:
+def _fix_decision(
+    project: str, *, pr_number: int, status: DecisionStatus = DecisionStatus.PENDING
+) -> Decision:
     d = Decision(
         project=project,
         type=DecisionType.BUG,
@@ -102,29 +104,21 @@ def _fix_decision(project: str, *, pr_number: int,
 def test_open_fix_decision_matches_via_extras(tmp_path: Path) -> None:
     store = DecisionStore(tmp_path / "dec.json")
     store.save(_fix_decision("demo_three", pr_number=42))
-    assert has_open_fix_decision_for_pr(
-        project="demo_three", pr_number=42, store=store
-    )
-    assert not has_open_fix_decision_for_pr(
-        project="demo_three", pr_number=99, store=store
-    )
+    assert has_open_fix_decision_for_pr(project="demo_three", pr_number=42, store=store)
+    assert not has_open_fix_decision_for_pr(project="demo_three", pr_number=99, store=store)
 
 
 def test_open_fix_decision_ignores_resolved_decisions(tmp_path: Path) -> None:
     store = DecisionStore(tmp_path / "dec.json")
     store.save(_fix_decision("demo_three", pr_number=42, status=DecisionStatus.REJECTED))
     store.save(_fix_decision("demo_three", pr_number=42, status=DecisionStatus.EXECUTED))
-    assert not has_open_fix_decision_for_pr(
-        project="demo_three", pr_number=42, store=store
-    )
+    assert not has_open_fix_decision_for_pr(project="demo_three", pr_number=42, store=store)
 
 
 def test_open_fix_decision_ignores_other_projects(tmp_path: Path) -> None:
     store = DecisionStore(tmp_path / "dec.json")
     store.save(_fix_decision("demo_three", pr_number=42))
-    assert not has_open_fix_decision_for_pr(
-        project="other", pr_number=42, store=store
-    )
+    assert not has_open_fix_decision_for_pr(project="other", pr_number=42, store=store)
 
 
 # --------------------------- manifest default + override --------------------
@@ -212,8 +206,10 @@ def test_execute_approved_allows_in_place_fix_at_cap(tmp_path: Path) -> None:
         from minions.crews.engineer import EngineerResult
 
         return EngineerResult(
-            decision_id=str(_d.id), pr_url="https://x/p/100",
-            pr_number=100, dry_run=False,
+            decision_id=str(_d.id),
+            pr_url="https://x/p/100",
+            pr_number=100,
+            dry_run=False,
         )
 
     report = run_execute_approved(

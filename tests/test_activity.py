@@ -106,8 +106,12 @@ def test_is_role_running_matches_project_and_role() -> None:
 
 def test_history_for_role_returns_newest_first() -> None:
     now = datetime.now(tz=UTC)
-    append(_entry(run_id="r0", project="p", agents=("manager",), timestamp=now - timedelta(hours=2)))
-    append(_entry(run_id="r1", project="p", agents=("manager",), timestamp=now - timedelta(hours=1)))
+    append(
+        _entry(run_id="r0", project="p", agents=("manager",), timestamp=now - timedelta(hours=2))
+    )
+    append(
+        _entry(run_id="r1", project="p", agents=("manager",), timestamp=now - timedelta(hours=1))
+    )
     append(_entry(run_id="r2", project="p", agents=("engineer",), timestamp=now))
 
     history = history_for_role("p", "manager")
@@ -143,9 +147,7 @@ def test_crew_run_emits_start_and_failed_on_exception() -> None:
 
 
 def test_crew_run_with_decision_id() -> None:
-    with crew_run(
-        crew="engineer", project="p", agents=["engineer"], decision_id="dec-1"
-    ):
+    with crew_run(crew="engineer", project="p", agents=["engineer"], decision_id="dec-1"):
         pass
     log = read_log()
     assert log[0].decision_id == "dec-1"

@@ -60,9 +60,7 @@ class PostgresDossierDraftStore:
 
     def list_all(self) -> list[DossierDraft]:
         with connect() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT payload FROM dossier_drafts ORDER BY generated_at DESC"
-            )
+            cur.execute("SELECT payload FROM dossier_drafts ORDER BY generated_at DESC")
             rows = cur.fetchall()
         return [
             DossierDraft.model_validate(r[0] if isinstance(r[0], dict) else json.loads(r[0]))

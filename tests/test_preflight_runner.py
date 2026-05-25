@@ -71,12 +71,14 @@ def test_safe_env_strips_secret_patterns(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_happy_path_runs_build_and_returns_ok(tmp_path: Path) -> None:
     repo = _init_repo(tmp_path)
     # Override commands so the test doesn't need npm/uv/etc.
-    m = _manifest(overrides={
-        "install": "true",
-        "typecheck": "true",
-        "build": "true",
-        "network": NetworkPosture.ALLOW,
-    })
+    m = _manifest(
+        overrides={
+            "install": "true",
+            "typecheck": "true",
+            "build": "true",
+            "network": NetworkPosture.ALLOW,
+        }
+    )
     report = run_preflight(patches=[], manifest=m, repo_clone=repo)
     assert report.ok
     assert len(report.steps) == 3
@@ -86,12 +88,14 @@ def test_happy_path_runs_build_and_returns_ok(tmp_path: Path) -> None:
 
 def test_required_failure_aborts_and_marks_not_ok(tmp_path: Path) -> None:
     repo = _init_repo(tmp_path)
-    m = _manifest(overrides={
-        "install": "true",
-        "build": "false",       # required step, exits 1 → abort
-        "test": "true",         # should never run
-        "network": NetworkPosture.ALLOW,
-    })
+    m = _manifest(
+        overrides={
+            "install": "true",
+            "build": "false",  # required step, exits 1 → abort
+            "test": "true",  # should never run
+            "network": NetworkPosture.ALLOW,
+        }
+    )
     report = run_preflight(patches=[], manifest=m, repo_clone=repo)
     assert not report.ok
     failed = report.failed_step
@@ -106,11 +110,13 @@ def test_patches_land_in_scratch(tmp_path: Path) -> None:
     repo = _init_repo(tmp_path)
     # Build step reads the patched file; if the patch made it into scratch,
     # `grep` finds the marker string and exits 0.
-    m = _manifest(overrides={
-        "install": "true",
-        "build": "grep -q SENTINEL marker.txt",
-        "network": NetworkPosture.ALLOW,
-    })
+    m = _manifest(
+        overrides={
+            "install": "true",
+            "build": "grep -q SENTINEL marker.txt",
+            "network": NetworkPosture.ALLOW,
+        }
+    )
     patches = [_Patch("marker.txt", "SENTINEL\n")]
     report = run_preflight(patches=patches, manifest=m, repo_clone=repo)
     assert report.ok, [s.stderr_tail for s in report.steps]
@@ -126,11 +132,13 @@ def test_disabled_preflight_is_noop(tmp_path: Path) -> None:
 
 def test_path_traversal_patch_is_skipped(tmp_path: Path) -> None:
     repo = _init_repo(tmp_path)
-    m = _manifest(overrides={
-        "install": "true",
-        "build": "test ! -f ../escape.txt",   # passes only if traversal blocked
-        "network": NetworkPosture.ALLOW,
-    })
+    m = _manifest(
+        overrides={
+            "install": "true",
+            "build": "test ! -f ../escape.txt",  # passes only if traversal blocked
+            "network": NetworkPosture.ALLOW,
+        }
+    )
     patches = [_Patch("../escape.txt", "should not be written")]
     report = run_preflight(patches=patches, manifest=m, repo_clone=repo)
     assert report.ok

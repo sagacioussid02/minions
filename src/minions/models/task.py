@@ -23,13 +23,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 TaskCategory = Literal["feature", "bug", "tech_debt", "ops", "docs"]
 TaskStatus = Literal[
-    "unassigned",    # no owner yet — every eligible candidate at WIP cap
-    "queued",        # has an owner, waiting for engineer crew
-    "in_progress",   # engineer crew working on it now
-    "review",        # PR open, awaiting review/CI
-    "done",          # PR merged
-    "blocked",       # something went wrong, see merge_blocked_reason
-    "cancelled",     # parent Decision was rejected or task superseded
+    "unassigned",  # no owner yet — every eligible candidate at WIP cap
+    "queued",  # has an owner, waiting for engineer crew
+    "in_progress",  # engineer crew working on it now
+    "review",  # PR open, awaiting review/CI
+    "done",  # PR merged
+    "blocked",  # something went wrong, see merge_blocked_reason
+    "cancelled",  # parent Decision was rejected or task superseded
 ]
 EstimatedEffort = Literal["xs", "s", "m", "l", "xl"]
 

@@ -60,6 +60,7 @@ def _use_postgres() -> bool:
 
     return has_database_url()
 
+
 # A crew_started event "expires" after this many seconds without a
 # matching crew_finished. Crews that hang/crash beyond this don't keep
 # painting the dashboard yellow forever.
@@ -76,7 +77,7 @@ Event = Literal[
     "monthly_demo_ready",
     "pm_answered",
     "spokesperson_answered",
-    "agent_spoke",          # per-task transcript message (see crew-transcripts)
+    "agent_spoke",  # per-task transcript message (see crew-transcripts)
 ]
 
 
@@ -254,10 +255,7 @@ def is_role_running(
     now: datetime | None = None,
 ) -> bool:
     """True if any in-flight crew involves this (project, role)."""
-    return any(
-        e.project == project and role in e.agents
-        for e in running_now(path=path, now=now)
-    )
+    return any(e.project == project and role in e.agents for e in running_now(path=path, now=now))
 
 
 def history_for_role(
@@ -271,10 +269,7 @@ def history_for_role(
 
     Used by the agent-detail dialog. Returns most-recent first.
     """
-    matches = [
-        e for e in read_log(path)
-        if e.project == project and role in e.agents
-    ]
+    matches = [e for e in read_log(path) if e.project == project and role in e.agents]
     matches.sort(key=lambda e: e.timestamp, reverse=True)
     return matches[:limit]
 

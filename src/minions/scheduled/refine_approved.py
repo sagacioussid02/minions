@@ -53,7 +53,7 @@ class RefineApprovedReport(BaseModel):
 def run_refine_approved(
     *,
     store: DecisionStoreLike,
-    task_store: "TaskStoreLike",
+    task_store: TaskStoreLike,
 ) -> RefineApprovedReport:
     """Iterate approved sprint Decisions, emit Tasks for those without any."""
     started = datetime.now(tz=UTC).isoformat()
@@ -65,31 +65,47 @@ def run_refine_approved(
         if decision.type != DecisionType.FEATURE:
             continue
         if decision.structured_plan is None:
-            outcomes.append(RefineOutcome(
-                decision_id=str(decision.id), project=decision.project,
-                status="skipped", reason="no structured_plan",
-            ))
+            outcomes.append(
+                RefineOutcome(
+                    decision_id=str(decision.id),
+                    project=decision.project,
+                    status="skipped",
+                    reason="no structured_plan",
+                )
+            )
             continue
         existing = task_store.list_by_decision(decision.id)
         if existing:
-            outcomes.append(RefineOutcome(
-                decision_id=str(decision.id), project=decision.project,
-                status="skipped", reason=f"already refined ({len(existing)} tasks)",
-            ))
+            outcomes.append(
+                RefineOutcome(
+                    decision_id=str(decision.id),
+                    project=decision.project,
+                    status="skipped",
+                    reason=f"already refined ({len(existing)} tasks)",
+                )
+            )
             continue
 
         try:
             tasks = refine_decision(decision, task_store=task_store)
         except Exception as e:  # noqa: BLE001
-            outcomes.append(RefineOutcome(
-                decision_id=str(decision.id), project=decision.project,
-                status="error", reason=str(e)[:120],
-            ))
+            outcomes.append(
+                RefineOutcome(
+                    decision_id=str(decision.id),
+                    project=decision.project,
+                    status="error",
+                    reason=str(e)[:120],
+                )
+            )
             continue
-        outcomes.append(RefineOutcome(
-            decision_id=str(decision.id), project=decision.project,
-            status="refined", task_count=len(tasks),
-        ))
+        outcomes.append(
+            RefineOutcome(
+                decision_id=str(decision.id),
+                project=decision.project,
+                status="refined",
+                task_count=len(tasks),
+            )
+        )
 
     return RefineApprovedReport(
         started_at=started,

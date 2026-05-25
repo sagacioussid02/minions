@@ -210,10 +210,7 @@ def _creator_response_comment(
     ]
     if blockers:
         lines += ["", "**Blocking reviewer feedback:**"]
-        lines += [
-            f"- {r.display_name}: {r.summary or 'requested changes'}"
-            for r in blockers
-        ]
+        lines += [f"- {r.display_name}: {r.summary or 'requested changes'}" for r in blockers]
     if fix_id:
         lines += [
             "",
@@ -378,21 +375,23 @@ def _fix_decision_plan(record: EngineerRunRecord) -> str:
     if not feedback:
         feedback = ["- CI or crew review requested changes."]
     files = [f"- `{f}`" for f in record.files_changed] or ["- (none recorded)"]
-    return "\n".join([
-        f"## Crew review requested changes on {record.pr_url or 'prior PR'}",
-        "",
-        "**Blocking feedback:**",
-        *feedback,
-        "",
-        "**Files in the reviewed PR:**",
-        *files,
-        "",
-        "## Requested change",
-        "",
-        "Run the engineer crew once more for this project. Address the reviewer "
-        "feedback and CI failures, then open a linked follow-up PR that references "
-        f"the original PR ({record.pr_url}).",
-    ])
+    return "\n".join(
+        [
+            f"## Crew review requested changes on {record.pr_url or 'prior PR'}",
+            "",
+            "**Blocking feedback:**",
+            *feedback,
+            "",
+            "**Files in the reviewed PR:**",
+            *files,
+            "",
+            "## Requested change",
+            "",
+            "Run the engineer crew once more for this project. Address the reviewer "
+            "feedback and CI failures, then open a linked follow-up PR that references "
+            f"the original PR ({record.pr_url}).",
+        ]
+    )
 
 
 def _conflict_decision_summary(record: EngineerRunRecord) -> str:
@@ -402,35 +401,39 @@ def _conflict_decision_summary(record: EngineerRunRecord) -> str:
 
 def _conflict_decision_plan(record: EngineerRunRecord) -> str:
     files = [f"- `{f}`" for f in record.files_changed] or ["- (none recorded)"]
-    return "\n".join([
-        f"## Merge conflict on {record.pr_url or 'prior PR'}",
-        "",
-        "GitHub reports the original PR is dirty/conflicting with the base branch.",
-        "This is normal engineering work: do not leave the PR stalled.",
-        "",
-        "**Files in the original PR:**",
-        *files,
-        "",
-        "## Requested change",
-        "",
-        "Inspect the current `main` branch and the original PR intent. Decide "
-        "whether the change is still needed.",
-        "",
-        "- If the change is still needed, produce a clean corrected change on a "
-        "fresh minions branch and open a linked follow-up PR that references the "
-        f"original PR ({record.pr_url}).",
-        "- If the change is already covered by current `main`, leave a clear "
-        "comment explaining that the original PR is superseded so the review "
-        "loop can close it.",
-    ])
+    return "\n".join(
+        [
+            f"## Merge conflict on {record.pr_url or 'prior PR'}",
+            "",
+            "GitHub reports the original PR is dirty/conflicting with the base branch.",
+            "This is normal engineering work: do not leave the PR stalled.",
+            "",
+            "**Files in the original PR:**",
+            *files,
+            "",
+            "## Requested change",
+            "",
+            "Inspect the current `main` branch and the original PR intent. Decide "
+            "whether the change is still needed.",
+            "",
+            "- If the change is still needed, produce a clean corrected change on a "
+            "fresh minions branch and open a linked follow-up PR that references the "
+            f"original PR ({record.pr_url}).",
+            "- If the change is already covered by current `main`, leave a clear "
+            "comment explaining that the original PR is superseded so the review "
+            "loop can close it.",
+        ]
+    )
 
 
 def _decision_mentions_record(decision: Decision, record: EngineerRunRecord) -> bool:
-    haystack = "\n".join([
-        decision.summary or "",
-        decision.rationale or "",
-        decision.diff_or_plan or "",
-    ])
+    haystack = "\n".join(
+        [
+            decision.summary or "",
+            decision.rationale or "",
+            decision.diff_or_plan or "",
+        ]
+    )
     return bool(
         (record.pr_url and record.pr_url in haystack)
         or (record.pr_number and f"PR #{record.pr_number}" in haystack)
@@ -491,11 +494,13 @@ def _find_existing_fix_decision(
             continue
         if decision.proposer_role not in {"pr_followup", "creator_response"}:
             continue
-        haystack = "\n".join([
-            decision.summary or "",
-            decision.rationale or "",
-            decision.diff_or_plan or "",
-        ])
+        haystack = "\n".join(
+            [
+                decision.summary or "",
+                decision.rationale or "",
+                decision.diff_or_plan or "",
+            ]
+        )
         if pr_url in haystack or f"PR #{record.pr_number}" in haystack:
             return decision
     return None
@@ -625,13 +630,15 @@ def run_pr_review_loop(
 
         decision = store.get(record.decision_id)
         if decision is None:
-            outcomes.append(PRReviewLoopOutcome(
-                decision_id=record.decision_id,
-                project=record.project,
-                pr_url=record.pr_url,
-                status="skipped",
-                reason="source decision not found",
-            ))
+            outcomes.append(
+                PRReviewLoopOutcome(
+                    decision_id=record.decision_id,
+                    project=record.project,
+                    pr_url=record.pr_url,
+                    status="skipped",
+                    reason="source decision not found",
+                )
+            )
             continue
 
         manifest = manifests.get(record.project)
@@ -640,13 +647,15 @@ def run_pr_review_loop(
 
         github = open_github_client(manifest)
         if github is None:
-            outcomes.append(PRReviewLoopOutcome(
-                decision_id=record.decision_id,
-                project=record.project,
-                pr_url=record.pr_url,
-                status="error",
-                reason="failed to open GitHub client",
-            ))
+            outcomes.append(
+                PRReviewLoopOutcome(
+                    decision_id=record.decision_id,
+                    project=record.project,
+                    pr_url=record.pr_url,
+                    status="error",
+                    reason="failed to open GitHub client",
+                )
+            )
             continue
 
         try:
@@ -670,21 +679,20 @@ def run_pr_review_loop(
                         github.close_pull_request(number=record.pr_number or 0)
                         engineer_runs_store.update(record)
 
-                    outcomes.append(PRReviewLoopOutcome(
-                        decision_id=record.decision_id,
-                        project=record.project,
-                        pr_url=record.pr_url,
-                        status="superseded",
-                        reason="linked follow-up PR merged",
-                        review_status=record.review_status,
-                    ))
+                    outcomes.append(
+                        PRReviewLoopOutcome(
+                            decision_id=record.decision_id,
+                            project=record.project,
+                            pr_url=record.pr_url,
+                            status="superseded",
+                            reason="linked follow-up PR merged",
+                            review_status=record.review_status,
+                        )
+                    )
                     continue
 
                 merge_state = github.get_pr_merge_state(record.pr_number or 0)
-                if (
-                    merge_state == "dirty"
-                    and record.conflict_resolution_queued_at is None
-                ):
+                if merge_state == "dirty" and record.conflict_resolution_queued_at is None:
                     # pr-ownership-sweep Phase 4: do NOT file a new
                     # "Resolve merge conflict" Decision Record. The owner
                     # sweep (scheduled/pr_owner_sweep.py) walks this same
@@ -696,15 +704,17 @@ def run_pr_review_loop(
                         record.review_status = "conflict_queued"
                         record.conflict_resolution_queued_at = datetime.now(tz=UTC)
                         engineer_runs_store.update(record)
-                    outcomes.append(PRReviewLoopOutcome(
-                        decision_id=record.decision_id,
-                        project=record.project,
-                        pr_url=record.pr_url,
-                        status="conflict_queued",
-                        reason="merge_state=dirty (owner sweep will retry)",
-                        fix_decision_id=None,
-                        review_status="conflict_queued",
-                    ))
+                    outcomes.append(
+                        PRReviewLoopOutcome(
+                            decision_id=record.decision_id,
+                            project=record.project,
+                            pr_url=record.pr_url,
+                            status="conflict_queued",
+                            reason="merge_state=dirty (owner sweep will retry)",
+                            fix_decision_id=None,
+                            review_status="conflict_queued",
+                        )
+                    )
                     continue
 
                 ci_conclusion, details_url = github.get_pr_check_status(record.pr_number or 0)
@@ -728,21 +738,19 @@ def run_pr_review_loop(
                 # failures fall through (LLM reviewer treats missing context
                 # as "(no files reported)").
                 with suppress(Exception):
-                    _LLM_CONTEXT[(record.decision_id, "files")] = (
-                        github.list_pull_request_files(number=record.pr_number or 0)
+                    _LLM_CONTEXT[(record.decision_id, "files")] = github.list_pull_request_files(
+                        number=record.pr_number or 0
                     )
                 with suppress(Exception):
-                    _LLM_CONTEXT[(record.decision_id, "comments")] = (
-                        github.list_issue_comments(number=record.pr_number or 0)
+                    _LLM_CONTEXT[(record.decision_id, "comments")] = github.list_issue_comments(
+                        number=record.pr_number or 0
                     )
 
                 comments_posted = 0
                 for reviewer in record.reviewers:
                     if reviewer.comment_posted_at is not None:
                         continue
-                    review = build_review(
-                        decision, record, reviewer, ci_conclusion, details_url
-                    )
+                    review = build_review(decision, record, reviewer, ci_conclusion, details_url)
                     if not dry_run:
                         github.comment_on_pull_request(
                             number=record.pr_number or 0,
@@ -787,8 +795,7 @@ def run_pr_review_loop(
                         outcome_status = "creator_responded"
                     else:
                         record.merge_blocked_reason = (
-                            "crew requested changes after the single creator "
-                            "response iteration"
+                            "crew requested changes after the single creator response iteration"
                         )
 
                 if (
@@ -831,24 +838,28 @@ def run_pr_review_loop(
                 if not dry_run:
                     engineer_runs_store.update(record)
 
-                outcomes.append(PRReviewLoopOutcome(
+                outcomes.append(
+                    PRReviewLoopOutcome(
+                        decision_id=record.decision_id,
+                        project=record.project,
+                        pr_url=record.pr_url,
+                        status=outcome_status,
+                        assigned_reviewers=[r.role for r in record.reviewers],
+                        comments_posted=comments_posted,
+                        review_status=record.review_status,
+                        fix_decision_id=fix_decision_id,
+                    )
+                )
+        except Exception as e:  # noqa: BLE001
+            outcomes.append(
+                PRReviewLoopOutcome(
                     decision_id=record.decision_id,
                     project=record.project,
                     pr_url=record.pr_url,
-                    status=outcome_status,
-                    assigned_reviewers=[r.role for r in record.reviewers],
-                    comments_posted=comments_posted,
-                    review_status=record.review_status,
-                    fix_decision_id=fix_decision_id,
-                ))
-        except Exception as e:  # noqa: BLE001
-            outcomes.append(PRReviewLoopOutcome(
-                decision_id=record.decision_id,
-                project=record.project,
-                pr_url=record.pr_url,
-                status="error",
-                reason=f"{type(e).__name__}: {e}",
-            ))
+                    status="error",
+                    reason=f"{type(e).__name__}: {e}",
+                )
+            )
 
     return PRReviewLoopReport(
         started_at=started,

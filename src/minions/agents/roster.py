@@ -65,6 +65,7 @@ def seats_for(role_value: str, project: str) -> int:
     ``load_active_manifests``.
     """
     from pathlib import Path
+
     from minions.models.manifest import load_active_manifests
     from minions.models.roles import Role as _Role
 
@@ -90,7 +91,7 @@ def seats_for(role_value: str, project: str) -> int:
     return max(count, 1)
 
 
-def project_role_slots(manifest: "Manifest") -> list[Role]:
+def project_role_slots(manifest: Manifest) -> list[Role]:
     """Apply the manifest's team overrides to the per-project template.
 
     Order matches PER_PROJECT_TEMPLATE; multi-seat roles appear consecutively.
@@ -117,7 +118,7 @@ def project_role_slots(manifest: "Manifest") -> list[Role]:
 
 
 def build_project_agents(
-    manifest: "Manifest", cadence: CadenceProfile = "v0_frugal"
+    manifest: Manifest, cadence: CadenceProfile = "v0_frugal"
 ) -> list[MinionAgent]:
     """Build the per-project crew with display names from the manifest."""
     roles = project_role_slots(manifest)
@@ -142,7 +143,7 @@ def build_project_agents(
 
 
 def build_shared_agents(
-    portfolio: "PortfolioConfig",
+    portfolio: PortfolioConfig,
     layer: list[Role],
     cadence: CadenceProfile = "v0_frugal",
 ) -> list[MinionAgent]:
@@ -173,8 +174,8 @@ def build_named_agent(
     role: Role,
     *,
     project: str | None,
-    manifest: "Manifest | None" = None,
-    portfolio: "PortfolioConfig | None" = None,
+    manifest: Manifest | None = None,
+    portfolio: PortfolioConfig | None = None,
     seat: int = 0,
     cadence: CadenceProfile = "v0_frugal",
 ) -> MinionAgent:

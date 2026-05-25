@@ -60,6 +60,7 @@ class SprintCounterStore:
         # File-based lock — coarse but sufficient for our cron frequency.
         # The Postgres backend uses an atomic UPDATE so it does not need this.
         import filelock
+
         lock_path = str(self.path) + ".lock"
         Path(lock_path).parent.mkdir(parents=True, exist_ok=True)
         with filelock.FileLock(lock_path, timeout=10):

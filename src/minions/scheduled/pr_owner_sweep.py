@@ -42,9 +42,7 @@ if TYPE_CHECKING:
 
 
 FailureKind = Literal["ci_failure", "merge_conflict"]
-OutcomeStatus = Literal[
-    "retried", "healthy", "escalated", "skipped", "throttled", "error"
-]
+OutcomeStatus = Literal["retried", "healthy", "escalated", "skipped", "throttled", "error"]
 EngineerRunner = Callable[..., EngineerResult]
 
 
@@ -97,9 +95,7 @@ def _is_owner_actionable(record: EngineerRunRecord) -> bool:
     return record.pr_state not in ("merged", "closed")
 
 
-def _classify_failure(
-    ci_conclusion: str | None, merge_state: str | None
-) -> FailureKind | None:
+def _classify_failure(ci_conclusion: str | None, merge_state: str | None) -> FailureKind | None:
     """Decide whether the PR needs a retry, and why.
 
     Returns ``None`` when the PR is healthy enough to leave to the standard
@@ -154,38 +150,55 @@ def run_pr_owner_sweep(
         if not _is_owner_actionable(record):
             continue
         if dispatched >= max_dispatches_per_sweep:
-            outcomes.append(OwnerSweepOutcome(
-                decision_id=record.decision_id, project=record.project,
-                pr_url=record.pr_url, status="skipped",
-                reason=f"sweep cap reached ({max_dispatches_per_sweep})",
-            ))
+            outcomes.append(
+                OwnerSweepOutcome(
+                    decision_id=record.decision_id,
+                    project=record.project,
+                    pr_url=record.pr_url,
+                    status="skipped",
+                    reason=f"sweep cap reached ({max_dispatches_per_sweep})",
+                )
+            )
             continue
 
         manifest = manifests.get(record.project)
         if manifest is None or manifest.source.kind != "github":
-            outcomes.append(OwnerSweepOutcome(
-                decision_id=record.decision_id, project=record.project,
-                pr_url=record.pr_url, status="skipped",
-                reason="project not active or not github-hosted",
-            ))
+            outcomes.append(
+                OwnerSweepOutcome(
+                    decision_id=record.decision_id,
+                    project=record.project,
+                    pr_url=record.pr_url,
+                    status="skipped",
+                    reason="project not active or not github-hosted",
+                )
+            )
             continue
 
         # Already escalated to the operator — stay quiet until they answer.
         if record.escalated_question_id is not None:
-            outcomes.append(OwnerSweepOutcome(
-                decision_id=record.decision_id, project=record.project,
-                pr_url=record.pr_url, status="skipped",
-                question_id=record.escalated_question_id,
-                reason="awaiting operator answer on escalation",
-            ))
+            outcomes.append(
+                OwnerSweepOutcome(
+                    decision_id=record.decision_id,
+                    project=record.project,
+                    pr_url=record.pr_url,
+                    status="skipped",
+                    question_id=record.escalated_question_id,
+                    reason="awaiting operator answer on escalation",
+                )
+            )
             continue
 
         outcome = _process_one(
-            record=record, manifest=manifest, store=store,
+            record=record,
+            manifest=manifest,
+            store=store,
             engineer_runs_store=engineer_runs_store,
             questions_store=questions_store,
-            open_github_client=open_github_client, notifier=notifier,
-            api_key=api_key, dry_run=dry_run, cost_log_path=cost_log_path,
+            open_github_client=open_github_client,
+            notifier=notifier,
+            api_key=api_key,
+            dry_run=dry_run,
+            cost_log_path=cost_log_path,
             runner=runner,
         )
         outcomes.append(outcome)
@@ -216,8 +229,10 @@ def _process_one(
     github = open_github_client(manifest)
     if github is None:
         return OwnerSweepOutcome(
-            decision_id=record.decision_id, project=record.project,
-            pr_url=record.pr_url, status="error",
+            decision_id=record.decision_id,
+            project=record.project,
+            pr_url=record.pr_url,
+            status="error",
             reason="failed to open GitHub client",
         )
 
@@ -235,7 +250,8 @@ def _process_one(
                 with suppress(Exception):
                     engineer_runs_store.update(record)
                 return OwnerSweepOutcome(
-                    decision_id=record.decision_id, project=record.project,
+                    decision_id=record.decision_id,
+                    project=record.project,
                     pr_url=record.pr_url,
                     owner_agent_id=_resolve_owner(record, manifest),
                     status="healthy",
@@ -248,16 +264,21 @@ def _process_one(
             cap = manifest.flow_control.max_retries_per_pr
             if record.followup_attempts >= cap:
                 question_id = _escalate(
-                    record=record, manifest=manifest, failure=failure,
-                    questions_store=questions_store, notifier=notifier,
-                    dry_run=dry_run, github=github,
+                    record=record,
+                    manifest=manifest,
+                    failure=failure,
+                    questions_store=questions_store,
+                    notifier=notifier,
+                    dry_run=dry_run,
+                    github=github,
                 )
                 if not dry_run:
                     record.escalated_question_id = question_id
                     with suppress(Exception):
                         engineer_runs_store.update(record)
                 return OwnerSweepOutcome(
-                    decision_id=record.decision_id, project=record.project,
+                    decision_id=record.decision_id,
+                    project=record.project,
                     pr_url=record.pr_url,
                     owner_agent_id=_resolve_owner(record, manifest),
                     status="escalated",
@@ -270,14 +291,17 @@ def _process_one(
             decision = store.get(record.decision_id)
             if decision is None:
                 return OwnerSweepOutcome(
-                    decision_id=record.decision_id, project=record.project,
-                    pr_url=record.pr_url, status="error",
+                    decision_id=record.decision_id,
+                    project=record.project,
+                    pr_url=record.pr_url,
+                    status="error",
                     reason="original Decision not found in store",
                 )
 
             if dry_run:
                 return OwnerSweepOutcome(
-                    decision_id=record.decision_id, project=record.project,
+                    decision_id=record.decision_id,
+                    project=record.project,
                     pr_url=record.pr_url,
                     owner_agent_id=_resolve_owner(record, manifest),
                     status="retried",
@@ -288,8 +312,11 @@ def _process_one(
 
             try:
                 result = runner(
-                    decision, manifest,
-                    github=github, dry_run=False, api_key=api_key,
+                    decision,
+                    manifest,
+                    github=github,
+                    dry_run=False,
+                    api_key=api_key,
                     cost_log_path=cost_log_path,
                     target_branch=record.branch_name,
                     existing_pr_number=record.pr_number,
@@ -298,8 +325,11 @@ def _process_one(
                 )
             except BudgetBreachError as e:
                 return OwnerSweepOutcome(
-                    decision_id=record.decision_id, project=record.project,
-                    pr_url=record.pr_url, status="throttled", reason=str(e),
+                    decision_id=record.decision_id,
+                    project=record.project,
+                    pr_url=record.pr_url,
+                    status="throttled",
+                    reason=str(e),
                 )
 
             # Only count REAL attempts. Skipped/errored runner results
@@ -319,7 +349,8 @@ def _process_one(
                 )
 
             return OwnerSweepOutcome(
-                decision_id=record.decision_id, project=record.project,
+                decision_id=record.decision_id,
+                project=record.project,
                 pr_url=record.pr_url,
                 owner_agent_id=_resolve_owner(record, manifest),
                 # Distinguish "did real work" from "engineer crew skipped" so
@@ -331,8 +362,10 @@ def _process_one(
             )
     except Exception as e:  # noqa: BLE001 — per-record isolation
         return OwnerSweepOutcome(
-            decision_id=record.decision_id, project=record.project,
-            pr_url=record.pr_url, status="error",
+            decision_id=record.decision_id,
+            project=record.project,
+            pr_url=record.pr_url,
+            status="error",
             reason=f"{type(e).__name__}: {e}",
         )
 

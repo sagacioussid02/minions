@@ -145,12 +145,14 @@ def run_execute_approved(
             break
 
         if _is_dry_run_decision(decision):
-            outcomes.append(ExecuteOutcome(
-                decision_id=str(decision.id),
-                project=decision.project,
-                status="skipped",
-                reason="dry-run decision (no real plan)",
-            ))
+            outcomes.append(
+                ExecuteOutcome(
+                    decision_id=str(decision.id),
+                    project=decision.project,
+                    status="skipped",
+                    reason="dry-run decision (no real plan)",
+                )
+            )
             continue
 
         task: Task | None = None
@@ -162,31 +164,37 @@ def run_execute_approved(
             if queued:
                 task = sorted(queued, key=lambda t: t.created_at)[0]
             elif has_tasks:
-                outcomes.append(ExecuteOutcome(
-                    decision_id=str(decision.id),
-                    project=decision.project,
-                    status="skipped",
-                    reason="refined tasks already claimed or complete",
-                ))
+                outcomes.append(
+                    ExecuteOutcome(
+                        decision_id=str(decision.id),
+                        project=decision.project,
+                        status="skipped",
+                        reason="refined tasks already claimed or complete",
+                    )
+                )
                 continue
 
         if not has_tasks and engineer_runs_store.get(str(decision.id)) is not None:
-            outcomes.append(ExecuteOutcome(
-                decision_id=str(decision.id),
-                project=decision.project,
-                status="skipped",
-                reason="engineer run already exists",
-            ))
+            outcomes.append(
+                ExecuteOutcome(
+                    decision_id=str(decision.id),
+                    project=decision.project,
+                    status="skipped",
+                    reason="engineer run already exists",
+                )
+            )
             continue
 
         manifest = manifests.get(decision.project)
         if manifest is None:
-            outcomes.append(ExecuteOutcome(
-                decision_id=str(decision.id),
-                project=decision.project,
-                status="error",
-                reason=f"project {decision.project!r} not found in active manifests",
-            ))
+            outcomes.append(
+                ExecuteOutcome(
+                    decision_id=str(decision.id),
+                    project=decision.project,
+                    status="error",
+                    reason=f"project {decision.project!r} not found in active manifests",
+                )
+            )
             continue
 
         # Per-project flow-control: refuse to spend tokens on a fresh
@@ -196,47 +204,48 @@ def run_execute_approved(
         is_fresh_pr_decision = not (
             (getattr(decision, "model_extra", None) or {}).get("existing_pr_branch")
         )
-        if (
-            is_fresh_pr_decision
-            and not _is_dossier_refresh_decision_safe(decision)
-        ):
+        if is_fresh_pr_decision and not _is_dossier_refresh_decision_safe(decision):
             open_prs = distinct_open_pr_count(
                 project=decision.project,
                 engineer_runs_store=engineer_runs_store,
             )
             cap = manifests.get(decision.project)
-            cap_value = (
-                cap.flow_control.max_open_prs if cap is not None else 5
-            )
+            cap_value = cap.flow_control.max_open_prs if cap is not None else 5
             if open_prs >= cap_value:
-                outcomes.append(ExecuteOutcome(
-                    decision_id=str(decision.id),
-                    project=decision.project,
-                    status="throttled",
-                    reason=(
-                        f"open_pr_cap={cap_value} reached "
-                        f"({open_prs} open) — merge or close existing PRs first"
-                    ),
-                ))
+                outcomes.append(
+                    ExecuteOutcome(
+                        decision_id=str(decision.id),
+                        project=decision.project,
+                        status="throttled",
+                        reason=(
+                            f"open_pr_cap={cap_value} reached "
+                            f"({open_prs} open) — merge or close existing PRs first"
+                        ),
+                    )
+                )
                 continue
 
         if manifest.source.kind != "github" or not manifest.source.repo:
-            outcomes.append(ExecuteOutcome(
-                decision_id=str(decision.id),
-                project=decision.project,
-                status="skipped",
-                reason=f"project source.kind={manifest.source.kind} not supported by engineer crew",
-            ))
+            outcomes.append(
+                ExecuteOutcome(
+                    decision_id=str(decision.id),
+                    project=decision.project,
+                    status="skipped",
+                    reason=f"project source.kind={manifest.source.kind} not supported by engineer crew",
+                )
+            )
             continue
 
         github = open_github_client(manifest)
         if github is None:
-            outcomes.append(ExecuteOutcome(
-                decision_id=str(decision.id),
-                project=decision.project,
-                status="error",
-                reason="failed to open GitHub client",
-            ))
+            outcomes.append(
+                ExecuteOutcome(
+                    decision_id=str(decision.id),
+                    project=decision.project,
+                    status="error",
+                    reason="failed to open GitHub client",
+                )
+            )
             continue
 
         # In-place fix mode: pr_followup + pr_review_loop stamp these
@@ -255,22 +264,26 @@ def run_execute_approved(
         output_override: EngineerOutput | None = None
         if is_dossier_refresh_decision(decision):
             if dossier_store is None:
-                outcomes.append(ExecuteOutcome(
-                    decision_id=str(decision.id),
-                    project=decision.project,
-                    status="error",
-                    reason="dossier refresh approved but no dossier_store wired in",
-                ))
+                outcomes.append(
+                    ExecuteOutcome(
+                        decision_id=str(decision.id),
+                        project=decision.project,
+                        status="error",
+                        reason="dossier refresh approved but no dossier_store wired in",
+                    )
+                )
                 continue
             draft_id = draft_id_from_decision(decision)
             draft = dossier_store.get(draft_id) if draft_id else None
             if draft is None:
-                outcomes.append(ExecuteOutcome(
-                    decision_id=str(decision.id),
-                    project=decision.project,
-                    status="error",
-                    reason=f"linked dossier draft {draft_id!r} not found",
-                ))
+                outcomes.append(
+                    ExecuteOutcome(
+                        decision_id=str(decision.id),
+                        project=decision.project,
+                        status="error",
+                        reason=f"linked dossier draft {draft_id!r} not found",
+                    )
+                )
                 continue
             output_override = build_dossier_engineer_output(draft, manifest)
 
@@ -293,32 +306,38 @@ def run_execute_approved(
                     output_override=output_override,
                 )
         except BudgetBreachError as e:
-            outcomes.append(ExecuteOutcome(
-                decision_id=str(decision.id),
-                project=decision.project,
-                status="throttled",
-                reason=str(e),
-            ))
+            outcomes.append(
+                ExecuteOutcome(
+                    decision_id=str(decision.id),
+                    project=decision.project,
+                    status="throttled",
+                    reason=str(e),
+                )
+            )
             continue
         except Exception as e:  # noqa: BLE001 — surface every failure in the report
-            outcomes.append(ExecuteOutcome(
-                decision_id=str(decision.id),
-                project=decision.project,
-                status="error",
-                reason=f"{type(e).__name__}: {e}",
-            ))
+            outcomes.append(
+                ExecuteOutcome(
+                    decision_id=str(decision.id),
+                    project=decision.project,
+                    status="error",
+                    reason=f"{type(e).__name__}: {e}",
+                )
+            )
             continue
 
         if result.skipped:
             if task is not None and not dry_run:
                 with suppress(Exception):
                     task_store.update_status(task.id, "blocked")  # type: ignore[union-attr]
-            outcomes.append(ExecuteOutcome(
-                decision_id=str(decision.id),
-                project=decision.project,
-                status="skipped",
-                reason=result.skip_reason or "engineer crew skipped",
-            ))
+            outcomes.append(
+                ExecuteOutcome(
+                    decision_id=str(decision.id),
+                    project=decision.project,
+                    status="skipped",
+                    reason=result.skip_reason or "engineer crew skipped",
+                )
+            )
             continue
 
         # Persist the engineer run + mark Decision EXECUTED. Mirror `minions
@@ -357,6 +376,7 @@ def run_execute_approved(
                     linked = dossier_store.get(draft_id)
                     if linked is not None:
                         from minions.models.dossier import DossierStatus
+
                         linked.status = DossierStatus.PR_OPEN
                         linked.pr_url = result.pr_url
                         linked.pr_number = result.pr_number
@@ -369,18 +389,21 @@ def run_execute_approved(
             # raises — relay failure must not block the EXECUTED transition.
             with suppress(Exception):
                 from minions.spokesperson.interview_relay import relay_spike_answer
+
                 relay_spike_answer(
                     decision_id=str(decision.id),
                     project=manifest.name,
                     engineer_result=result,
                 )
 
-        outcomes.append(ExecuteOutcome(
-            decision_id=str(decision.id),
-            project=decision.project,
-            status="executed",
-            pr_url=result.pr_url,
-        ))
+        outcomes.append(
+            ExecuteOutcome(
+                decision_id=str(decision.id),
+                project=decision.project,
+                status="executed",
+                pr_url=result.pr_url,
+            )
+        )
         successful += 1
 
     return ExecuteApprovedReport(

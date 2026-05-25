@@ -47,7 +47,12 @@ logger = logging.getLogger(__name__)
 class DeploymentOutcome(BaseModel):
     project: str
     status: Literal[
-        "healthy", "unhealthy", "failed", "abandoned", "skipped", "error",
+        "healthy",
+        "unhealthy",
+        "failed",
+        "abandoned",
+        "skipped",
+        "error",
     ]
     merge_sha: str | None = None
     pr_number: int | None = None
@@ -86,9 +91,7 @@ def run_post_deploy_verify(
     manifests = load_active_manifests(projects_dir)
     if projects:
         wanted = {p.lower() for p in projects}
-        manifests = {
-            n: m for n, m in manifests.items() if n.lower() in wanted
-        }
+        manifests = {n: m for n, m in manifests.items() if n.lower() in wanted}
 
     outcomes: list[DeploymentOutcome] = []
     for name, manifest in manifests.items():
@@ -125,29 +128,35 @@ def _run_one(
 
     if cfg.target == "none":
         return DeploymentOutcome(
-            project=project, status="skipped",
+            project=project,
+            status="skipped",
             reason="deploy.target=none",
         )
-    if cfg.target not in {"vercel", "generic"}:
+    if cfg.target != "vercel":
+        # fly / render adapters not implemented yet (per the openspec out-of-scope).
         return DeploymentOutcome(
-            project=project, status="skipped",
+            project=project,
+            status="skipped",
             reason=f"deploy.target={cfg.target!r} not supported yet",
         )
     if not cfg.production_url:
         return DeploymentOutcome(
-            project=project, status="skipped",
+            project=project,
+            status="skipped",
             reason="no production_url configured",
         )
     if manifest.source.kind != "github" or not manifest.source.repo:
         return DeploymentOutcome(
-            project=project, status="skipped",
+            project=project,
+            status="skipped",
             reason="non-github project — cannot resolve merge sha",
         )
 
     github = open_github_client(manifest)
     if github is None:
         return DeploymentOutcome(
-            project=project, status="error",
+            project=project,
+            status="error",
             reason="failed to open GitHub client",
         )
 
@@ -158,7 +167,8 @@ def _run_one(
             merge_sha = branch_ref.sha
     except Exception as e:  # noqa: BLE001
         return DeploymentOutcome(
-            project=project, status="error",
+            project=project,
+            status="error",
             reason=f"github head lookup failed: {e}",
         )
 
@@ -174,7 +184,8 @@ def _run_one(
 
     if record.status == DeploymentStatus.HEALTHY:
         return DeploymentOutcome(
-            project=project, status="healthy",
+            project=project,
+            status="healthy",
             merge_sha=merge_sha,
             total_probes=len(record.health_check_results),
             reason="already verified healthy",
@@ -182,39 +193,24 @@ def _run_one(
 
     if dry_run:
         return DeploymentOutcome(
-            project=project, status="skipped",
+            project=project,
+            status="skipped",
             merge_sha=merge_sha,
             reason="dry-run — would probe production_url",
         )
 
-    # Vercel readiness gate: when target=vercel and a token is available,
-    # poll the Vercel API until the deployment matching this sha reaches a
-    # terminal state. On ERROR/CANCELED we file the revert immediately
-    # without bothering with HTTP probes. On token-missing or sha-not-found
-    # we fall through to direct URL probing (same as generic).
-    if cfg.target == "vercel":
-        poll_outcome = _poll_vercel(record=record, project=project, merge_sha=merge_sha)
-        if poll_outcome is not None:
-            with suppress(Exception):
-                deployment_store.save(record)
-            if poll_outcome.status == "unhealthy":
-                _file_revert_if_new(
-                    record=record, project=project, merge_sha=merge_sha,
-                    decision_store=decision_store, notifier=notifier,
-                    deployment_store=deployment_store, outcome=poll_outcome,
-                )
-                _emit_learning(record=record, healthy=False)
-            return poll_outcome
-
+    # Run the verifier. (Vercel readiness polling deferred to a follow-up;
+    # for v1 we probe production_url directly. If the deploy hasn't shipped
+    # yet, probes will fail with 4xx and we'll retry on the next tick.)
     record.status = DeploymentStatus.CHECKING
     record = run_health_checks(config=cfg, record=record)
     with suppress(Exception):
         deployment_store.save(record)
 
     if record.status == DeploymentStatus.HEALTHY:
-        _emit_learning(record=record, healthy=True)
         return DeploymentOutcome(
-            project=project, status="healthy",
+            project=project,
+            status="healthy",
             merge_sha=merge_sha,
             total_probes=len(record.health_check_results),
             failed_probes=0,
@@ -222,11 +218,14 @@ def _run_one(
 
     # Unhealthy — dedupe against existing revert decision for this sha.
     existing = find_open_revert_decision(
-        project=project, merge_sha=merge_sha, decision_store=decision_store,
+        project=project,
+        merge_sha=merge_sha,
+        decision_store=decision_store,
     )
     if existing is not None:
         return DeploymentOutcome(
-            project=project, status="unhealthy",
+            project=project,
+            status="unhealthy",
             merge_sha=merge_sha,
             total_probes=len(record.health_check_results),
             failed_probes=record.failed_count,
@@ -246,125 +245,24 @@ def _run_one(
     except Exception as e:  # noqa: BLE001
         logger.warning(
             "post-deploy: revert-decision filing failed for %s: %s",
-            project, e, exc_info=True,
+            project,
+            e,
+            exc_info=True,
         )
         return DeploymentOutcome(
-            project=project, status="error",
+            project=project,
+            status="error",
             merge_sha=merge_sha,
             total_probes=len(record.health_check_results),
             failed_probes=record.failed_count,
             reason=f"revert decision filing failed: {e}",
         )
 
-    _emit_learning(record=record, healthy=False)
     return DeploymentOutcome(
-        project=project, status="unhealthy",
+        project=project,
+        status="unhealthy",
         merge_sha=merge_sha,
         total_probes=len(record.health_check_results),
         failed_probes=record.failed_count,
         revert_decision_id=record.revert_decision_id,
     )
-
-
-def _poll_vercel(
-    *,
-    record: DeploymentRecord,
-    project: str,
-    merge_sha: str,
-) -> DeploymentOutcome | None:
-    """Poll Vercel for the deployment matching this sha.
-
-    Returns:
-      - None when polling cannot run (no token / sha not found) — caller
-        falls through to direct URL probing.
-      - DeploymentOutcome(status="unhealthy") when Vercel reports
-        ERROR/CANCELED — caller files the revert without HTTP probes.
-      - None when state reaches READY — caller proceeds to HTTP probes.
-      - DeploymentOutcome(status="abandoned") on timeout.
-    """
-    from minions.deployments.vercel import (
-        TERMINAL_STATES,
-        find_deployment_by_sha,
-        wait_until_terminal,
-    )
-    from minions.secrets import get_vercel_token
-
-    token = get_vercel_token(project)
-    if not token:
-        logger.info("post-deploy: no VERCEL_TOKEN for %s — skipping readiness poll", project)
-        return None
-    handle = find_deployment_by_sha(token=token, sha=merge_sha)
-    if handle is None:
-        logger.info("post-deploy: vercel had no deployment for sha %s (%s)", merge_sha[:8], project)
-        return None
-    if handle.state not in TERMINAL_STATES:
-        handle = wait_until_terminal(token=token, deployment_id=handle.id)
-    if handle.state in {"ERROR", "CANCELED"}:
-        record.status = DeploymentStatus.UNHEALTHY
-        record.target_deploy_id = handle.id
-        record.findings_md = (
-            f"Vercel reported state={handle.state} for deployment {handle.id}; "
-            "no HTTP probes were run (build did not reach READY)."
-        )
-        return DeploymentOutcome(
-            project=project, status="unhealthy",
-            merge_sha=merge_sha,
-            reason=f"vercel state={handle.state}",
-        )
-    if handle.state != "READY":
-        return DeploymentOutcome(
-            project=project, status="abandoned",
-            merge_sha=merge_sha,
-            reason=f"vercel state={handle.state} after timeout",
-        )
-    return None
-
-
-def _file_revert_if_new(
-    *,
-    record: DeploymentRecord,
-    project: str,
-    merge_sha: str,
-    decision_store: DecisionStore,
-    notifier: Notifier,
-    deployment_store: DeploymentStoreLike,
-    outcome: DeploymentOutcome,
-) -> None:
-    existing = find_open_revert_decision(
-        project=project, merge_sha=merge_sha, decision_store=decision_store,
-    )
-    if existing is not None:
-        outcome.revert_decision_id = str(existing.id)
-        outcome.reason = "revert decision already pending/approved"
-        return
-    try:
-        decision = file_revert_decision(
-            record=record, decision_store=decision_store, notifier=notifier,
-        )
-        record.revert_decision_id = str(decision.id)
-        outcome.revert_decision_id = str(decision.id)
-        with suppress(Exception):
-            deployment_store.save(record)
-    except Exception as e:  # noqa: BLE001
-        logger.warning(
-            "post-deploy: revert-decision filing failed for %s: %s",
-            project, e, exc_info=True,
-        )
-
-
-def _emit_learning(*, record: DeploymentRecord, healthy: bool) -> None:
-    """Phase 6: tag deploy outcomes for CTO (failures) and CEO (stable)."""
-    with suppress(Exception):
-        from minions.db.connection import has_database_url
-        from minions.learning.capture import capture_deploy_outcome
-        from minions.learning.store import AgentLearningStore
-        from minions.learning.store_postgres import PostgresAgentLearningStore
-
-        store: AgentLearningStore | PostgresAgentLearningStore
-        if has_database_url():
-            store = PostgresAgentLearningStore()
-        else:
-            from minions.__main__ import AGENT_LEARNING_PATH
-
-            store = AgentLearningStore(AGENT_LEARNING_PATH)
-        capture_deploy_outcome(record=record, healthy=healthy, store=store)

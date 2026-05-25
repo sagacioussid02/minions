@@ -67,9 +67,7 @@ class PostgresDecisionStore:
 
     def list_all(self) -> list[Decision]:
         with connect() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT payload FROM decisions ORDER BY created_at DESC"
-            )
+            cur.execute("SELECT payload FROM decisions ORDER BY created_at DESC")
             rows = cur.fetchall()
         return [
             Decision.model_validate(r[0] if isinstance(r[0], dict) else json.loads(r[0]))
@@ -79,8 +77,7 @@ class PostgresDecisionStore:
     def list_by_status(self, status: DecisionStatus) -> list[Decision]:
         with connect() as conn, conn.cursor() as cur:
             cur.execute(
-                "SELECT payload FROM decisions WHERE status = %s "
-                "ORDER BY created_at DESC",
+                "SELECT payload FROM decisions WHERE status = %s ORDER BY created_at DESC",
                 (status.value,),
             )
             rows = cur.fetchall()

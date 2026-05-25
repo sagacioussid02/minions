@@ -219,9 +219,7 @@ def test_confidence_bounds_enforced(count: int) -> None:
 # ---------- 5. assemble_inputs against seeded stores ----------
 
 
-def _seed_engineer_run(
-    runs: EngineerRunStore, project: str, merged_at: datetime | None
-) -> None:
+def _seed_engineer_run(runs: EngineerRunStore, project: str, merged_at: datetime | None) -> None:
     rec = runs.save(
         EngineerResult(
             decision_id=f"dec-{project}-{merged_at.isoformat() if merged_at else 'open'}",

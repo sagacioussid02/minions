@@ -58,40 +58,72 @@ def _seed_cost(
 
 def test_agent_status_active_when_recent() -> None:
     a = AgentSummary(
-        scope="project", project="p", role="manager", tier="sonnet",
-        seats=1, seat_labels=["Marcus"],
+        scope="project",
+        project="p",
+        role="manager",
+        tier="sonnet",
+        seats=1,
+        seat_labels=["Marcus"],
         last_activity=datetime.now(tz=UTC) - timedelta(minutes=5),
-        last_decision_id=None, calls_7d=1, cost_7d_usd=0.0, calls_total=1, cost_total_usd=0.0,
+        last_decision_id=None,
+        calls_7d=1,
+        cost_7d_usd=0.0,
+        calls_total=1,
+        cost_total_usd=0.0,
     )
     assert a.status == "active"
 
 
 def test_agent_status_idle_between_24h_and_14d() -> None:
     a = AgentSummary(
-        scope="project", project="p", role="manager", tier="sonnet",
-        seats=1, seat_labels=["Marcus"],
+        scope="project",
+        project="p",
+        role="manager",
+        tier="sonnet",
+        seats=1,
+        seat_labels=["Marcus"],
         last_activity=datetime.now(tz=UTC) - timedelta(days=3),
-        last_decision_id=None, calls_7d=0, cost_7d_usd=0.0, calls_total=1, cost_total_usd=0.0,
+        last_decision_id=None,
+        calls_7d=0,
+        cost_7d_usd=0.0,
+        calls_total=1,
+        cost_total_usd=0.0,
     )
     assert a.status == "idle"
 
 
 def test_agent_status_stale_when_old() -> None:
     a = AgentSummary(
-        scope="project", project="p", role="manager", tier="sonnet",
-        seats=1, seat_labels=["Marcus"],
+        scope="project",
+        project="p",
+        role="manager",
+        tier="sonnet",
+        seats=1,
+        seat_labels=["Marcus"],
         last_activity=datetime.now(tz=UTC) - timedelta(days=30),
-        last_decision_id=None, calls_7d=0, cost_7d_usd=0.0, calls_total=1, cost_total_usd=0.0,
+        last_decision_id=None,
+        calls_7d=0,
+        cost_7d_usd=0.0,
+        calls_total=1,
+        cost_total_usd=0.0,
     )
     assert a.status == "stale"
 
 
 def test_agent_status_stale_when_never_invoked() -> None:
     a = AgentSummary(
-        scope="project", project="p", role="manager", tier="sonnet",
-        seats=1, seat_labels=["Marcus"],
-        last_activity=None, last_decision_id=None,
-        calls_7d=0, cost_7d_usd=0.0, calls_total=0, cost_total_usd=0.0,
+        scope="project",
+        project="p",
+        role="manager",
+        tier="sonnet",
+        seats=1,
+        seat_labels=["Marcus"],
+        last_activity=None,
+        last_decision_id=None,
+        calls_7d=0,
+        cost_7d_usd=0.0,
+        calls_total=0,
+        cost_total_usd=0.0,
     )
     assert a.status == "stale"
 
@@ -133,12 +165,29 @@ def test_summaries_attribute_cost_to_correct_bucket(empty_log: Path) -> None:
     manifests = load_active_manifests(REPO_ROOT / "projects")
     portfolio = load_portfolio_config(REPO_ROOT / "config" / "portfolio.yaml")
     now = datetime.now(tz=UTC)
-    _seed_cost(project="demo_five", role="manager", when=now - timedelta(hours=1),
-               cost_usd=0.05, decision_id="dec-1", log_path=empty_log)
-    _seed_cost(project="demo_five", role="manager", when=now - timedelta(hours=2),
-               cost_usd=0.03, decision_id="dec-1", log_path=empty_log)
-    _seed_cost(project="Demo", role="manager", when=now - timedelta(hours=1),
-               cost_usd=0.10, log_path=empty_log)
+    _seed_cost(
+        project="demo_five",
+        role="manager",
+        when=now - timedelta(hours=1),
+        cost_usd=0.05,
+        decision_id="dec-1",
+        log_path=empty_log,
+    )
+    _seed_cost(
+        project="demo_five",
+        role="manager",
+        when=now - timedelta(hours=2),
+        cost_usd=0.03,
+        decision_id="dec-1",
+        log_path=empty_log,
+    )
+    _seed_cost(
+        project="Demo",
+        role="manager",
+        when=now - timedelta(hours=1),
+        cost_usd=0.10,
+        log_path=empty_log,
+    )
 
     summaries = build_agent_summaries(
         manifests=manifests, portfolio=portfolio, cost_log_path=empty_log, now=now
@@ -163,10 +212,20 @@ def test_summaries_7d_window_filters(empty_log: Path) -> None:
     manifests = load_active_manifests(REPO_ROOT / "projects")
     portfolio = load_portfolio_config(REPO_ROOT / "config" / "portfolio.yaml")
     now = datetime.now(tz=UTC)
-    _seed_cost(project="demo_five", role="manager", when=now - timedelta(days=10),
-               cost_usd=1.00, log_path=empty_log)
-    _seed_cost(project="demo_five", role="manager", when=now - timedelta(days=2),
-               cost_usd=0.05, log_path=empty_log)
+    _seed_cost(
+        project="demo_five",
+        role="manager",
+        when=now - timedelta(days=10),
+        cost_usd=1.00,
+        log_path=empty_log,
+    )
+    _seed_cost(
+        project="demo_five",
+        role="manager",
+        when=now - timedelta(days=2),
+        cost_usd=0.05,
+        log_path=empty_log,
+    )
 
     summaries = build_agent_summaries(
         manifests=manifests, portfolio=portfolio, cost_log_path=empty_log, now=now
@@ -223,9 +282,13 @@ def test_sprint_board_buckets_by_status() -> None:
     assert len(board.pending) == 2
     assert len(board.approved) == 1
     assert len(board.pr_open) == 1  # EXECUTED with pr_url
-    assert len(board.done) == 1     # REJECTED
+    assert len(board.done) == 1  # REJECTED
     assert board.total == 5
-    assert all(d.project == "p" for col in [board.pending, board.approved, board.pr_open, board.done] for d in col)
+    assert all(
+        d.project == "p"
+        for col in [board.pending, board.approved, board.pr_open, board.done]
+        for d in col
+    )
 
 
 def test_sprint_board_executed_without_pr_url_lands_in_progress() -> None:
@@ -326,22 +389,37 @@ def test_build_dashboard_data_smoke(tmp_path: Path) -> None:
     )
     assert data.agents
     assert data.pending_count == 0
-    assert all(name in data.sprint_boards for name in ["demo_five", "Demo", "demo_three", "demo_four", "demo_two"])
+    assert all(
+        name in data.sprint_boards
+        for name in ["demo_five", "Demo", "demo_three", "demo_four", "demo_two"]
+    )
 
 
 def test_daily_cost_series_returns_uniform_grid_per_project(empty_log: Path) -> None:
     from minions.dashboard.data import daily_cost_series
 
     now = datetime(2026, 5, 15, 12, 0, tzinfo=UTC)
-    _seed_cost(project="a", role="manager",
-               when=datetime(2026, 5, 14, 10, 0, tzinfo=UTC),
-               cost_usd=0.10, log_path=empty_log)
-    _seed_cost(project="a", role="manager",
-               when=datetime(2026, 5, 14, 11, 0, tzinfo=UTC),
-               cost_usd=0.05, log_path=empty_log)
-    _seed_cost(project="b", role="manager",
-               when=datetime(2026, 5, 13, 9, 0, tzinfo=UTC),
-               cost_usd=0.20, log_path=empty_log)
+    _seed_cost(
+        project="a",
+        role="manager",
+        when=datetime(2026, 5, 14, 10, 0, tzinfo=UTC),
+        cost_usd=0.10,
+        log_path=empty_log,
+    )
+    _seed_cost(
+        project="a",
+        role="manager",
+        when=datetime(2026, 5, 14, 11, 0, tzinfo=UTC),
+        cost_usd=0.05,
+        log_path=empty_log,
+    )
+    _seed_cost(
+        project="b",
+        role="manager",
+        when=datetime(2026, 5, 13, 9, 0, tzinfo=UTC),
+        cost_usd=0.20,
+        log_path=empty_log,
+    )
 
     series = daily_cost_series(days=7, cost_log_path=empty_log, now=now)
     assert set(series.keys()) == {"a", "b"}
@@ -363,12 +441,20 @@ def test_cost_series_for_filters_to_role(empty_log: Path) -> None:
     from minions.dashboard.data import cost_series_for
 
     now = datetime(2026, 5, 15, 12, 0, tzinfo=UTC)
-    _seed_cost(project="a", role="manager",
-               when=datetime(2026, 5, 14, 10, 0, tzinfo=UTC),
-               cost_usd=0.10, log_path=empty_log)
-    _seed_cost(project="a", role="engineer",
-               when=datetime(2026, 5, 14, 11, 0, tzinfo=UTC),
-               cost_usd=99.0, log_path=empty_log)
+    _seed_cost(
+        project="a",
+        role="manager",
+        when=datetime(2026, 5, 14, 10, 0, tzinfo=UTC),
+        cost_usd=0.10,
+        log_path=empty_log,
+    )
+    _seed_cost(
+        project="a",
+        role="engineer",
+        when=datetime(2026, 5, 14, 11, 0, tzinfo=UTC),
+        cost_usd=99.0,
+        log_path=empty_log,
+    )
 
     series = cost_series_for("a", "manager", days=7, cost_log_path=empty_log, now=now)
     total = sum(v for _, v in series)

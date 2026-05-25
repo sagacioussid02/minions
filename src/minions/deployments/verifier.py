@@ -33,9 +33,7 @@ logger = logging.getLogger(__name__)
 
 # Match <img src="…"> (and Next/Image's lazy-rendered <img loading="lazy">).
 # Greedy enough for the home-page HTML pass; not a full HTML parser.
-_IMG_SRC = re.compile(
-    r"""<img[^>]+src=["']([^"']+)["']""", re.IGNORECASE
-)
+_IMG_SRC = re.compile(r"""<img[^>]+src=["']([^"']+)["']""", re.IGNORECASE)
 
 
 def run_health_checks(
@@ -65,6 +63,7 @@ def run_health_checks(
     if not config.health_checks:
         # Default to a single GET / so we at least catch hard-down sites.
         from minions.models.manifest import HealthCheck
+
         checks = [HealthCheck(path="/")]
     else:
         checks = config.health_checks
@@ -72,7 +71,8 @@ def run_health_checks(
     for check in checks:
         url = urljoin(base.rstrip("/") + "/", check.path.lstrip("/"))
         result = _probe(
-            url=url, expected_status=check.expect_status,
+            url=url,
+            expected_status=check.expect_status,
             expect_body_contains=check.expect_body_contains,
             timeout=check.timeout_seconds,
             kind="path",
@@ -88,19 +88,20 @@ def run_health_checks(
         if home_html is not None:
             urls = _extract_image_urls(home_html, base, max_n=config.max_image_assets)
             for img_url in urls:
-                results.append(_probe(
-                    url=img_url, expected_status=200,
-                    expect_body_contains=None,
-                    timeout=10.0,
-                    kind="image",
-                ))
+                results.append(
+                    _probe(
+                        url=img_url,
+                        expected_status=200,
+                        expect_body_contains=None,
+                        timeout=10.0,
+                        kind="image",
+                    )
+                )
 
     record.health_check_results = results
     record.verified_at = datetime.now(UTC)
     record.status = (
-        DeploymentStatus.HEALTHY
-        if all(r.ok for r in results)
-        else DeploymentStatus.UNHEALTHY
+        DeploymentStatus.HEALTHY if all(r.ok for r in results) else DeploymentStatus.UNHEALTHY
     )
     record.findings_md = _summarize_findings(results)
     return record
@@ -128,9 +129,14 @@ def _probe(
         if ok and expect_body_contains:
             ok = expect_body_contains in r.text
         return HealthCheckResult(
-            url=url, kind=kind, expected_status=expected_status,
-            actual_status=r.status_code, latency_ms=latency_ms,
-            error=None if ok else (
+            url=url,
+            kind=kind,
+            expected_status=expected_status,
+            actual_status=r.status_code,
+            latency_ms=latency_ms,
+            error=None
+            if ok
+            else (
                 f"expected {expected_status}, got {r.status_code}"
                 if r.status_code != expected_status
                 else f"body missing marker {expect_body_contains!r}"
@@ -140,9 +146,13 @@ def _probe(
     except httpx.HTTPError as e:
         latency_ms = int((time.monotonic() - started) * 1000)
         return HealthCheckResult(
-            url=url, kind=kind, expected_status=expected_status,
-            actual_status=None, latency_ms=latency_ms,
-            error=f"{type(e).__name__}: {e}", ok=False,
+            url=url,
+            kind=kind,
+            expected_status=expected_status,
+            actual_status=None,
+            latency_ms=latency_ms,
+            error=f"{type(e).__name__}: {e}",
+            ok=False,
         )
 
 
@@ -190,16 +200,13 @@ def _summarize_findings(results: list[HealthCheckResult]) -> str:
         return "(no probes ran)"
     failed = [r for r in results if not r.ok]
     lines = [
-        f"# Post-deploy verification — {len(results)} probe(s), "
-        f"{len(failed)} failed",
+        f"# Post-deploy verification — {len(results)} probe(s), {len(failed)} failed",
         "",
     ]
     for r in results:
         icon = "✓" if r.ok else "✗"
         latency = f"{r.latency_ms}ms" if r.latency_ms is not None else "?"
-        status = (
-            f"HTTP {r.actual_status}" if r.actual_status is not None else "(no status)"
-        )
+        status = f"HTTP {r.actual_status}" if r.actual_status is not None else "(no status)"
         line = f"- {icon} [{r.kind}] `{r.url}` — {status} in {latency}"
         if r.error:
             line += f" — **{r.error}**"

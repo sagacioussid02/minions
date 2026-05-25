@@ -69,16 +69,12 @@ class DiscoverySweepReport(BaseModel):
     @property
     def skipped(self) -> int:
         return sum(
-            1
-            for o in self.outcomes
-            if o.status in ("skipped_fresh", "skipped_target_missing")
+            1 for o in self.outcomes if o.status in ("skipped_fresh", "skipped_target_missing")
         )
 
     @property
     def errored(self) -> int:
-        return sum(
-            1 for o in self.outcomes if o.status in ("error", "verifier_failed")
-        )
+        return sum(1 for o in self.outcomes if o.status in ("error", "verifier_failed"))
 
 
 def run_discovery_sweep(
@@ -107,9 +103,7 @@ def run_discovery_sweep(
     manifests = load_active_manifests(projects_dir)
     if projects:
         wanted = {p.lower() for p in projects}
-        manifests = {
-            name: m for name, m in manifests.items() if name.lower() in wanted
-        }
+        manifests = {name: m for name, m in manifests.items() if name.lower() in wanted}
 
     outcomes: list[DiscoveryOutcome] = []
     for name, manifest in manifests.items():

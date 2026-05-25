@@ -146,9 +146,7 @@ class GitHubClient:
         r = self._request("GET", f"/repos/{self.repo}/issues/{number}")
         return _normalize_issue(r.json())
 
-    def list_issue_comments(
-        self, *, number: int, per_page: int = 30
-    ) -> list[dict[str, Any]]:
+    def list_issue_comments(self, *, number: int, per_page: int = 30) -> list[dict[str, Any]]:
         """List conversation comments on an issue / PR (most-recent last).
 
         PR comments live on the issue-comments endpoint; PR reviews
@@ -163,11 +161,13 @@ class GitHubClient:
         out: list[dict[str, Any]] = []
         for c in r.json():
             user_obj = c.get("user") or {}
-            out.append({
-                "user": user_obj.get("login", ""),
-                "created_at": c.get("created_at", ""),
-                "body": c.get("body", "") or "",
-            })
+            out.append(
+                {
+                    "user": user_obj.get("login", ""),
+                    "created_at": c.get("created_at", ""),
+                    "body": c.get("body", "") or "",
+                }
+            )
         return out
 
     def comment_on_issue(self, *, number: int, body: str) -> None:
@@ -282,9 +282,7 @@ class GitHubClient:
     def get_file_sha(self, *, path: str, branch: str) -> str | None:
         """Return the blob SHA for an existing file, or None if it doesn't exist."""
         try:
-            r = self._request(
-                "GET", f"/repos/{self.repo}/contents/{path}", params={"ref": branch}
-            )
+            r = self._request("GET", f"/repos/{self.repo}/contents/{path}", params={"ref": branch})
         except GitHubError as e:
             if e.status_code == 404:
                 return None
@@ -302,9 +300,7 @@ class GitHubClient:
         directories, non-base64 payloads, or files GitHub does not inline.
         """
         try:
-            r = self._request(
-                "GET", f"/repos/{self.repo}/contents/{path}", params={"ref": branch}
-            )
+            r = self._request("GET", f"/repos/{self.repo}/contents/{path}", params={"ref": branch})
         except GitHubError as e:
             if e.status_code == 404:
                 return None
@@ -453,9 +449,7 @@ class GitHubClient:
         # 403s on some private-repo + token combinations. Either way, "unknown"
         # is the right answer — the sweep should not error on a stale PR.
         try:
-            r = self._request(
-                "GET", f"/repos/{self.repo}/commits/{pr.head_sha}/check-runs"
-            )
+            r = self._request("GET", f"/repos/{self.repo}/commits/{pr.head_sha}/check-runs")
         except GitHubError as e:
             if e.status_code in {403, 404, 422}:
                 return None, None
@@ -484,9 +478,7 @@ class GitHubClient:
             return "pending", None
         return "success", None
 
-    def list_pull_request_files(
-        self, number: int, *, per_page: int = 30
-    ) -> list[dict[str, Any]]:
+    def list_pull_request_files(self, number: int, *, per_page: int = 30) -> list[dict[str, Any]]:
         """Return PR files: filename, status, additions, deletions, patch (when present).
 
         GitHub caps per_page at 100 and excludes patches over 5MB. This is good

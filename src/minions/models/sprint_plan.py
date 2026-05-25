@@ -66,8 +66,7 @@ class StructuredSprintPlan(BaseModel):
     discussion: list[str] = Field(default_factory=list)
 
     def total_items(self) -> int:
-        return sum(len(getattr(self, k)) for k in
-                   ("features", "bugs", "tech_debt", "ops", "docs"))
+        return sum(len(getattr(self, k)) for k in ("features", "bugs", "tech_debt", "ops", "docs"))
 
     def render_markdown(self) -> str:
         """Render to the legacy ``diff_or_plan`` markdown shape.
@@ -91,14 +90,8 @@ class StructuredSprintPlan(BaseModel):
                 continue
             lines.append(f"### {label} ({len(items)})")
             for item in items:
-                owner = (
-                    f" → {item.suggested_owner_role}"
-                    if item.suggested_owner_role else ""
-                )
-                lines.append(
-                    f"- **{item.title}** "
-                    f"[{item.estimated_effort}]{owner}"
-                )
+                owner = f" → {item.suggested_owner_role}" if item.suggested_owner_role else ""
+                lines.append(f"- **{item.title}** [{item.estimated_effort}]{owner}")
                 if item.rationale:
                     lines.append(f"  - _why_: {item.rationale}")
                 if item.acceptance_criteria:
@@ -128,11 +121,13 @@ class StructuredSprintPlan(BaseModel):
         """
         return cls(
             goal=goal,
-            features=[PlanItem(
-                title="Sprint plan (unstructured)",
-                rationale="Planning crew did not produce a structured plan; "
-                          "raw content preserved verbatim below.",
-                acceptance_criteria=markdown,
-                estimated_effort="m",
-            )],
+            features=[
+                PlanItem(
+                    title="Sprint plan (unstructured)",
+                    rationale="Planning crew did not produce a structured plan; "
+                    "raw content preserved verbatim below.",
+                    acceptance_criteria=markdown,
+                    estimated_effort="m",
+                )
+            ],
         )

@@ -105,9 +105,7 @@ def create_app(
             return _already_resolved_page(decision)
 
         try:
-            resolved = resolve(
-                decision_id, store=store, notifier=_notifier, action=action
-            )
+            resolved = resolve(decision_id, store=store, notifier=_notifier, action=action)
         except Exception:
             logger.exception("failed to resolve decision %s via webhook", decision_id)
             return _page(
@@ -134,7 +132,7 @@ _BASE_STYLE = (
 def _page(*, title: str, body: str, status_code: int = 200) -> HTMLResponse:
     html = (
         f"<!doctype html><html><head><meta charset='utf-8'><title>{escape(title)}</title>"
-        f"</head><body style=\"{_BASE_STYLE}\">"
+        f'</head><body style="{_BASE_STYLE}">'
         f"<h2>{escape(title)}</h2>{body}"
         "<p style='color:#888;font-size:12px;margin-top:32px;'>minions approval webhook</p>"
         "</body></html>"

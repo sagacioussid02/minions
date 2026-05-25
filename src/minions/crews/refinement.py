@@ -45,7 +45,10 @@ CATEGORY_DEFAULT_OWNER: dict[TaskCategory, str] = {
 # Per-project roles vs shared bench. Engineer/PM/PO/Manager/TechTeamLead
 # live per project; the rest are shared. Used to construct the agent_id.
 _PER_PROJECT_ROLES = {
-    "engineer", "manager", "product_owner", "tech_team_lead",
+    "engineer",
+    "manager",
+    "product_owner",
+    "tech_team_lead",
 }
 
 # Max in-flight Tasks an agent should hold before the load-balancer
@@ -79,6 +82,7 @@ def _eligible_candidates(role: str, project: str) -> list[str]:
     base = _agent_id_for(role, project)
     try:
         from minions.agents.roster import seats_for
+
         n = seats_for(role, project)
     except Exception:  # noqa: BLE001
         n = 1
@@ -125,7 +129,7 @@ def _resolve_owner(
 def refine_decision(
     decision: Decision,
     *,
-    task_store: "TaskStoreLike",
+    task_store: TaskStoreLike,
 ) -> list[Task]:
     """Emit one Task per PlanItem (or per subtask if the item has them).
 
@@ -148,16 +152,16 @@ def refine_decision(
     # fall back to using parent PlanItems as-is for the whole Decision so
     # the operator gets a coherent (if less granular) sprint.
     total_subtasks = sum(
-        len(item.subtasks)
-        for _category, items in _iter_plan_sections(plan)
-        for item in items
+        len(item.subtasks) for _category, items in _iter_plan_sections(plan) for item in items
     )
     expand_subtasks = total_subtasks <= MAX_SUBTASKS_PER_DECISION
     if not expand_subtasks and total_subtasks > 0:
         logger.warning(
             "refinement: %d subtasks across decision %s exceeds cap %d; "
             "using parent PlanItems as-is",
-            total_subtasks, str(decision.id)[:8], MAX_SUBTASKS_PER_DECISION,
+            total_subtasks,
+            str(decision.id)[:8],
+            MAX_SUBTASKS_PER_DECISION,
         )
 
     with crew_run(
@@ -202,7 +206,7 @@ def _create_task_for_item(
     category: TaskCategory,
     decision: Decision,
     open_load: dict[str, int],
-    task_store: "TaskStoreLike",
+    task_store: TaskStoreLike,
 ) -> Task:
     role, agent_id, display = _resolve_owner(
         item=item,

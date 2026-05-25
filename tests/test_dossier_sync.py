@@ -209,9 +209,7 @@ def test_sync_is_idempotent(tmp_path: Path) -> None:
     decisions.save(decision)
     runs.update(_run(decision, pr_state="merged"))
 
-    sync_dossier_drafts(
-        dossier_store=drafts, decision_store=decisions, engineer_runs_store=runs
-    )
+    sync_dossier_drafts(dossier_store=drafts, decision_store=decisions, engineer_runs_store=runs)
     second = sync_dossier_drafts(
         dossier_store=drafts, decision_store=decisions, engineer_runs_store=runs
     )

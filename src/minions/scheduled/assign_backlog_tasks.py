@@ -45,7 +45,7 @@ class AssignBacklogReport(BaseModel):
 
 def run_assign_backlog_tasks(
     *,
-    task_store: "TaskStoreLike",
+    task_store: TaskStoreLike,
 ) -> AssignBacklogReport:
     started = datetime.now(tz=UTC).isoformat()
     unassigned = [t for t in task_store.list_all() if t.status == "unassigned"]
@@ -78,19 +78,26 @@ def run_assign_backlog_tasks(
             open_load=open_load,
         )
         if agent_id is None:
-            outcomes.append(AssignmentOutcome(
-                task_id=str(task.id), project=task.project,
-                status="kept_unassigned",
-            ))
+            outcomes.append(
+                AssignmentOutcome(
+                    task_id=str(task.id),
+                    project=task.project,
+                    status="kept_unassigned",
+                )
+            )
             continue
         task.owner_agent_id = agent_id
         task.owner_display_name = display
         task.status = "queued"
         task_store.save(task)
-        outcomes.append(AssignmentOutcome(
-            task_id=str(task.id), project=task.project,
-            status="assigned", new_owner_agent_id=agent_id,
-        ))
+        outcomes.append(
+            AssignmentOutcome(
+                task_id=str(task.id),
+                project=task.project,
+                status="assigned",
+                new_owner_agent_id=agent_id,
+            )
+        )
 
     return AssignBacklogReport(
         started_at=started,

@@ -77,9 +77,13 @@ class UnderstandingDelta:
     def any_change(self) -> bool:
         return any(
             (
-                self.architecture_changed, self.data_changed, self.infra_changed,
-                self.hot_spots_changed, self.tech_debt_changed,
-                self.security_changed, self.incidents_changed,
+                self.architecture_changed,
+                self.data_changed,
+                self.infra_changed,
+                self.hot_spots_changed,
+                self.tech_debt_changed,
+                self.security_changed,
+                self.incidents_changed,
                 self.questions_changed,
             )
         )

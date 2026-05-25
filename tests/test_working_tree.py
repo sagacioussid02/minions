@@ -72,9 +72,7 @@ def test_clones_when_path_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     # Patch the URL-builder so we clone the local upstream rather than github.com.
     import minions.working_tree as wt
 
-    monkeypatch.setattr(
-        wt, "_clone_url", lambda repo, token: f"file://{upstream}", raising=True
-    )
+    monkeypatch.setattr(wt, "_clone_url", lambda repo, token: f"file://{upstream}", raising=True)
 
     m = _manifest(name="demo", path=None, repo="org/demo")
     resolved = resolve_working_tree(m, cache_dir=tmp_path / "cache", token=None)
@@ -84,17 +82,13 @@ def test_clones_when_path_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert (resolved / ".git").is_dir()
 
 
-def test_re_runs_use_fetch_not_reclone(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_re_runs_use_fetch_not_reclone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     upstream = tmp_path / "upstream"
     _seed_upstream(upstream)
 
     import minions.working_tree as wt
 
-    monkeypatch.setattr(
-        wt, "_clone_url", lambda repo, token: f"file://{upstream}", raising=True
-    )
+    monkeypatch.setattr(wt, "_clone_url", lambda repo, token: f"file://{upstream}", raising=True)
 
     m = _manifest(name="demo", path=None, repo="org/demo")
     cache = tmp_path / "cache"
@@ -128,9 +122,7 @@ def test_falls_back_to_repo_when_path_does_not_exist(
 
     import minions.working_tree as wt
 
-    monkeypatch.setattr(
-        wt, "_clone_url", lambda repo, token: f"file://{upstream}", raising=True
-    )
+    monkeypatch.setattr(wt, "_clone_url", lambda repo, token: f"file://{upstream}", raising=True)
 
     bogus = tmp_path / "does-not-exist-on-this-host"
     m = _manifest(name="demo", path=str(bogus), repo="org/demo")

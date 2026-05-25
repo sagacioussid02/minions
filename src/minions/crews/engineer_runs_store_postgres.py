@@ -80,9 +80,7 @@ class PostgresEngineerRunStore:
 
     def list_all(self) -> list[EngineerRunRecord]:
         with connect() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT payload FROM engineer_runs ORDER BY completed_at DESC"
-            )
+            cur.execute("SELECT payload FROM engineer_runs ORDER BY completed_at DESC")
             rows = cur.fetchall()
         return [
             EngineerRunRecord.model_validate(r[0] if isinstance(r[0], dict) else json.loads(r[0]))
@@ -92,8 +90,7 @@ class PostgresEngineerRunStore:
     def list_by_project(self, project: str) -> list[EngineerRunRecord]:
         with connect() as conn, conn.cursor() as cur:
             cur.execute(
-                "SELECT payload FROM engineer_runs WHERE project = %s "
-                "ORDER BY completed_at DESC",
+                "SELECT payload FROM engineer_runs WHERE project = %s ORDER BY completed_at DESC",
                 (project,),
             )
             rows = cur.fetchall()
