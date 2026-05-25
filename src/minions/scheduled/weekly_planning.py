@@ -8,32 +8,38 @@ standard pipeline (Decision Store + notifier).
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
+from minions.activity import ActivityEntry, append
 from minions.approval.service import submit_for_approval
 from minions.approval.store import DecisionStore
 from minions.budget import evaluate as evaluate_budget
 from minions.budget import maybe_notify
 from minions.config.portfolio import PortfolioConfig
 from minions.crews.devils_advocate import attach_critique, should_critique
-from minions.crews.planning import run_planning_crew
+from minions.crews.planning import PlanningRefusedStaleError, run_planning_crew
 from minions.crews.security import attach_review as attach_security_review
 from minions.crews.security import should_review as should_security_review
+from minions.models.agile import AgileRitualRecord
 from minions.models.manifest import Manifest, load_active_manifests
 from minions.notify.base import Notifier
 from minions.onboarding import build_profile
 from minions.onboarding.profile import ProjectProfile
 
 if TYPE_CHECKING:
+    from minions.agents.memory_store_factory import AgentMemoryStoreLike
+    from minions.agile.store_factory import AgileStoreLike
+    from minions.dossiers.store_factory import DossierStoreLike
     from minions.github.client import GitHubClient
 
 
 class PlanningOutcome(BaseModel):
     project: str
-    status: Literal["submitted", "skipped", "error", "throttled"]
+    status: Literal["submitted", "skipped", "error", "throttled", "dossier_very_stale"]
     decision_id: str | None = None
     error: str | None = None
     profile_summary: str | None = None  # short one-line context for the digest
@@ -69,6 +75,12 @@ def run_weekly_planning(
     cost_log_path: Path | None = None,
     budget_notifications_path: Path | None = None,
     portfolio: PortfolioConfig | None = None,
+    projects: list[str] | None = None,
+    agile_store: AgileStoreLike | None = None,
+    activity_log_path: Path | None = None,
+    sprints_path: Path | None = None,
+    memory_store: AgentMemoryStoreLike | None = None,
+    dossier_store: DossierStoreLike | None = None,
 ) -> WeeklyPlanningReport:
     """Run the planning crew for every active project, fan out to approvals.
 
@@ -76,10 +88,17 @@ def run_weekly_planning(
     `_open_github_client` helper; the entrypoint stays free of CLI imports so
     it remains importable from a runtime host.
     """
+    import uuid
     from datetime import UTC, datetime  # local import keeps top of file lean
 
-    started = datetime.now(tz=UTC).isoformat()
+    started_dt = datetime.now(tz=UTC)
+    started = started_dt.isoformat()
     manifests = load_active_manifests(projects_dir)
+    if projects:
+        wanted = {p.lower() for p in projects}
+        manifests = {
+            name: manifest for name, manifest in manifests.items() if name.lower() in wanted
+        }
 
     outcomes: list[PlanningOutcome] = []
     for name, manifest in sorted(manifests.items()):
@@ -114,28 +133,105 @@ def run_weekly_planning(
                 gh = open_github_client(manifest)
             profile = None
             try:
-                profile = build_profile(manifest, github_client=gh)
+                profile = build_profile(manifest, github_client=gh, dossier_store=dossier_store)
             except Exception:  # noqa: BLE001
                 profile = None
 
-            decision = run_planning_crew(
-                manifest, dry_run=dry_run, api_key=api_key, profile=profile
-            )
+            # Bump the per-project sprint counter — first call returns 0
+            # (Sprint 0), subsequent calls 1, 2, 3, … Failures here are
+            # non-fatal; the Decision just lands without a sprint number.
+            sprint_number: int | None = None
+            if sprints_path is not None:
+                try:
+                    from minions.sprints.store_factory import make_sprint_counter_store
+
+                    counter = make_sprint_counter_store(sprints_path)
+                    sprint_number = counter.bump(manifest.name)
+                except Exception:  # noqa: BLE001
+                    sprint_number = None
+
+            try:
+                decision = run_planning_crew(
+                    manifest,
+                    dry_run=dry_run,
+                    api_key=api_key,
+                    profile=profile,
+                    sprint_number=sprint_number,
+                )
+            except PlanningRefusedStaleError as refused:
+                # Plant the queued-discovery decision so the next cron-discovery
+                # sweep picks it up; record an outcome and move on.
+                with suppress(Exception):
+                    store.save(refused.queued)
+                outcomes.append(
+                    PlanningOutcome(
+                        project=name,
+                        status="dossier_very_stale",
+                        decision_id=str(refused.queued.id),
+                        error=str(refused),
+                    )
+                )
+                continue
             # §9.3 — risk≥medium decisions get a Devil's Advocate critique
             # attached before notification. Non-fatal on failure.
             if should_critique(decision) and api_key is not None:
-                try:
-                    attach_critique(decision, api_key=api_key, portfolio=portfolio)
-                except Exception:  # noqa: BLE001
-                    pass
+                with suppress(Exception):
+                    attach_critique(
+                        decision,
+                        api_key=api_key,
+                        portfolio=portfolio,
+                        memory_store=memory_store,
+                    )
             # §9.4 — security review on risk>=medium. Same gate as DA, runs
             # independently so a parse failure doesn't drop the critique too.
             if should_security_review(decision) and api_key is not None:
-                try:
+                with suppress(Exception):
                     attach_security_review(decision, api_key=api_key, portfolio=portfolio)
-                except Exception:  # noqa: BLE001
-                    pass
             submit_for_approval(decision, store=store, notifier=notifier)
+            if memory_store is not None:
+                with suppress(Exception):
+                    for role in ("product_owner", "principal_engineer", "manager"):
+                        memory_store.record(
+                            agent_id=f"{role}@{name}",
+                            sprint_number=decision.sprint_number,
+                            decision_id=decision.id,
+                            event="sprint_planned",
+                            summary=(
+                                f"Planned Sprint {decision.sprint_number} for {name}: "
+                                f"{decision.summary}."
+                            ),
+                            details=decision.structured_plan.goal
+                            if decision.structured_plan
+                            else decision.diff_or_plan,
+                        )
+            if agile_store is not None:
+                ritual = AgileRitualRecord(
+                    project=name,
+                    ritual="sprint_planning",
+                    period_start=started_dt,
+                    period_end=datetime.now(tz=UTC),
+                    summary=decision.summary,
+                    blockers=[],
+                    next_actions=[
+                        "Operator reviews the proposed sprint Decision",
+                        "Engineer crew executes after approval",
+                    ],
+                    related_decision_ids=[str(decision.id)],
+                    related_pr_urls=[],
+                )
+                agile_store.save_ritual(ritual)
+                append(
+                    ActivityEntry(
+                        timestamp=datetime.now(tz=UTC),
+                        event="sprint_planned",
+                        run_id=f"sprint-planning-{name}-{uuid.uuid4().hex}",
+                        crew="weekly_planning",
+                        project=name,
+                        decision_id=str(ritual.id),
+                        agents=("product_owner", "principal_engineer", "manager"),
+                    ),
+                    path=activity_log_path,
+                )
             outcomes.append(
                 PlanningOutcome(
                     project=name,

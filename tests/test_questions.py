@@ -26,9 +26,9 @@ class _RecordingNotifier(Notifier):
 
 def _q(**kw: Any) -> QuestionRecord:
     defaults = dict(
-        project="AaaG",
+        project="Demo",
         asker_role="engineer",
-        asker_agent_id="engineer@AaaG",
+        asker_agent_id="engineer@Demo",
         target_role="manager",
         question="Should we add CI to the new repo?",
     )
@@ -81,7 +81,7 @@ def test_escalate_fires_notifier_and_marks_record(tmp_path: Path) -> None:
     # Notifier got a single text call with the right shape.
     assert len(notifier.text_calls) == 1
     subject, body = notifier.text_calls[0]
-    assert "AaaG" in subject
+    assert "Demo" in subject
     assert "engineer" in subject and "operator" in subject
     assert "manager unavailable" in body
     assert "Engineer crew failed twice on JSON truncation." in body

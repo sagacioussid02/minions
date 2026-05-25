@@ -32,7 +32,7 @@ class QuestionRecord(BaseModel):
     project: str
 
     asker_role: str  # role that needs an answer (e.g., "engineer")
-    asker_agent_id: str  # specific agent (e.g., "engineer@AaaG")
+    asker_agent_id: str  # specific agent (e.g., "engineer@Demo")
     target_role: str  # role expected to answer (e.g., "manager", "operator")
 
     question: str  # the actual question, one sentence preferred

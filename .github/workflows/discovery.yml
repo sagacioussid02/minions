@@ -1,0 +1,49 @@
+name: Discovery sweep
+
+# Weekly per-project discovery — runs the discoverer crew across every
+# active project, produces ``PROJECT_DOSSIER.md`` drafts, persists them
+# at status ``drafted`` for the Phase 5 PR-open flow to pick up.
+#
+# Cadence: Sundays 10:00 UTC. Picked deliberately ahead of the Monday
+# weekly_planning sweep so freshly merged dossiers are available to
+# planning the next morning.
+
+on:
+  schedule:
+    - cron: '0 10 * * 0'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Run without LLM calls (default: false)'
+        required: false
+        type: boolean
+        default: false
+      force:
+        description: 'Re-run discovery even when freshness is ok (default: false)'
+        required: false
+        type: boolean
+        default: false
+      project:
+        description: 'Limit to a single project (omit to run all).'
+        required: false
+        type: string
+        default: ''
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  discovery:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: >-
+        ${{
+          format(
+            'cron discovery{0}{1}{2}',
+            inputs.dry-run && '' || ' --no-dry-run',
+            inputs.force && ' --force' || '',
+            inputs.project && format(' --project {0}', inputs.project) || ''
+          )
+        }}
+    secrets: inherit

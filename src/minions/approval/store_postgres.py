@@ -17,18 +17,26 @@ class PostgresDecisionStore:
 
     def save(self, decision: Decision) -> None:
         payload = decision.model_dump(mode="json")
+        structured_plan_jsonb = (
+            Jsonb(decision.structured_plan.model_dump(mode="json"))
+            if decision.structured_plan is not None
+            else None
+        )
         with connect() as conn, conn.cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO decisions (
-                    id, project, status, type, risk, created_at, resolved_at, payload
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    id, project, status, type, risk, created_at, resolved_at,
+                    sprint_number, structured_plan, payload
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (id) DO UPDATE SET
                     project = EXCLUDED.project,
                     status = EXCLUDED.status,
                     type = EXCLUDED.type,
                     risk = EXCLUDED.risk,
                     resolved_at = EXCLUDED.resolved_at,
+                    sprint_number = EXCLUDED.sprint_number,
+                    structured_plan = EXCLUDED.structured_plan,
                     payload = EXCLUDED.payload
                 """,
                 (
@@ -39,6 +47,8 @@ class PostgresDecisionStore:
                     decision.risk,
                     decision.created_at,
                     decision.resolved_at,
+                    decision.sprint_number,
+                    structured_plan_jsonb,
                     Jsonb(payload),
                 ),
             )

@@ -34,7 +34,7 @@ def test_get_missing_returns_none(tmp_path):
 def test_list_by_status(tmp_path):
     store = DecisionStore(tmp_path / "decisions.json")
     a = _decision("Demo")
-    b = _decision("demo_five")
+    b = _decision("demo_three")
     store.save(a)
     store.save(b)
     pending = store.list_by_status(DecisionStatus.PENDING)

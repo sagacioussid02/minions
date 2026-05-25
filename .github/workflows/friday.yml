@@ -1,0 +1,27 @@
+name: Friday digest
+
+# Friday 16:00 UTC. Aggregates the past 7 days of Decision Store activity,
+# embeds the daily monitor markdown, and emails the operator the digest.
+# No LLM calls — pure aggregation + notify.
+
+on:
+  schedule:
+    - cron: '0 16 * * 5'
+  workflow_dispatch:
+    inputs:
+      no-send:
+        description: 'Render digest body without emailing (default: false)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  friday:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: ${{ inputs.no-send && 'cron friday --no-send' || 'cron friday' }}
+    secrets: inherit

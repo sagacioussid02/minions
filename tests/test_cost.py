@@ -81,9 +81,9 @@ def test_attribution_default_blank() -> None:
 
 
 def test_set_and_get_attribution() -> None:
-    set_attribution(project="demo_three", decision_id="abc-123", role="manager")
+    set_attribution(project="demo_five", decision_id="abc-123", role="manager")
     a = get_attribution()
-    assert a["project"] == "demo_three"
+    assert a["project"] == "demo_five"
     assert a["decision_id"] == "abc-123"
     assert a["role"] == "manager"
 
@@ -181,7 +181,7 @@ def test_empty_log_returns_zero(_isolated_log_path: Path) -> None:
 
 
 def test_litellm_callback_records_with_attribution(_isolated_log_path: Path) -> None:
-    set_attribution(project="demo_three", decision_id="dec-1", role="manager")
+    set_attribution(project="demo_five", decision_id="dec-1", role="manager")
     fake_response = SimpleNamespace(
         usage=SimpleNamespace(prompt_tokens=1000, completion_tokens=500)
     )
@@ -193,7 +193,7 @@ def test_litellm_callback_records_with_attribution(_isolated_log_path: Path) -> 
     )
     out = read_log()
     assert len(out) == 1
-    assert out[0].project == "demo_three"
+    assert out[0].project == "demo_five"
     assert out[0].decision_id == "dec-1"
     assert out[0].input_tokens == 1000
     # 1000 input * $3/M + 500 output * $15/M = 0.003 + 0.0075 = 0.0105

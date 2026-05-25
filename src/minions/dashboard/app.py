@@ -8,12 +8,13 @@ file). Three pages in the sidebar:
   📊 Sprint Board — per-project kanban (pending / approved / PR open / done)
 
 All data is read fresh from cost log + decision store on every render. The
-``@st.cache_data(ttl=5)`` decorator on the loader keeps the UI snappy.
+``@st.cache_data(ttl=60)`` decorator on the loader keeps the UI snappy.
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 import streamlit as st
@@ -185,11 +186,12 @@ def _render_tree(agents: list[AgentSummary]) -> None:
                 other_shared.append(a)
 
     st.markdown("### 👑 Owner")
-    st.caption("portfolio owner — sole human-in-the-loop approver")
+    st.caption(
+        f"{os.getenv('OPERATOR_EMAIL', 'operator@example.com')} — sole human-in-the-loop approver"
+    )
 
     # Sidebar-style toggle: collapse all by default, or expand. Default expanded
     # because the whole point of the tree view is to *see* the hierarchy.
-    prev_expand_all = st.session_state.get("agents_tree_expand", True)
     expand_all = st.toggle(
         "Expand all",
         value=True,
@@ -197,24 +199,8 @@ def _render_tree(agents: list[AgentSummary]) -> None:
         help="Toggle off to collapse every layer",
     )
 
-    # When the toggle changes, force-update every expander's session-state key
-    # so the change takes effect even after the user has manually opened/closed one.
-    _tree_expander_keys = [
-        "tree_exp_executive",
-        "tree_exp_specialist",
-        "tree_exp_audit",
-        "tree_exp_other_shared",
-    ]
-    # Build project keys dynamically
-    project_keys = [f"tree_exp_proj_{p}" for p in sorted(project_agents)]
-    _tree_expander_keys.extend(project_keys)
-
-    if expand_all != prev_expand_all:
-        for k in _tree_expander_keys:
-            st.session_state[k] = expand_all
-
     # Shared layers
-    for idx, layer_name in enumerate(["Executive", "Specialist", "Audit"]):
+    for layer_name in ["Executive", "Specialist", "Audit"]:
         members = shared_layer_agents[layer_name]
         if not members:
             continue
@@ -226,24 +212,19 @@ def _render_tree(agents: list[AgentSummary]) -> None:
             f"**{layer_name}** — {len(members)} agents · "
             f"🟢 {active_count} active · ⚪ {stale_count} stale{live}",
             expanded=expand_all or running > 0,
-            key=_tree_expander_keys[idx],
         ):
             for a in members:
                 _render_tree_row(a)
 
     if other_shared:
-        with st.expander(
-            f"**Other shared** — {len(other_shared)} agents",
-            expanded=expand_all,
-            key=_tree_expander_keys[3],
-        ):
+        with st.expander(f"**Other shared** — {len(other_shared)} agents", expanded=expand_all):
             for a in other_shared:
                 _render_tree_row(a)
 
     st.divider()
 
     # Per-project crews
-    for idx, project in enumerate(sorted(project_agents)):
+    for project in sorted(project_agents):
         members = project_agents[project]
         running = sum(1 for m in members if m.running_now)
         active_count = sum(1 for m in members if m.status == "active")
@@ -255,7 +236,6 @@ def _render_tree(agents: list[AgentSummary]) -> None:
             f"🟢 {active_count} active · ⚪ {stale_count} stale · "
             f"7d ${cost_7d:.4f}{live}",
             expanded=expand_all or running > 0,
-            key=project_keys[idx],
         ):
             for a in sorted(members, key=lambda x: (x.role, x.primary_label)):
                 _render_tree_row(a)
@@ -622,7 +602,7 @@ def render_sprint_board(data: DashboardData) -> None:
         return
 
     project_tabs = st.tabs(list(data.sprint_boards.keys()))
-    for tab, (project, board) in zip(project_tabs, data.sprint_boards.items(), strict=False):
+    for tab, (_project, board) in zip(project_tabs, data.sprint_boards.items(), strict=False):
         with tab:
             _render_board(board)
 
@@ -833,150 +813,6 @@ def _render_finding_detail(f) -> None:  # type: ignore[no-untyped-def]
 
 
 # ---------------------------------------------------------------------------
-# Page: Activity (live timeline + guardrails)
-# ---------------------------------------------------------------------------
-
-
-def render_activity(data: DashboardData) -> None:
-    """Chronological stream of crew lifecycle events + guardrails strip.
-
-    Reads the same activity log that powers the per-agent "running now" dot.
-    The guardrails strip surfaces the four safety layers as live evidence
-    rather than a README bullet list — so contributors can *see* the system
-    refusing to do unsafe things.
-    """
-    from minions.activity import read_log, running_now
-
-    st.header("📡 Activity")
-    st.caption(
-        "Live stream of every crew lifecycle event and guardrail block. One row per "
-        "`crew_started` / `crew_finished` / `crew_failed` / `guardrail_blocked`."
-    )
-
-    # --- Guardrails strip ---------------------------------------------------
-    entries = read_log(ACTIVITY_LOG_PATH)
-    in_flight = running_now(path=ACTIVITY_LOG_PATH)
-    cutoff_24h = datetime.now(tz=UTC) - timedelta(days=1)
-    last_24h = [e for e in entries if e.timestamp >= cutoff_24h]
-    starts_24h = sum(1 for e in last_24h if e.event == "crew_started")
-    fails_24h = sum(1 for e in last_24h if e.event == "crew_failed")
-    finished_24h = sum(1 for e in last_24h if e.event == "crew_finished")
-    success_rate = (
-        f"{(finished_24h / max(finished_24h + fails_24h, 1)) * 100:.0f}%"
-        if (finished_24h + fails_24h) > 0
-        else "—"
-    )
-
-    layer1_blocks_24h = sum(
-        1
-        for e in last_24h
-        if e.event == "guardrail_blocked" and e.crew == "guardrail:layer1_prompt"
-    )
-    layer2_blocks_24h = sum(
-        1
-        for e in last_24h
-        if e.event == "guardrail_blocked" and e.crew == "guardrail:layer2_tooling"
-    )
-
-    st.subheader("🛡️ Guardrails")
-    g1, g2, g3, g4 = st.columns(4)
-    g1.metric(
-        "Layer 1 · Prompt",
-        f"{layer1_blocks_24h} blocked · 24h",
-        help=(
-            "Safety preamble prepended to every agent (src/minions/agents/safety.py). "
-            "Counter shows agent self-reported refusals captured via "
-            "activity.record_guardrail_block(layer='layer1_prompt', ...)."
-        ),
-    )
-    g2.metric(
-        "Layer 2 · Tooling",
-        f"{layer2_blocks_24h} blocked · 24h",
-        help=(
-            "GitHub client refuses pushes to main/master/trunk/develop and has no merge(). "
-            "Counter shows real ProtectedBranchError raises in the last 24h."
-        ),
-    )
-    g3.metric(
-        "Layer 3 · Branch protect",
-        "GitHub",
-        help="Required reviews on main — enforced outside this codebase.",
-    )
-    g4.metric(
-        "Layer 4 · Egress",
-        "Sandbox",
-        help="Runtime egress allowlist — enforced outside this codebase.",
-    )
-
-    st.divider()
-
-    # --- Live counters ------------------------------------------------------
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Running now", len(in_flight))
-    c2.metric("Started · 24h", starts_24h)
-    c3.metric("Success rate · 24h", success_rate)
-    c4.metric(
-        "Failed · 24h",
-        fails_24h,
-        delta=None,
-        delta_color="inverse",
-    )
-
-    if not entries:
-        st.info(
-            "No activity yet. Run `minions cron weekly --no-dry-run` to emit "
-            "lifecycle events, or hit the dashboard after the next scheduled "
-            "tick."
-        )
-        return
-
-    # --- Filters ------------------------------------------------------------
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        projects = sorted({e.project for e in entries if e.project})
-        project_filter = st.multiselect("Project", projects, default=projects)
-    with col2:
-        crews = sorted({e.crew for e in entries if e.crew})
-        crew_filter = st.multiselect("Crew", crews, default=crews)
-    with col3:
-        events = ["crew_started", "crew_finished", "crew_failed", "guardrail_blocked"]
-        event_filter = st.multiselect("Event", events, default=events)
-
-    visible = [
-        e
-        for e in entries
-        if (e.project or "") in project_filter and e.crew in crew_filter and e.event in event_filter
-    ]
-    visible.sort(key=lambda e: e.timestamp, reverse=True)
-    visible = visible[:200]  # cap render cost
-
-    if not visible:
-        st.info("No events match the current filters.")
-        return
-
-    icon = {
-        "crew_started": "▶️",
-        "crew_finished": "✅",
-        "crew_failed": "🔴",
-        "guardrail_blocked": "🛡️",
-    }
-    rows = [
-        {
-            "when": e.timestamp.strftime("%m-%d %H:%M:%S"),
-            "event": f"{icon.get(e.event, '·')} {e.event.replace('crew_', '')}",
-            "crew": e.crew,
-            "project": e.project or "—",
-            "agents": ", ".join(e.agents) if e.agents else "—",
-            "decision": (e.decision_id or "—")[:8],
-            "error": (e.error or "")[:60],
-        }
-        for e in visible
-    ]
-    st.dataframe(rows, use_container_width=True, hide_index=True)
-    st.caption(f"Showing {len(visible)} most recent of {len(entries)} total events.")
-
-
-# ---------------------------------------------------------------------------
 # Entry
 # ---------------------------------------------------------------------------
 
@@ -997,7 +833,7 @@ def main() -> None:
         st.caption("Autonomous engineering org")
         page = st.radio(
             "Page",
-            ["🤖 Agents", "📡 Activity", "📋 Decisions", "📊 Sprint Board", "🛡️ Audit"],
+            ["🤖 Agents", "📋 Decisions", "📊 Sprint Board", "🛡️ Audit"],
         )
         st.divider()
         if st.button("🔄 Refresh now", use_container_width=True):
@@ -1013,8 +849,6 @@ def main() -> None:
     if page == "🤖 Agents":
         _render_agent_detail(data)
         render_agents(data)
-    elif page == "📡 Activity":
-        render_activity(data)
     elif page == "📋 Decisions":
         render_decisions(data)
     elif page == "📊 Sprint Board":

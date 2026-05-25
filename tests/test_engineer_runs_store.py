@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from minions.crews.engineer import EngineerResult
-from minions.crews.engineer_runs_store import EngineerRunStore
+from minions.crews.engineer_runs_store import EngineerRunStore, PRReviewerAssignment
 
 
 def _result(**kwargs) -> EngineerResult:
@@ -25,9 +25,9 @@ def _result(**kwargs) -> EngineerResult:
 
 def test_save_then_get_round_trip(tmp_path: Path) -> None:
     store = EngineerRunStore(tmp_path / "engineer_runs.json")
-    record = store.save(_result(), project="demo_three")
+    record = store.save(_result(), project="demo_five")
     assert record.decision_id == "dec-1"
-    assert record.project == "demo_three"
+    assert record.project == "demo_five"
     assert record.pr_url == "https://github.com/o/r/pull/1"
 
     fetched = store.get("dec-1")
@@ -69,3 +69,26 @@ def test_corrupt_file_returns_empty(tmp_path: Path) -> None:
     # Subsequent save still works (overwrites the bad file).
     store.save(_result(), project="p")
     assert store.get("dec-1") is not None
+
+
+def test_review_loop_state_round_trips(tmp_path: Path) -> None:
+    store = EngineerRunStore(tmp_path / "engineer_runs.json")
+    rec = store.save(_result(), project="p")
+    rec.review_status = "assigned"
+    rec.reviewers = [
+        PRReviewerAssignment(
+            role="ttl",
+            agent_id="ttl@p",
+            display_name="Tech Team Lead",
+            status="approved",
+            verdict="approve",
+            summary="looks good",
+        )
+    ]
+    store.update(rec)
+
+    fetched = store.get("dec-1")
+    assert fetched is not None
+    assert fetched.review_status == "assigned"
+    assert fetched.reviewers[0].role == "ttl"
+    assert fetched.reviewers[0].verdict == "approve"

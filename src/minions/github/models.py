@@ -41,6 +41,7 @@ class PullRequest(BaseModel):
     merged: bool = False
     merged_at: str | None = None  # ISO 8601 string from GitHub
     closed_at: str | None = None
+    mergeable_state: str | None = None
 
 
 class BranchRef(BaseModel):

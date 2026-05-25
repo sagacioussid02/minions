@@ -11,19 +11,49 @@ Phase 6 swap: replace JSON with the Neon Postgres engineer_runs table.
 from __future__ import annotations
 
 import json
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 from minions.crews.engineer import EngineerResult
+
+ReviewStatus = Literal[
+    "not_started",
+    "assigned",
+    "reviewing",
+    "changes_requested",
+    "creator_responded",
+    "crew_approved",
+    "merge_attempted",
+    "merge_blocked",
+    "merged",
+    "conflict_queued",
+    "superseded",
+]
+ReviewerStatus = Literal["assigned", "commented", "approved", "changes_requested"]
+ReviewerVerdict = Literal["approve", "request_changes", "comment"]
+
+
+class PRReviewerAssignment(BaseModel):
+    """One internal crew reviewer assigned to a PR."""
+
+    role: str
+    agent_id: str
+    display_name: str
+    status: ReviewerStatus = "assigned"
+    verdict: ReviewerVerdict | None = None
+    summary: str | None = None
+    comment_posted_at: datetime | None = None
 
 
 class EngineerRunRecord(BaseModel):
     """One persisted engineer run, keyed by decision_id (last write wins)."""
 
     decision_id: str
+    task_id: str | None = None
     project: str
     completed_at: datetime
     pr_url: str | None = None
@@ -51,6 +81,38 @@ class EngineerRunRecord(BaseModel):
     # Set once the QA crew has posted a review comment on the PR.
     qa_review_posted_at: datetime | None = None
 
+    # Populated by the PR review-loop sweep. This is the explicit state that the
+    # Sprint Board should prefer over inferred reviewer status.
+    review_status: ReviewStatus = "not_started"
+    review_round: int = 0
+    reviewers: list[PRReviewerAssignment] = Field(default_factory=list)
+    review_started_at: datetime | None = None
+    creator_response_posted_at: datetime | None = None
+    crew_approved_at: datetime | None = None
+    merge_attempted_at: datetime | None = None
+    merge_blocked_reason: str | None = None
+    human_handoff_posted_at: datetime | None = None
+    conflict_resolution_queued_at: datetime | None = None
+    superseded_by_pr_url: str | None = None
+    superseded_at: datetime | None = None
+
+    # PR ownership — set at PR-open time, sticky for the PR's life. The
+    # owner sweep dispatches THIS exact agent on every retry, so a single
+    # accountable engineer ships the PR from open to merge regardless of
+    # how many CI failures or conflicts happen in between.
+    #
+    # Legacy rows (created before this field shipped) default to the
+    # canonical engineer seat. The first owner-sweep tick after rollout
+    # backfills any None values via the same default.
+    owner_agent_id: str | None = None
+    # Set once the owner-sweep escalated this PR to the operator after
+    # ``flow_control.max_retries_per_pr`` failed retries. Idempotent
+    # gate: subsequent ticks see this and skip.
+    escalated_question_id: str | None = None
+    # Cached classification of the last failure observed by the owner
+    # sweep, used to phrase the next prompt + the operator handoff.
+    last_failure_kind: str | None = None  # "ci_failure" | "merge_conflict" | None
+
 
 class EngineerRunStore:
     """JSON file at ``data/local/engineer_runs.json`` keyed by decision_id."""
@@ -72,8 +134,13 @@ class EngineerRunStore:
         self.path.write_text(json.dumps(data, indent=2, default=str))
 
     def save(self, result: EngineerResult, *, project: str) -> EngineerRunRecord:
+        # Sticky-owner default: prefer the agent the engineer crew reported;
+        # fall back to the canonical engineer seat so legacy callsites
+        # (older test fixtures, replays) still get a non-None owner.
+        owner = getattr(result, "owner_agent_id", None) or f"engineer@{project}"
         record = EngineerRunRecord(
             decision_id=result.decision_id,
+            task_id=result.task_id,
             project=project,
             completed_at=datetime.now(tz=UTC),
             pr_url=result.pr_url,
@@ -85,10 +152,12 @@ class EngineerRunStore:
             skipped=result.skipped,
             skip_reason=result.skip_reason,
             dry_run=result.dry_run,
+            owner_agent_id=owner,
         )
         all_data = self._load_all()
         all_data[result.decision_id] = record.model_dump(mode="json")
         self._save_all(all_data)
+        self._capture_learning(record)
         return record
 
     def get(self, decision_id: str) -> EngineerRunRecord | None:
@@ -108,4 +177,15 @@ class EngineerRunStore:
         all_data = self._load_all()
         all_data[record.decision_id] = record.model_dump(mode="json")
         self._save_all(all_data)
+        self._capture_learning(record)
         return record
+
+    def _capture_learning(self, record: EngineerRunRecord) -> None:
+        with suppress(Exception):
+            from minions.learning.capture import capture_engineer_run
+            from minions.learning.store import AgentLearningStore
+
+            capture_engineer_run(
+                record,
+                AgentLearningStore(self.path.parent / "agent_learning.json"),
+            )

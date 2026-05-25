@@ -97,7 +97,7 @@ def test_sweep_ttl_can_be_zero_for_testing(tmp_path: Path) -> None:
     """Setting ttl=0 should immediately reject any pending decision."""
     store = DecisionStore(tmp_path / "decisions.json")
     notifier = _Recorder()
-    fresh = _seed(store, age_hours=0.001)  # essentially "now"
+    _seed(store, age_hours=0.001)  # essentially "now"
     timed_out = sweep_timeouts(store=store, notifier=notifier, ttl_hours=0)
     assert len(timed_out) == 1
 

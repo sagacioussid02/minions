@@ -55,6 +55,42 @@ def _names_for(table: dict[str, str | list[str]], role: Role) -> list[str]:
     return [str(n) for n in raw]
 
 
+def seats_for(role_value: str, project: str) -> int:
+    """Return the seat count for ``role`` in ``project``. Default 1.
+
+    Reads the project's manifest and counts how many slots
+    ``project_role_slots`` produces for the role. Used by the
+    refinement crew's load-balancer to enumerate per-seat candidate
+    agent_ids. Cheap because manifests are tiny YAML files cached by
+    ``load_active_manifests``.
+    """
+    from pathlib import Path
+
+    from minions.models.manifest import load_active_manifests
+    from minions.models.roles import Role as _Role
+
+    # Lazy-resolve the manifest. If anything goes wrong (project not
+    # active, manifest dir missing, etc.), fall back to singleton seat
+    # so the load-balancer keeps working — same behaviour as today.
+    try:
+        repo_root = Path(__file__).resolve().parents[3]
+        manifests = load_active_manifests(repo_root / "projects")
+    except Exception:  # noqa: BLE001
+        return 1
+    manifest = manifests.get(project) or next(
+        (m for k, m in manifests.items() if k.lower() == project.lower()), None
+    )
+    if manifest is None:
+        return 1
+    try:
+        role_enum = _Role(role_value)
+    except ValueError:
+        return 1
+    slots = project_role_slots(manifest)
+    count = sum(1 for r in slots if r is role_enum)
+    return max(count, 1)
+
+
 def project_role_slots(manifest: Manifest) -> list[Role]:
     """Apply the manifest's team overrides to the per-project template.
 

@@ -21,7 +21,7 @@ from minions.models.decision import Decision, DecisionType, DevilsAdvocateCritiq
 
 def _decision(risk: str) -> Decision:
     return Decision(
-        project="demo_three",
+        project="demo_five",
         type=DecisionType.FEATURE,
         summary="risky thing",
         rationale="r",

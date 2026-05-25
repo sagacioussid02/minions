@@ -146,10 +146,7 @@ def _next_fire(cron: str, *, now: datetime) -> datetime | None:
         try:
             n = int(dow)
             # 0/7 = Sunday in cron, Python: Monday=0..Sunday=6
-            if n in (0, 7):
-                target_dow = 6
-            else:
-                target_dow = n - 1
+            target_dow = 6 if n in (0, 7) else n - 1
         except ValueError:
             return None
 

@@ -1,13 +1,13 @@
 name: PR follow-up
 
-# Every 4 hours. Polls open minions-authored PRs, fetches CI status, and on
+# Every 2h. Polls open minions-authored PRs, fetches CI status, and on
 # failure queues a "fix" Decision (auto-approved) that the next
 # execute-approved tick picks up. This is the "agents iterate on their own
 # work" loop.
 
 on:
   schedule:
-    - cron: '0 */4 * * *'
+    - cron: '30 */2 * * *'
   workflow_dispatch:
     inputs:
       dry-run:
@@ -19,7 +19,7 @@ on:
         description: 'Cap on auto-fix attempts per original PR (default: 1)'
         required: false
         type: string
-        default: '1'
+        default: '3'
 
 concurrency:
   group: minions-cron
@@ -31,6 +31,6 @@ jobs:
     with:
       command: >-
         ${{ inputs.dry-run
-            && format('cron pr-followup --dry-run --max-attempts {0}', inputs.max-attempts || '1')
-            || format('cron pr-followup --no-dry-run --max-attempts {0}', inputs.max-attempts || '1') }}
+            && format('cron pr-followup --dry-run --max-attempts {0}', inputs.max-attempts || '3')
+            || format('cron pr-followup --no-dry-run --max-attempts {0}', inputs.max-attempts || '3') }}
     secrets: inherit

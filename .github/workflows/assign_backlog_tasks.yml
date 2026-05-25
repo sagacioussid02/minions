@@ -1,0 +1,22 @@
+name: Assign backlog tasks
+
+# Phase D of openspec/enriched-sprint-planning. Sweeps `unassigned`
+# Tasks every 30 min and assigns them when an agent's open WIP drops
+# below MAX_WIP_PER_AGENT. Cheap when there's no backlog — does
+# nothing but a SELECT.
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  assign:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: 'cron assign-backlog-tasks'
+    secrets: inherit

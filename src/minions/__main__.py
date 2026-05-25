@@ -12,7 +12,6 @@ Subgroups:
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -91,6 +90,18 @@ questions_app = typer.Typer(
     help="Inter-agent Question Records (escalation channel).",
     no_args_is_help=True,
 )
+dossier_app = typer.Typer(
+    help="Inspect per-project PROJECT_DOSSIER.md state (latest draft + freshness).",
+    no_args_is_help=True,
+)
+backlog_app = typer.Typer(
+    help="Propose and create GitHub issues from a merged PROJECT_DOSSIER.md.",
+    no_args_is_help=True,
+)
+transcripts_app = typer.Typer(
+    help="Inspect per-run crew transcripts (what each agent said in a session).",
+    no_args_is_help=True,
+)
 app.add_typer(decisions_app, name="decisions")
 app.add_typer(secrets_app, name="secrets")
 app.add_typer(github_app, name="github")
@@ -99,6 +110,9 @@ app.add_typer(cost_app, name="cost")
 app.add_typer(audit_app, name="audit")
 app.add_typer(db_app, name="db")
 app.add_typer(questions_app, name="questions")
+app.add_typer(dossier_app, name="dossier")
+app.add_typer(backlog_app, name="backlog")
+app.add_typer(transcripts_app, name="transcripts")
 console = Console()
 
 
@@ -106,6 +120,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = REPO_ROOT / "config" / "portfolio.yaml"
 PROJECTS_DIR = REPO_ROOT / "projects"
 DECISION_STORE_PATH = REPO_ROOT / "data" / "local" / "decisions.json"
+CREW_TRANSCRIPTS_PATH = REPO_ROOT / "data" / "local" / "crew_transcripts.json"
+DEPLOYMENTS_PATH = REPO_ROOT / "data" / "local" / "deployments.json"
+DOSSIER_DRAFTS_PATH = REPO_ROOT / "data" / "local" / "dossier_drafts.json"
 DOTENV_PATH = REPO_ROOT / ".env"
 
 
@@ -156,11 +173,17 @@ ACTIVITY_LOG_PATH = REPO_ROOT / "data" / "local" / "activity.jsonl"
 ENGINEER_RUNS_PATH = REPO_ROOT / "data" / "local" / "engineer_runs.json"
 AUDIT_FINDINGS_PATH = REPO_ROOT / "data" / "local" / "audit_findings.json"
 QUESTIONS_PATH = REPO_ROOT / "data" / "local" / "questions.json"
+AGILE_PATH = REPO_ROOT / "data" / "local" / "agile.json"
+INTERVIEWS_PATH = REPO_ROOT / "data" / "local" / "interviews.json"
+SPRINTS_PATH = REPO_ROOT / "data" / "local" / "sprints.json"
+TASKS_PATH = REPO_ROOT / "data" / "local" / "tasks.json"
+AGENT_MEMORY_PATH = REPO_ROOT / "data" / "local" / "agent_memory.json"
+AGENT_LEARNING_PATH = REPO_ROOT / "data" / "local" / "agent_learning.json"
 init_cost_tracking(log_path=COST_LOG_PATH)
 
 from minions.activity import set_log_path as _set_activity_log_path  # noqa: E402
 
-_set_activity_log_path(ACTIVITY_LOG_PATH)
+_set_activity_log_path(ACTIVITY_LOG_PATH, force_jsonl=False)
 
 
 if TYPE_CHECKING:
@@ -245,6 +268,11 @@ def check() -> None:
             f"  ✓ [bold]{name}[/bold] — "
             f"weekly ${m.weekly_budget_usd}, monthly ${m.monthly_budget_usd}, "
             f"cadence {m.cadence_profile}, share_weight {m.delivery_targets.share_weight}"
+        )
+        publish_label = "in-repo" if m.dossier.publish else "local-only"
+        rprint(
+            f"      [dim]dossier: publish={publish_label}, "
+            f"max_new_issues/cycle={m.dossier.max_new_issues_per_cycle}[/dim]"
         )
 
     floor = portfolio.budget_envelope.monthly_total_floor_usd
@@ -514,21 +542,40 @@ def plan(
 
     profile = None
     if grounded:
+        from minions.dossiers.store_factory import make_dossier_store
+
         gh = _open_github_client(manifest) if manifest.source.kind == "github" else None
         try:
-            profile = build_profile(manifest, github_client=gh)
+            profile = build_profile(
+                manifest,
+                github_client=gh,
+                dossier_store=make_dossier_store(DOSSIER_DRAFTS_PATH),
+            )
             rprint(
                 f"[dim]Grounded with profile: {len(profile.languages)} langs, "
                 f"{len(profile.package_files)} pkg files, "
                 f"{profile.todo_count} TODOs, "
                 f"{len(profile.open_issues)} open issues, "
-                f"tasks.md remaining={profile.tasks_md.remaining if profile.tasks_md else 'n/a'}[/dim]"
+                f"tasks.md remaining={profile.tasks_md.remaining if profile.tasks_md else 'n/a'}, "
+                f"dossier={profile.dossier_freshness}[/dim]"
             )
         except Exception as e:  # noqa: BLE001
             rprint(f"[yellow]Profile build failed, continuing ungrounded:[/yellow] {e}")
             profile = None
 
-    decision = run_planning_crew(manifest, dry_run=dry_run, api_key=api_key, profile=profile)
+    from minions.crews.planning import PlanningRefusedStaleError
+
+    try:
+        decision = run_planning_crew(manifest, dry_run=dry_run, api_key=api_key, profile=profile)
+    except PlanningRefusedStaleError as refused:
+        rprint(
+            f"\n[yellow]Planning refused — dossier is very_stale.[/yellow]\n"
+            f"Filed auto-approved discovery decision [bold]{refused.queued.id}[/bold].\n"
+            f"Run `minions discover {manifest.name} --no-dry-run --force` or wait for "
+            "the weekly discovery sweep."
+        )
+        submit_for_approval(refused.queued, store=_store(), notifier=_notifier())
+        raise typer.Exit(0) from refused
 
     # §9.3 — risk≥medium decisions get a Devil's Advocate counter-argument
     # before they hit the operator's inbox. Skipped silently for dry-run / low-risk.
@@ -554,6 +601,430 @@ def plan(
     )
 
 
+@app.command()
+def discover(
+    project: str = typer.Argument(..., help="Project name (case-insensitive)."),
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Dry run collects RepoReadings + freshness but skips LLM calls and "
+        "writes nothing. Use --no-dry-run to invoke the discoverer crew.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Ignore the freshness gate and re-run discovery even if the latest "
+        "merged dossier is still 'ok'.",
+    ),
+) -> None:
+    """Run the discoverer crew for a project. Produces a DossierDraft (drafted)."""
+    from minions.dossiers.store_factory import make_dossier_store
+    from minions.scheduled import run_discovery_sweep
+
+    manifests = load_active_manifests(PROJECTS_DIR)
+    manifest = _resolve_project(project, manifests)
+
+    rprint(
+        f"\n[bold]Discovering dossier for[/bold] [cyan]{manifest.name}[/cyan] "
+        f"(monthly cap ${manifest.monthly_budget_usd}/mo, "
+        f"force={force}, dry_run={dry_run})"
+    )
+
+    api_key: str | None = None
+    if not dry_run:
+        try:
+            api_key = get_anthropic_api_key()
+        except SecretNotFound as e:
+            rprint(f"[red]Missing API key:[/red] {e}")
+            raise typer.Exit(1) from e
+        ok, message = anthropic_check.auth_check(api_key)
+        if not ok:
+            rprint(f"[red]Anthropic preflight failed:[/red] {message}")
+            raise typer.Exit(1)
+
+    store = make_dossier_store(DOSSIER_DRAFTS_PATH)
+    report = run_discovery_sweep(
+        projects_dir=PROJECTS_DIR,
+        dossier_store=store,
+        api_key=api_key,
+        dry_run=dry_run,
+        force=force,
+        cost_log_path=COST_LOG_PATH,
+        projects=[manifest.name],
+        decision_store=_store(),
+        notifier=_notifier(),
+    )
+    for o in report.outcomes:
+        if o.status == "submitted":
+            rprint(
+                f"  [green]✓[/green] {o.project} — draft {(o.draft_id or '')[:8]} "
+                f"at {(o.commit_sha or '')[:8]} (freshness was {o.freshness})"
+            )
+        elif (
+            o.status == "skipped_fresh"
+            or o.status == "skipped_target_missing"
+            or o.status == "throttled"
+        ):
+            rprint(f"  [yellow]⊘[/yellow] {o.project} — {o.reason}")
+        elif o.status == "verifier_failed":
+            rprint(f"  [red]✗[/red] {o.project} — verifier rejected: {o.reason}")
+        else:
+            rprint(f"  [red]✗[/red] {o.project} — {o.reason}")
+
+
+@dossier_app.command("show")
+def dossier_show(
+    project: str = typer.Argument(..., help="Project name (case-insensitive)."),
+    full: bool = typer.Option(False, "--full", help="Print the full dossier markdown body."),
+) -> None:
+    """Print the latest merged dossier for a project, with freshness label."""
+    from minions.dossiers.freshness import compute_freshness
+    from minions.dossiers.store_factory import make_dossier_store
+
+    manifests = load_active_manifests(PROJECTS_DIR)
+    manifest = _resolve_project(project, manifests)
+    store = make_dossier_store(DOSSIER_DRAFTS_PATH)
+
+    latest = store.latest_merged(manifest.name)
+    if latest is None:
+        # Fall back to the most recent draft of any status so the operator sees
+        # *something* during the period between first discovery and first merge.
+        rows = store.list_for_project(manifest.name, limit=1)
+        latest = rows[0] if rows else None
+
+    if latest is None:
+        rprint(
+            f"[yellow]No dossier on file for {manifest.name}.[/yellow] "
+            f"Run `minions discover {manifest.name} --no-dry-run` to create one."
+        )
+        return
+
+    freshness = compute_freshness(
+        latest if latest.status.value == "merged" else None,
+        overrides=manifest.dossier.freshness_overrides,
+    )
+    rprint(
+        f"\n[bold]{manifest.name}[/bold] dossier "
+        f"({latest.status.value}, commit {latest.commit_sha[:8]}, "
+        f"crew {latest.crew_version})"
+    )
+    rprint(
+        f"  freshness: [cyan]{freshness.label}[/cyan] "
+        f"(age {freshness.age_days}d) — {freshness.reason}"
+    )
+    if latest.verifier_log:
+        rprint(f"  verifier: {latest.verifier_log.splitlines()[0]}")
+    if latest.pr_url:
+        rprint(f"  pr: {latest.pr_url}")
+    if full:
+        rprint("\n---\n")
+        rprint(latest.markdown)
+
+
+@dossier_app.command("sync")
+def dossier_sync() -> None:
+    """Reconcile dossier draft status against Decision + EngineerRun state."""
+    from minions.crews.engineer_runs_store_factory import make_engineer_runs_store
+    from minions.dossiers.store_factory import make_dossier_store
+    from minions.dossiers.sync import sync_dossier_drafts
+    from minions.learning.store_factory import make_agent_learning_store
+
+    drafts = make_dossier_store(DOSSIER_DRAFTS_PATH)
+    runs = make_engineer_runs_store(ENGINEER_RUNS_PATH)
+    learning = make_agent_learning_store(AGENT_LEARNING_PATH)
+    report = sync_dossier_drafts(
+        dossier_store=drafts,
+        decision_store=_store(),
+        engineer_runs_store=runs,
+        learning_store=learning,
+    )
+    rprint(
+        f"\n[bold]Dossier sync[/bold] — "
+        f"merged {report.merged}, rejected {report.rejected}, "
+        f"superseded {report.superseded}, total transitions {len(report.transitions)}"
+    )
+    for t in report.transitions:
+        rprint(
+            f"  [cyan]{t.project}[/cyan] {t.draft_id[:8]}: "
+            f"{t.from_status.value} → {t.to_status.value} ({t.reason})"
+        )
+
+
+@dossier_app.command("freshness")
+def dossier_freshness() -> None:
+    """Table: per-project dossier age + commit drift + freshness label."""
+    from minions.dossiers.freshness import compute_freshness
+    from minions.dossiers.store_factory import make_dossier_store
+
+    store = make_dossier_store(DOSSIER_DRAFTS_PATH)
+    manifests = load_active_manifests(PROJECTS_DIR)
+
+    table = Table(title="Dossier freshness", show_lines=False)
+    table.add_column("Project", style="bold")
+    table.add_column("Status")
+    table.add_column("Commit")
+    table.add_column("Age (d)")
+    table.add_column("Freshness")
+    table.add_column("Reason")
+
+    for name, manifest in manifests.items():
+        latest = store.latest_merged(name)
+        report = compute_freshness(latest, overrides=manifest.dossier.freshness_overrides)
+        if latest is None:
+            table.add_row(name, "—", "—", "—", report.label, report.reason)
+        else:
+            table.add_row(
+                name,
+                latest.status.value,
+                latest.commit_sha[:8],
+                str(report.age_days),
+                report.label,
+                report.reason,
+            )
+    console.print(table)
+
+
+@backlog_app.command("propose")
+def backlog_propose(
+    project: str = typer.Argument(..., help="Project name (case-insensitive)."),
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Dry run skips LLM calls and never files a Decision Record.",
+    ),
+) -> None:
+    """Run the backlog proposer crew against a project's latest merged dossier.
+
+    Files a `backlog_proposal` Decision Record for the operator to approve;
+    creation lands via `minions backlog create <decision-id>` after approval.
+    """
+    from minions.crews.backlog_proposer import run_backlog_proposer
+    from minions.dossiers.backlog import file_backlog_after_merge
+    from minions.dossiers.store_factory import make_dossier_store
+
+    manifests = load_active_manifests(PROJECTS_DIR)
+    manifest = _resolve_project(project, manifests)
+
+    drafts = make_dossier_store(DOSSIER_DRAFTS_PATH)
+    latest = drafts.latest_merged(manifest.name)
+    if latest is None:
+        rprint(
+            f"[red]No merged dossier for {manifest.name}.[/red] "
+            f"Run `minions discover {manifest.name} --no-dry-run` first."
+        )
+        raise typer.Exit(1)
+
+    api_key: str | None = None
+    if not dry_run:
+        try:
+            api_key = get_anthropic_api_key()
+        except SecretNotFound as e:
+            rprint(f"[red]Missing API key:[/red] {e}")
+            raise typer.Exit(1) from e
+
+    raw = run_backlog_proposer(manifest, latest, api_key=api_key, dry_run=dry_run)
+    if raw is None:
+        rprint(
+            f"[yellow]Dry-run: skipped LLM. Re-run with --no-dry-run to "
+            f"actually propose backlog issues for {manifest.name}.[/yellow]"
+        )
+        return
+
+    rprint(
+        f"[dim]Proposer returned {len(raw.candidates)} raw candidates; "
+        f"applying dedupe + cap...[/dim]"
+    )
+
+    github = _open_github_client(manifest)
+    decision = file_backlog_after_merge(
+        raw=raw,
+        manifest=manifest,
+        dossier=latest,
+        decision_store=_store(),
+        notifier=_notifier(),
+        github=github,
+    )
+    if decision is None:
+        rprint(
+            f"[yellow]Nothing left after dedupe + cap "
+            f"({manifest.dossier.max_new_issues_per_cycle}/cycle) — no Decision filed.[/yellow]"
+        )
+        return
+    rprint(
+        f"[green]Backlog Decision filed:[/green] [bold]{decision.id}[/bold] "
+        f"(approve via `minions decisions approve {str(decision.id)[:8]}`, "
+        f"then `minions backlog create {str(decision.id)[:8]}`)."
+    )
+
+
+@backlog_app.command("create")
+def backlog_create(
+    decision_id: str = typer.Argument(..., help="Approved backlog-proposal Decision id."),
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Dry run skips GitHub mutations; prints what would be opened.",
+    ),
+) -> None:
+    """Create one GitHub issue per surviving backlog candidate."""
+    from minions.dossiers.backlog import (
+        create_issues_for_decision,
+        is_backlog_proposal_decision,
+        proposal_from_decision,
+    )
+    from minions.models.decision import DecisionStatus
+
+    decision = _find_by_prefix(decision_id)
+    if decision is None:
+        raise typer.Exit(1)
+    if not is_backlog_proposal_decision(decision):
+        rprint("[red]Decision is not a backlog proposal[/red] — wrong type or missing payload.")
+        raise typer.Exit(1)
+    if decision.status is not DecisionStatus.APPROVED:
+        rprint(
+            f"[red]Decision is {decision.status.value}; backlog worker only "
+            f"runs on APPROVED decisions.[/red]"
+        )
+        raise typer.Exit(1)
+
+    manifests = load_active_manifests(PROJECTS_DIR)
+    manifest = _resolve_project(decision.project, manifests)
+
+    if dry_run:
+        proposal = proposal_from_decision(decision)
+        if proposal is None:
+            rprint("[red]Proposal payload could not be parsed.[/red]")
+            raise typer.Exit(1)
+        rprint(
+            f"\n[bold]Dry run[/bold] — would file {len(proposal.candidates)} "
+            f"issue(s) on [cyan]{manifest.source.repo}[/cyan]:"
+        )
+        for cand in proposal.candidates:
+            rprint(f"  [{cand.label()}] {cand.title}")
+        return
+
+    github = _open_github_client(manifest)
+    if github is None:
+        rprint("[red]Failed to open GitHub client.[/red]")
+        raise typer.Exit(1)
+    with github:
+        outcome = create_issues_for_decision(decision=decision, manifest=manifest, github=github)
+    rprint(
+        f"\n[bold]Backlog create[/bold] — "
+        f"created {len(outcome.created)}, "
+        f"dropped {len(outcome.dropped)}, capped {outcome.capped}"
+    )
+    for issued in outcome.created:
+        rprint(f"  [green]✓[/green] #{issued.number} {issued.title} — {issued.html_url}")
+    for cand, reason in outcome.dropped:
+        rprint(f"  [yellow]⊘[/yellow] {cand.title} — {reason}")
+
+    # Emit one CTO learning event so the executive layer's memory captures
+    # the backlog-proposal round-trip. Best-effort — never blocks the worker.
+    from contextlib import suppress
+
+    from minions.dossiers.exec_events import record_backlog_proposed
+    from minions.learning.store_factory import make_agent_learning_store
+
+    proposal_payload = proposal_from_decision(decision)
+    if proposal_payload is not None:
+        with suppress(Exception):
+            learning_store = make_agent_learning_store(AGENT_LEARNING_PATH)
+            event = record_backlog_proposed(
+                decision=decision,
+                proposal=proposal_payload,
+                learning_store=learning_store,
+                created_count=len(outcome.created),
+            )
+            if event is not None:
+                rprint(f"  [dim]cto/learning: {event.id}[/dim]")
+
+
+@transcripts_app.command("show")
+def transcripts_show(
+    run_id: str = typer.Argument(..., help="run_id from activity feed / engineer run."),
+) -> None:
+    """Print the per-agent conversation for one crew run."""
+    from minions.transcripts.store_factory import make_transcript_store
+
+    store = make_transcript_store(CREW_TRANSCRIPTS_PATH)
+    rows = store.list_by_run(run_id)
+    if not rows:
+        rprint(f"[yellow]No transcript rows for run_id={run_id!r}.[/yellow]")
+        raise typer.Exit(0)
+
+    head = rows[0]
+    rprint(
+        f"\n[bold]{head.crew} crew · {head.project}[/bold] "
+        f"[dim]({len(rows)} message(s), run {run_id[:12]})[/dim]\n"
+    )
+    phase_color = {
+        "pitch": "cyan",
+        "rebuttal": "yellow",
+        "synthesis": "green",
+        "review": "magenta",
+        "task_output": "white",
+        "other": "dim",
+    }
+    for m in rows:
+        color = phase_color.get(m.role_in_conversation, "white")
+        name = m.agent_display_name or m.agent_role
+        rprint(
+            f"[{color}]#{m.sequence:>2} [{m.role_in_conversation}][/{color}] "
+            f"[bold]{name}[/bold] [dim]({m.agent_role})[/dim]"
+        )
+        rprint(m.content)
+        rprint("[dim]" + "─" * 60 + "[/dim]")
+
+
+@transcripts_app.command("list")
+def transcripts_list(
+    project: str = typer.Argument(..., help="Project name (case-insensitive)."),
+    limit: int = typer.Option(20, "--limit", "-n", help="Max recent runs to list."),
+) -> None:
+    """List recent crew runs for a project with their message counts."""
+    from minions.transcripts.store_factory import make_transcript_store
+
+    manifests = load_active_manifests(PROJECTS_DIR)
+    manifest = _resolve_project(project, manifests)
+    store = make_transcript_store(CREW_TRANSCRIPTS_PATH)
+    rows = store.list_for_project(manifest.name, limit=200)
+    if not rows:
+        rprint(f"[yellow]No transcripts recorded yet for {manifest.name}.[/yellow]")
+        return
+
+    # Group by run_id (ordered by recency from the store).
+    by_run: dict[str, list] = {}
+    for m in rows:
+        by_run.setdefault(m.run_id, []).append(m)
+
+    table = Table(
+        title=f"Recent crew runs · {manifest.name}",
+        show_lines=False,
+    )
+    table.add_column("run", style="dim")
+    table.add_column("crew")
+    table.add_column("msgs")
+    table.add_column("agents")
+    table.add_column("started")
+    table.add_column("first message")
+
+    for run_id, msgs in list(by_run.items())[:limit]:
+        msgs.sort(key=lambda m: m.sequence)
+        first = msgs[0]
+        agents = sorted({m.agent_display_name or m.agent_role for m in msgs})
+        preview = first.content.replace("\n", " ")[:60]
+        table.add_row(
+            run_id[:10],
+            first.crew,
+            str(len(msgs)),
+            ", ".join(agents)[:40],
+            first.created_at.strftime("%m-%d %H:%M"),
+            preview + ("…" if len(first.content) > 60 else ""),
+        )
+    console.print(table)
+
+
 # =============================================================================
 # decisions subcommands
 # =============================================================================
@@ -562,11 +1033,6 @@ def plan(
 @decisions_app.command("list")
 def list_decisions(
     status: str = typer.Option("pending", help="pending|approved|rejected|all"),
-    json_out: bool = typer.Option(
-        False,
-        "--json",
-        help="Emit matching Decision Records as JSON.",
-    ),
 ) -> None:
     """List Decision Records by status."""
     store = _store()
@@ -581,16 +1047,6 @@ def list_decisions(
             rprint(f"[red]invalid status '{status}'[/red]")
             raise typer.Exit(1) from e
 
-    if json_out:
-        typer.echo(
-            json.dumps(
-                [d.model_dump(mode="json") for d in records],
-                indent=2,
-                default=str,
-            )
-        )
-        return
-
     if not records:
         rprint(f"[dim]no decisions matching status={status}[/dim]")
         return
@@ -600,14 +1056,17 @@ def list_decisions(
     table.add_column("Project")
     table.add_column("Type")
     table.add_column("Risk")
+    table.add_column("Pri", no_wrap=True)
     table.add_column("Status", style="bold")
     table.add_column("Summary")
     for d in records:
+        pri = d.priority + ("!" if d.expedited else "")
         table.add_row(
             str(d.id)[:8] + "…",
             d.project,
             d.type.value,
             d.risk,
+            pri,
             d.status.value,
             d.summary[:60],
         )
@@ -625,6 +1084,10 @@ def show_decision(decision_id: str = typer.Argument(...)) -> None:
     rprint(f"[bold]Type:[/bold]      {decision.type.value}")
     rprint(f"[bold]Status:[/bold]    {decision.status.value}")
     rprint(f"[bold]Risk:[/bold]      {decision.risk}")
+    pri_line = decision.priority + ("  [yellow]expedited[/yellow]" if decision.expedited else "")
+    if decision.requested_by_role:
+        pri_line += f"  requested_by={decision.requested_by_role}"
+    rprint(f"[bold]Priority:[/bold]  {pri_line}")
     rprint(f"[bold]Proposer:[/bold]  {decision.proposer_agent_id} ({decision.proposer_role})")
     rprint(f"[bold]Created:[/bold]   {decision.created_at}")
     if decision.resolved_at is not None:
@@ -714,13 +1177,104 @@ def reject_decision(
     reason: str | None = typer.Option(None, "--reason", "-r"),
 ) -> None:
     """Reject a pending Decision Record (id prefix is OK)."""
+    from minions.tasks.store_factory import make_task_store
+
     decision = _find_by_prefix(decision_id)
     if decision is None:
         raise typer.Exit(1)
     resolved = resolve(
-        decision.id, store=_store(), notifier=_notifier(), action="reject", reason=reason
+        decision.id,
+        store=_store(),
+        notifier=_notifier(),
+        action="reject",
+        reason=reason,
+        task_store=make_task_store(TASKS_PATH),
     )
     rprint(f"[red]✗ rejected[/red] {resolved.id}")
+
+
+@decisions_app.command("reject-dry-runs")
+def reject_dry_runs(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
+    reason: str | None = typer.Option(
+        "operator: dry-run noise — no real plan to execute",
+        "--reason",
+        "-r",
+    ),
+) -> None:
+    """Reject every APPROVED Decision whose summary contains ``[DRY RUN]``.
+
+    These rows are seeded by ``minions plan --dry-run`` and are permanently
+    filtered out by ``execute-approved`` (see ``_is_dry_run_decision``). Left
+    APPROVED, they clog the operator's sprint board forever.
+    """
+    store = _store()
+    approved = store.list_by_status(DecisionStatus.APPROVED)
+    targets = [d for d in approved if "[DRY RUN]" in (d.summary or "")]
+
+    if not targets:
+        rprint("[green]No dry-run noise in APPROVED.[/green]")
+        return
+
+    rprint(f"[bold]{len(targets)} dry-run Decision(s) to reject:[/bold]")
+    for d in targets:
+        rprint(f"  · {str(d.id)[:8]} — {d.project} — {d.summary[:70]}")
+
+    if not yes:
+        confirm = typer.confirm(f"\nReject all {len(targets)}?", default=False)
+        if not confirm:
+            rprint("[yellow]Aborted.[/yellow]")
+            raise typer.Exit(1)
+
+    notifier = _notifier()
+    rejected = 0
+    for d in targets:
+        try:
+            resolve(d.id, store=store, notifier=notifier, action="reject", reason=reason)
+            rejected += 1
+        except Exception as e:  # noqa: BLE001
+            rprint(f"  [red]✗[/red] {str(d.id)[:8]} — {e}")
+    rprint(f"\n[red]✗ rejected {rejected}/{len(targets)}[/red]")
+
+
+@decisions_app.command("priority")
+def set_decision_priority(
+    decision_id: str = typer.Argument(..., help="Decision id or prefix."),
+    level: str = typer.Argument("p1", help="p1 | p2 | p3"),
+    expedited: bool = typer.Option(
+        True,
+        "--expedited/--no-expedited",
+        help="Mark as expedited to jump ahead of non-expedited work at the same priority.",
+    ),
+    by: str | None = typer.Option(
+        None,
+        "--by",
+        help="Role requesting the bump (e.g. cto, ceo, operator).",
+    ),
+) -> None:
+    """Stamp priority/expedited/requested-by on a Decision.
+
+    Operator escape hatch for the case where the originating UI/agent path
+    did not stamp the fields. ``execute-approved`` orders by these fields,
+    so a p1-expedited Decision jumps ahead of older backlog on the next
+    sweep (or immediately on a ``--only-expedited`` run).
+    """
+    if level not in {"p1", "p2", "p3"}:
+        rprint(f"[red]invalid priority '{level}' — expected p1|p2|p3[/red]")
+        raise typer.Exit(1)
+    store = _store()
+    decision = _find_by_prefix(decision_id)
+    if decision is None:
+        raise typer.Exit(1)
+    decision.priority = level  # type: ignore[assignment]
+    decision.expedited = expedited
+    if by is not None:
+        decision.requested_by_role = by
+    store.save(decision)
+    rprint(
+        f"[green]✓[/green] {str(decision.id)[:8]} → priority={level} "
+        f"expedited={expedited} requested_by={decision.requested_by_role or '—'}"
+    )
 
 
 @app.command("anthropic")
@@ -943,8 +1497,17 @@ def _find_by_prefix(decision_id: str) -> Decision | None:  # noqa: F821
 @cron_app.command("weekly")
 def cron_weekly(
     dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run", help="Dry run skips LLM calls."),
+    project: str | None = typer.Option(
+        None,
+        "--project",
+        "-p",
+        help="Limit planning scan to one project.",
+    ),
 ) -> None:
     """Manually trigger the Monday weekly planning sweep."""
+    from minions.agents.memory_store_factory import make_agent_memory_store
+    from minions.agile.store_factory import make_agile_store
+    from minions.dossiers.store_factory import make_dossier_store
     from minions.scheduled import run_weekly_planning
 
     api_key: str | None = None
@@ -967,6 +1530,11 @@ def cron_weekly(
         cost_log_path=COST_LOG_PATH,
         budget_notifications_path=BUDGET_NOTIFICATIONS_PATH,
         portfolio=load_portfolio_config(CONFIG_PATH),
+        projects=[project] if project else None,
+        agile_store=make_agile_store(AGILE_PATH),
+        sprints_path=SPRINTS_PATH,
+        memory_store=make_agent_memory_store(AGENT_MEMORY_PATH),
+        dossier_store=make_dossier_store(DOSSIER_DRAFTS_PATH),
     )
     rprint(
         f"\n[bold]Weekly planning sweep[/bold] — "
@@ -1021,6 +1589,113 @@ def cron_daily(
     rprint(report.to_markdown())
 
 
+@cron_app.command("discovery")
+def cron_discovery(
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Dry run skips LLM calls. Use --no-dry-run for real discovery runs.",
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Run discovery for every project regardless of freshness."
+    ),
+    project: str | None = typer.Option(
+        None, "--project", "-p", help="Limit the sweep to a single project (case-insensitive)."
+    ),
+) -> None:
+    """Weekly discovery sweep — runs the discoverer across active projects."""
+    from minions.dossiers.store_factory import make_dossier_store
+    from minions.scheduled import run_discovery_sweep
+
+    api_key: str | None = None
+    if not dry_run:
+        try:
+            api_key = get_anthropic_api_key()
+        except SecretNotFound as e:
+            rprint(f"[red]Missing API key:[/red] {e}")
+            raise typer.Exit(1) from e
+
+    store = make_dossier_store(DOSSIER_DRAFTS_PATH)
+    report = run_discovery_sweep(
+        projects_dir=PROJECTS_DIR,
+        dossier_store=store,
+        api_key=api_key,
+        dry_run=dry_run,
+        force=force,
+        cost_log_path=COST_LOG_PATH,
+        projects=[project] if project else None,
+        decision_store=_store(),
+        notifier=_notifier(),
+    )
+    rprint(
+        f"\n[bold]Discovery sweep[/bold] — "
+        f"submitted {report.submitted}, skipped {report.skipped}, errored {report.errored}"
+    )
+    for o in report.outcomes:
+        if o.status == "submitted":
+            rprint(
+                f"  [green]✓[/green] {o.project} — draft {(o.draft_id or '')[:8]} "
+                f"at {(o.commit_sha or '')[:8]}"
+            )
+        elif o.status in ("skipped_fresh", "skipped_target_missing", "throttled"):
+            rprint(f"  [yellow]⊘[/yellow] {o.project} — {o.reason}")
+        else:
+            rprint(f"  [red]✗[/red] {o.project} — {o.reason}")
+
+
+@cron_app.command("crew-heartbeat")
+def cron_crew_heartbeat() -> None:
+    """Record availability check-ins for every configured crew role."""
+    from minions.scheduled import run_crew_heartbeat
+
+    report = run_crew_heartbeat(projects_dir=PROJECTS_DIR)
+    rprint(
+        f"\n[bold]Crew heartbeat[/bold] — checked_in {report.checked_in}, errored {report.errored}"
+    )
+    for o in report.outcomes:
+        tag = "[green]✓[/green]" if o.status == "checked_in" else "[red]✗[/red]"
+        label = o.project or o.scope
+        line = f"  {tag} {label} — {len(o.roles)} role(s)"
+        if o.error:
+            line += f" — {o.error[:80]}"
+        rprint(line)
+
+
+@cron_app.command("scrum")
+def cron_scrum(
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run/--no-dry-run",
+        help="Dry run prints what would be recorded without writing Agile artifacts.",
+    ),
+) -> None:
+    """Run the two-day Agile scrum ritual for every active project."""
+    from minions.agile.store_factory import make_agile_store
+    from minions.crews.engineer_runs_store_factory import make_engineer_runs_store
+    from minions.questions.store_factory import make_question_store
+    from minions.scheduled import run_scrum
+
+    report = run_scrum(
+        projects_dir=PROJECTS_DIR,
+        store=_store(),
+        engineer_runs_store=make_engineer_runs_store(ENGINEER_RUNS_PATH),
+        agile_store=make_agile_store(AGILE_PATH),
+        questions_store=make_question_store(QUESTIONS_PATH),
+        dry_run=dry_run,
+    )
+    rprint(f"\n[bold]Scrum ritual[/bold] — recorded {report.recorded}, errored {report.errored}")
+    for o in report.outcomes:
+        tag = "[green]✓[/green]" if o.status == "recorded" else "[red]✗[/red]"
+        line = f"  {tag} {o.project}"
+        if o.ritual_id:
+            line += f" ritual={o.ritual_id[:8]}"
+        if o.blockers:
+            line += f" blockers={len(o.blockers)}"
+        if o.error:
+            line += f" — {o.error[:80]}"
+        rprint(line)
+
+
 @cron_app.command("friday")
 def cron_friday(
     send: bool = typer.Option(
@@ -1046,6 +1721,172 @@ def cron_friday(
     rprint(report.body)
 
 
+@cron_app.command("monthly")
+def cron_monthly(
+    dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run", help="Dry run skips LLM calls."),
+) -> None:
+    """Manually trigger the monthly executive portfolio review."""
+    from minions.agile.store_factory import make_agile_store
+    from minions.audit.store_factory import make_audit_findings_store
+    from minions.config.portfolio import load_portfolio_config
+    from minions.crews.engineer_runs_store_factory import make_engineer_runs_store
+    from minions.questions.store_factory import make_question_store
+    from minions.scheduled import run_monthly_portfolio_review
+
+    api_key: str | None = None
+    if not dry_run:
+        try:
+            api_key = get_anthropic_api_key()
+        except SecretNotFound as e:
+            rprint(f"[red]Missing API key:[/red] {e}")
+            raise typer.Exit(1) from e
+
+    portfolio = load_portfolio_config(CONFIG_PATH)
+    report = run_monthly_portfolio_review(
+        projects_dir=PROJECTS_DIR,
+        store=_store(),
+        engineer_runs_store=make_engineer_runs_store(ENGINEER_RUNS_PATH),
+        notifier=_notifier(),
+        audit_findings_store=make_audit_findings_store(AUDIT_FINDINGS_PATH),
+        questions_store=make_question_store(QUESTIONS_PATH),
+        api_key=api_key,
+        dry_run=dry_run,
+        cost_log_path=COST_LOG_PATH,
+        portfolio=portfolio,
+        agile_store=make_agile_store(AGILE_PATH),
+    )
+    if report.status == "submitted":
+        rprint(
+            f"\n[bold]Monthly portfolio review[/bold] — submitted decision "
+            f"{str(report.decision_id)[:8]} for {report.period} "
+            f"({report.projects_count} project(s))"
+        )
+    else:
+        rprint(f"\n[red]Monthly portfolio review failed:[/red] {report.error}")
+        raise typer.Exit(1)
+
+
+@cron_app.command("post-deploy-verify")
+def cron_post_deploy_verify(
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Dry run inspects state but never probes URLs or files revert decisions.",
+    ),
+    project: str | None = typer.Option(
+        None,
+        "--project",
+        "-p",
+        help="Limit the sweep to a single project (case-insensitive).",
+    ),
+) -> None:
+    """Probe each project's deployed URL after merge; revert-Decision on failure.
+
+    Walks every active project with deploy.target != "none", looks up
+    the merged sha, runs deterministic HTTP probes against
+    deploy.production_url + each deploy.health_checks path + the first
+    N <img src> URLs on the home page. On any failure files a
+    risk=high revert Decision (deduped per sha).
+    """
+    from minions.deployments.store_factory import make_deployment_store
+    from minions.scheduled.post_deploy_verify import run_post_deploy_verify
+
+    report = run_post_deploy_verify(
+        projects_dir=PROJECTS_DIR,
+        deployment_store=make_deployment_store(DEPLOYMENTS_PATH),
+        decision_store=_store(),
+        notifier=_notifier(),
+        open_github_client=_open_github_client,
+        dry_run=dry_run,
+        projects=[project] if project else None,
+    )
+    rprint(
+        f"\n[bold]Post-deploy verify[/bold] — "
+        f"healthy {report.healthy}, unhealthy {report.unhealthy}, "
+        f"errored {sum(1 for o in report.outcomes if o.status == 'error')}"
+    )
+    for o in report.outcomes:
+        icon = {
+            "healthy": "[green]✓[/green]",
+            "unhealthy": "[red]✗[/red]",
+            "failed": "[red]✗[/red]",
+            "abandoned": "[yellow]⊘[/yellow]",
+            "skipped": "[dim]·[/dim]",
+            "error": "[red]✗[/red]",
+        }.get(o.status, "?")
+        details = f"{o.failed_probes}/{o.total_probes} probes failed" if o.total_probes else ""
+        revert = f"  revert={o.revert_decision_id[:8]}" if o.revert_decision_id else ""
+        rprint(
+            f"  {icon} {o.project} sha={(o.merge_sha or '?')[:8]} "
+            f"{details}{revert}  ({o.reason or o.status})"
+        )
+
+
+@cron_app.command("pr-owner-sweep")
+def cron_pr_owner_sweep(
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Dry run inspects state + reports what would happen but never "
+        "dispatches the engineer crew, never writes Question Records.",
+    ),
+    max_dispatches: int = typer.Option(
+        5,
+        "--max-dispatches",
+        help="Max number of engineer-crew dispatches per sweep tick.",
+    ),
+) -> None:
+    """Re-dispatch the original owner agent against any actionable open PR.
+
+    Replaces the old fix-Decision loop: no new Decisions are filed.
+    After ``flow_control.max_retries_per_pr`` retries, files ONE Question
+    Record per PR and stops dispatching that PR until the operator
+    answers.
+    """
+    from minions.crews.engineer_runs_store_factory import make_engineer_runs_store
+    from minions.questions.store_factory import make_question_store
+    from minions.scheduled.pr_owner_sweep import run_pr_owner_sweep
+
+    api_key: str | None = None
+    if not dry_run:
+        try:
+            api_key = get_anthropic_api_key()
+        except SecretNotFound as e:
+            rprint(f"[red]Missing Anthropic API key:[/red] {e}")
+            raise typer.Exit(1) from e
+
+    report = run_pr_owner_sweep(
+        projects_dir=PROJECTS_DIR,
+        store=_store(),
+        engineer_runs_store=make_engineer_runs_store(ENGINEER_RUNS_PATH),
+        questions_store=make_question_store(QUESTIONS_PATH),
+        open_github_client=_open_github_client,
+        notifier=_notifier(),
+        api_key=api_key,
+        dry_run=dry_run,
+        cost_log_path=COST_LOG_PATH,
+        max_dispatches_per_sweep=max_dispatches,
+    )
+    rprint(
+        f"\n[bold]PR owner sweep[/bold] — retried {report.retried}, "
+        f"escalated {report.escalated}, errored {report.errored}"
+    )
+    for o in report.outcomes:
+        icon = {
+            "retried": "[green]↻[/green]",
+            "healthy": "[green]✓[/green]",
+            "escalated": "[red]⚠[/red]",
+            "skipped": "[yellow]⊘[/yellow]",
+            "throttled": "[yellow]⊘[/yellow]",
+            "error": "[red]✗[/red]",
+        }.get(o.status, "·")
+        owner = o.owner_agent_id or "?"
+        rprint(
+            f"  {icon} {o.project} pr={o.pr_url} owner={owner} "
+            f"attempt={o.attempt} status={o.status} ({o.reason or ''})"
+        )
+
+
 @cron_app.command("execute-approved")
 def cron_execute_approved(
     dry_run: bool = typer.Option(
@@ -1056,10 +1897,22 @@ def cron_execute_approved(
     max_runs: int = typer.Option(
         5, "--max-runs", help="Hard cap on engineer-crew runs per invocation."
     ),
+    only_expedited: bool = typer.Option(
+        False,
+        "--only-expedited",
+        help="Fast lane: process only expedited approved Decisions (skip backlog). "
+        "Use for out-of-cadence triggers (workflow_dispatch / manual) when a "
+        "CTO investigation or PR-fix can't wait for the 6-hour cron.",
+    ),
 ) -> None:
-    """Run the engineer crew on every approved Decision (FIFO, capped)."""
+    """Run the engineer crew on approved Decisions, priority-ordered, capped.
+
+    Ordering: p1 → p2 → p3, expedited-first within each tier, then FIFO.
+    """
+    from minions.agents.memory_store_factory import make_agent_memory_store
     from minions.crews.engineer_runs_store_factory import make_engineer_runs_store
     from minions.scheduled import run_execute_approved
+    from minions.tasks.store_factory import make_task_store
 
     api_key: str | None = None
     if not dry_run:
@@ -1073,6 +1926,8 @@ def cron_execute_approved(
             rprint(f"[red]Anthropic preflight failed:[/red] {message}")
             raise typer.Exit(1)
 
+    from minions.dossiers.store_factory import make_dossier_store
+
     report = run_execute_approved(
         projects_dir=PROJECTS_DIR,
         store=_store(),
@@ -1082,6 +1937,10 @@ def cron_execute_approved(
         dry_run=dry_run,
         cost_log_path=COST_LOG_PATH,
         max_runs=max_runs,
+        only_expedited=only_expedited,
+        task_store=make_task_store(TASKS_PATH),
+        memory_store=make_agent_memory_store(AGENT_MEMORY_PATH),
+        dossier_store=make_dossier_store(DOSSIER_DRAFTS_PATH),
     )
 
     rprint(
@@ -1103,6 +1962,23 @@ def cron_execute_approved(
         elif o.reason:
             line += f" — {o.reason[:80]}"
         rprint(line)
+
+
+@cron_app.command("agent-memory-demote")
+def cron_agent_memory_demote() -> None:
+    """Demote old hot agent memories to cold storage."""
+    from minions.agents.memory_store_factory import make_agent_memory_store
+    from minions.scheduled import run_agent_memory_demote
+    from minions.sprints.store_factory import make_sprint_counter_store
+
+    report = run_agent_memory_demote(
+        memory_store=make_agent_memory_store(AGENT_MEMORY_PATH),
+        sprint_counter_store=make_sprint_counter_store(SPRINTS_PATH),
+    )
+    rprint(
+        f"\n[bold]Agent memory demotion[/bold] — demoted {report.demoted} "
+        f"record(s) across {report.projects_seen} project(s)"
+    )
 
 
 @questions_app.command("list")
@@ -1208,6 +2084,521 @@ def escalate_question_cmd(
     rprint(f"[yellow]↑ escalated[/yellow] {escalated.id} to operator")
 
 
+@app.command("ask-pm")
+def ask_pm(
+    project: str = typer.Argument(..., help="Project name"),
+    question: str = typer.Argument(..., help="Question for the Product Manager"),
+) -> None:
+    """Ask the project's Product Manager spokesperson a grounded question."""
+    from minions.agile import answer_pm_question
+    from minions.agile.store_factory import make_agile_store
+    from minions.crews.engineer_runs_store_factory import make_engineer_runs_store
+
+    manifests = load_active_manifests(PROJECTS_DIR)
+    manifest = _resolve_project(project, manifests)
+    record = answer_pm_question(
+        manifest=manifest,
+        question=question,
+        decision_store=_store(),
+        engineer_runs_store=make_engineer_runs_store(ENGINEER_RUNS_PATH),
+        agile_store=make_agile_store(AGILE_PATH),
+    )
+    rprint(f"\n[bold]{manifest.name} PM[/bold] answered ({str(record.id)[:8]})")
+    rprint(record.answer)
+    if record.citations:
+        rprint("\n[dim]Citations: " + ", ".join(record.citations[:6]) + "[/dim]")
+    if record.escalated_to:
+        rprint(f"[yellow]Escalated action owner:[/yellow] {record.escalated_to}")
+
+
+sprints_app = typer.Typer(
+    no_args_is_help=True, help="Per-project sprint counter inspection + backfill."
+)
+app.add_typer(sprints_app, name="sprints")
+tasks_app = typer.Typer(no_args_is_help=True, help="Inspect refined sprint Tasks.")
+app.add_typer(tasks_app, name="tasks")
+agents_app = typer.Typer(no_args_is_help=True, help="Agent naming registry.")
+app.add_typer(agents_app, name="agents")
+
+
+@tasks_app.command("list")
+def tasks_list(
+    project: str | None = typer.Option(None, "--project", "-p"),
+    sprint: int | None = typer.Option(None, "--sprint", "-s"),
+    owner: str | None = typer.Option(
+        None, "--owner", help="Filter by owner agent_id, e.g. engineer@Demo"
+    ),
+    status: str | None = typer.Option(
+        None, "--status", help="queued|in_progress|review|done|blocked|cancelled"
+    ),
+) -> None:
+    """Show Tasks with optional filters."""
+    from minions.tasks.store_factory import make_task_store
+
+    store = make_task_store(TASKS_PATH)
+    if owner is not None:
+        rows = store.list_by_owner(owner)
+    elif project is not None:
+        rows = store.list_by_project(project, sprint_number=sprint)
+    else:
+        rows = store.list_all()
+    if status is not None:
+        rows = [t for t in rows if t.status == status]
+    if not rows:
+        rprint("[dim]No tasks match.[/dim]")
+        return
+    table = Table(title="Tasks")
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Project")
+    table.add_column("Sprint", justify="right")
+    table.add_column("Cat")
+    table.add_column("Title")
+    table.add_column("Owner")
+    table.add_column("Status", style="bold")
+    table.add_column("Eff")
+    for t in rows:
+        owner_label = t.owner_display_name or t.owner_agent_id
+        table.add_row(
+            str(t.id)[:8] + "…",
+            t.project,
+            str(t.sprint_number) if t.sprint_number is not None else "—",
+            t.category,
+            t.title[:48],
+            owner_label,
+            t.status,
+            t.estimated_effort,
+        )
+    console.print(table)
+
+
+@tasks_app.command("show")
+def tasks_show(task_id: str = typer.Argument(...)) -> None:
+    """Full detail for a Task (id prefix is OK)."""
+    from minions.tasks.store_factory import make_task_store
+
+    store = make_task_store(TASKS_PATH)
+    rows = [t for t in store.list_all() if str(t.id).startswith(task_id)]
+    if not rows:
+        rprint(f"[red]no task with id prefix '{task_id}'[/red]")
+        raise typer.Exit(1)
+    t = rows[0]
+    rprint(f"[bold]ID:[/bold]        {t.id}")
+    rprint(f"[bold]Project:[/bold]   {t.project}  ·  Sprint {t.sprint_number}")
+    rprint(
+        f"[bold]Category:[/bold]  {t.category}  ·  effort {t.estimated_effort}  ·  status {t.status}"
+    )
+    rprint(f"[bold]Owner:[/bold]     {t.owner_display_name or '—'}  ({t.owner_agent_id})")
+    rprint(f"[bold]Decision:[/bold]  {t.decision_id}")
+    rprint(f"\n[bold]Title:[/bold]\n{t.title}")
+    rprint(f"\n[bold]Description:[/bold]\n{t.description}")
+    if t.acceptance_criteria:
+        rprint(f"\n[bold]Acceptance:[/bold]\n{t.acceptance_criteria}")
+    if t.pr_url:
+        rprint(f"\n[bold]PR:[/bold] {t.pr_url}")
+
+
+@agents_app.command("list")
+def agents_list() -> None:
+    """List every agent and their display name."""
+    from minions.agents.naming import list_all
+
+    names = list_all()
+    if not names:
+        rprint("[dim]No names registered. See config/agent_names.yaml.[/dim]")
+        return
+    table = Table(title="Agent names")
+    table.add_column("Agent ID", style="cyan")
+    table.add_column("Display name")
+    for agent_id in sorted(names):
+        table.add_row(agent_id, names[agent_id])
+    console.print(table)
+
+
+@agents_app.command("name")
+def agents_name(
+    agent_id: str = typer.Argument(..., help="e.g. engineer@Demo"),
+    display_name: str = typer.Argument(..., help='e.g. "Sasha"'),
+) -> None:
+    """Rename an agent. Already-stamped Decisions / Tasks keep their old name."""
+    from minions.agents.naming import set_display_name
+
+    try:
+        set_display_name(agent_id, display_name)
+    except ValueError as e:
+        rprint(f"[red]{e}[/red]")
+        raise typer.Exit(1) from e
+    rprint(f'[green]✓[/green] {agent_id} → "{display_name}"')
+
+
+@sprints_app.command("status")
+def sprints_status(
+    project: str | None = typer.Argument(None, help="Project name (omit for all)."),
+) -> None:
+    """Show the current sprint number per project."""
+    from minions.sprints.store_factory import make_sprint_counter_store
+
+    counter = make_sprint_counter_store(SPRINTS_PATH)
+    rows = counter.list_all()
+    if project is not None:
+        rows = [r for r in rows if r.project.lower() == project.lower()]
+    if not rows:
+        rprint(f"[dim]No sprint counters yet{' for ' + project if project else ''}.[/dim]")
+        return
+    table = Table(title="Sprint counters")
+    table.add_column("Project", style="cyan")
+    table.add_column("Current sprint", justify="right")
+    table.add_column("Updated")
+    for r in rows:
+        table.add_row(r.project, str(r.current_sprint_number), r.updated_at.isoformat())
+    console.print(table)
+
+
+@sprints_app.command("backfill")
+def sprints_backfill(
+    project: str = typer.Argument(..., help="Project name to backfill."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation."),
+) -> None:
+    """Stamp sprint numbers onto existing Decisions chronologically.
+
+    Walks every Sprint Proposal Decision for the project in created_at order
+    and assigns Sprint 0, 1, 2, … Also resets the counter to match the
+    highest assigned number. Skips Decisions that already have a
+    ``sprint_number`` set.
+    """
+    from minions.sprints.store_factory import make_sprint_counter_store
+
+    store = _store()
+    all_decisions = store.list_all()
+    candidates = [
+        d
+        for d in all_decisions
+        if d.project.lower() == project.lower()
+        and d.type.value == "feature"
+        and "sprint proposal" in (d.summary or "").lower()
+        and "[dry run]" not in (d.summary or "").lower()
+    ]
+    candidates.sort(key=lambda d: d.created_at)
+    pending = [d for d in candidates if d.sprint_number is None]
+    if not pending:
+        rprint(f"[dim]No unnumbered Sprint Proposals to backfill for {project}.[/dim]")
+        return
+
+    last_assigned = max(
+        (d.sprint_number for d in candidates if d.sprint_number is not None),
+        default=-1,
+    )
+    start = last_assigned + 1
+    rprint(f"[bold]{len(pending)} Decision(s) to stamp[/bold] starting at Sprint {start}:")
+    for i, d in enumerate(pending):
+        rprint(f"  · {str(d.id)[:8]} → Sprint {start + i} ({d.summary[:60]})")
+    if not yes and not typer.confirm("\nProceed?", default=False):
+        rprint("[yellow]Aborted.[/yellow]")
+        raise typer.Exit(1)
+
+    for i, d in enumerate(pending):
+        d.sprint_number = start + i
+        store.save(d)
+    # Resync the counter so the next planning cycle continues from here.
+    counter = make_sprint_counter_store(SPRINTS_PATH)
+    final_number = start + len(pending) - 1
+    # Bump until the counter matches; idempotent enough for one-off use.
+    while (counter.current(project) or -1) < final_number:
+        counter.bump(project)
+    rprint(
+        f"[green]✓ stamped {len(pending)} Decision(s); counter now at {counter.current(project)}.[/green]"
+    )
+
+
+@app.command("spokesperson-backfill")
+def spokesperson_backfill(
+    decision_id: str = typer.Argument(..., help="SPIKE Decision id or prefix"),
+) -> None:
+    """Retroactively relay an answer for a SPIKE that already executed.
+
+    For SPIKEs whose engineer crew already opened a PR but whose answer
+    never made it back into the Leadership Room thread (e.g., the relay
+    hook landed after the SPIKE was processed). Reconstructs the answer
+    from the persisted engineer run + Decision payload and posts it as a
+    spokesperson message in the original thread.
+    """
+    from minions.crews.engineer import EngineerResult
+    from minions.crews.engineer_runs_store_factory import make_engineer_runs_store
+    from minions.spokesperson.interview_relay import relay_spike_answer
+
+    decision = _find_by_prefix(decision_id)
+    if decision is None:
+        raise typer.Exit(1)
+
+    runs = make_engineer_runs_store(ENGINEER_RUNS_PATH)
+    record = runs.get(str(decision.id))
+    if record is None:
+        rprint(f"[red]No engineer run found for {str(decision.id)[:8]}.[/red]")
+        raise typer.Exit(1)
+
+    # Synthesize an EngineerResult from the persisted record so the relay
+    # helper sees the same shape it would in a live run.
+    result = EngineerResult(
+        decision_id=record.decision_id,
+        pr_url=record.pr_url,
+        pr_number=record.pr_number,
+        branch_name=record.branch_name,
+        files_changed=list(record.files_changed),
+        files_rejected=list(record.files_rejected),
+        operator_comment_posted=record.operator_comment_posted,
+        skipped=record.skipped,
+        skip_reason=record.skip_reason,
+        dry_run=record.dry_run,
+    )
+
+    message_id = relay_spike_answer(
+        decision_id=str(decision.id),
+        project=decision.project,
+        engineer_result=result,
+    )
+    if message_id is None:
+        rprint(
+            "[yellow]Relay returned None.[/yellow] Likely cause: this Decision is "
+            "not a spokesperson SPIKE, the payload has no thread_id, or the DB is "
+            "unreachable. Check logs for the specific reason."
+        )
+        raise typer.Exit(1)
+    rprint(
+        f"[green]✓ relayed[/green] message {message_id[:8]} "
+        f"into the Leadership Room thread for decision {str(decision.id)[:8]}."
+    )
+
+
+@app.command("ask")
+def ask_executive(
+    role: str = typer.Argument(
+        ...,
+        help="Executive role to ask: cto / md / ceo / portfolio_owner / "
+        "security_champion / product_manager. Aliases accepted.",
+    ),
+    question: str = typer.Argument(..., help="What you want to ask."),
+    project: str | None = typer.Option(
+        None,
+        "--project",
+        "-p",
+        help="Scope to one project. Omit for portfolio-level questions.",
+    ),
+    thread_id: str | None = typer.Option(
+        None,
+        "--thread",
+        "-t",
+        help="Continue an existing thread (multi-turn conversation).",
+    ),
+) -> None:
+    """Ask a specific executive a question — multi-turn thread supported.
+
+    Routes through the spokesperson framework: the named role gets the
+    question, may consult other roles for grounding, returns a
+    structured answer with citations. Continue the thread by passing
+    ``--thread <id>`` from a previous answer.
+
+    Examples:
+      minions ask cto "Should we migrate demo_five to next-forge?"
+      minions ask md "What's our cost trajectory this month?" --project demo_five
+      minions ask cto "Follow-up on that" --thread <prior-thread-id>
+    """
+    from minions.agile.store_factory import make_agile_store
+    from minions.crews.engineer_runs_store_factory import make_engineer_runs_store
+    from minions.spokesperson.routing import SPOKESPERSON_ROLES, normalize_role
+    from minions.spokesperson.service import ask_spokesperson
+    from minions.spokesperson.store_factory import make_interview_store
+
+    normalized = normalize_role(role)
+    if normalized not in SPOKESPERSON_ROLES:
+        rprint(f"[red]Unknown role:[/red] {role!r}. Allowed: {', '.join(SPOKESPERSON_ROLES)}.")
+        raise typer.Exit(1)
+
+    manifests = load_active_manifests(PROJECTS_DIR)
+    if project is not None:
+        _resolve_project(project, manifests)
+
+    result = ask_spokesperson(
+        spokesperson_role=normalized,
+        question=question,
+        project=project,
+        thread_id=thread_id,
+        interview_store=make_interview_store(INTERVIEWS_PATH),
+        decision_store=_store(),
+        engineer_runs_store=make_engineer_runs_store(ENGINEER_RUNS_PATH),
+        agile_store=make_agile_store(AGILE_PATH),
+        manifests=manifests,
+        activity_log_path=ACTIVITY_LOG_PATH,
+        cost_log_path=COST_LOG_PATH,
+    )
+    answer = result.answer_message
+    rprint(
+        f"\n[bold cyan]{answer.agent_role}[/bold cyan] "
+        f"[dim](msg {str(answer.id)[:8]}, confidence={answer.confidence})[/dim]\n"
+    )
+    rprint(answer.content)
+    if answer.consulted_roles:
+        rprint("\n[dim]Consulted: " + ", ".join(answer.consulted_roles) + "[/dim]")
+    if answer.citations:
+        labels = [c.label for c in answer.citations[:8]]
+        rprint("[dim]Citations: " + ", ".join(labels) + "[/dim]")
+    if result.task:
+        rprint(f"\n[yellow]Follow-up proposal:[/yellow] {result.task.title}")
+    rprint(
+        f'\n[dim]Continue this thread: `minions ask {role} "..." --thread {result.thread.id}`[/dim]'
+    )
+
+
+@app.command("ask-spokesperson")
+def ask_spokesperson_cmd(
+    question: str = typer.Argument(..., help="Question for the spokesperson"),
+    role: str = typer.Option("cto", "--role", "-r", help="Spokesperson role"),
+    project: str | None = typer.Option(None, "--project", "-p", help="Project name"),
+    thread_id: str | None = typer.Option(None, "--thread-id", help="Continue an existing thread"),
+) -> None:
+    """Ask a selected spokesperson and persist the interview trace."""
+    from minions.agile.store_factory import make_agile_store
+    from minions.crews.engineer_runs_store_factory import make_engineer_runs_store
+    from minions.spokesperson.service import ask_spokesperson
+    from minions.spokesperson.store_factory import make_interview_store
+
+    manifests = load_active_manifests(PROJECTS_DIR)
+    if project is not None:
+        _resolve_project(project, manifests)
+    result = ask_spokesperson(
+        spokesperson_role=role,
+        question=question,
+        project=project,
+        thread_id=thread_id,
+        interview_store=make_interview_store(INTERVIEWS_PATH),
+        decision_store=_store(),
+        engineer_runs_store=make_engineer_runs_store(ENGINEER_RUNS_PATH),
+        agile_store=make_agile_store(AGILE_PATH),
+        manifests=manifests,
+        activity_log_path=ACTIVITY_LOG_PATH,
+        cost_log_path=COST_LOG_PATH,
+    )
+    answer = result.answer_message
+    rprint(
+        f"\n[bold]{answer.agent_role}[/bold] answered "
+        f"({str(answer.id)[:8]}, confidence={answer.confidence})"
+    )
+    rprint(answer.content)
+    if answer.consulted_roles:
+        rprint("\n[dim]Consulted: " + ", ".join(answer.consulted_roles) + "[/dim]")
+    if answer.citations:
+        labels = [c.label for c in answer.citations[:8]]
+        rprint("[dim]Citations: " + ", ".join(labels) + "[/dim]")
+    if result.task:
+        rprint(f"[yellow]Follow-up proposal:[/yellow] {result.task.title}")
+
+
+@cron_app.command("refine-approved")
+def cron_refine_approved() -> None:
+    """Break newly-approved Sprint Proposals into Tasks (Phase 3 of sprint-tasks-memory).
+
+    Idempotent — a Decision that already has Tasks is left alone. No LLM call
+    in the common path (suggested_owner_role + naming registry handles routing).
+    """
+    from minions.scheduled.refine_approved import run_refine_approved
+    from minions.tasks.store_factory import make_task_store
+
+    report = run_refine_approved(
+        store=_store(),
+        task_store=make_task_store(TASKS_PATH),
+    )
+    rprint(
+        f"\n[bold]Refine sweep[/bold] — "
+        f"refined {report.refined}, skipped {report.skipped}, errored {report.errored}"
+    )
+    for o in report.outcomes:
+        tag = {
+            "refined": "[green]✓[/green]",
+            "skipped": "[dim]·[/dim]",
+            "error": "[red]✗[/red]",
+        }[o.status]
+        line = f"  {tag} {o.project} ({o.decision_id[:8]})"
+        if o.task_count:
+            line += f" → {o.task_count} task(s)"
+        if o.reason:
+            line += f" — {o.reason}"
+        rprint(line)
+
+
+@cron_app.command("assign-backlog-tasks")
+def cron_assign_backlog_tasks() -> None:
+    """Sweep ``unassigned`` Tasks and assign them when an agent's WIP drops.
+
+    Cheap — no-op when there's no backlog. See openspec/changes/
+    enriched-sprint-planning Phase D for the design.
+    """
+    from minions.scheduled import run_assign_backlog_tasks
+    from minions.tasks.store_factory import make_task_store
+
+    report = run_assign_backlog_tasks(task_store=make_task_store(TASKS_PATH))
+    rprint(
+        f"\n[bold]Backlog assignment[/bold] — "
+        f"assigned {report.assigned}, kept_unassigned {report.kept_unassigned}"
+    )
+    for o in report.outcomes:
+        tag = "[green]✓[/green]" if o.status == "assigned" else "[dim]·[/dim]"
+        line = f"  {tag} {o.project} ({o.task_id[:8]})"
+        if o.new_owner_agent_id:
+            line += f" → {o.new_owner_agent_id}"
+        rprint(line)
+
+
+@cron_app.command("branch-sweep")
+def cron_branch_sweep(
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Dry run reports 'would_delete' without touching branches.",
+    ),
+    min_age_minutes: int = typer.Option(
+        30,
+        "--min-age-minutes",
+        help="Skip branches whose tip commit is younger than this (protects "
+        "active runs that have not opened their PR yet).",
+    ),
+) -> None:
+    """Garbage-collect stranded ``minions/eng/*`` branches.
+
+    Safety guards: deletes only branches whose every commit carries the
+    ``Minions-Run-Id`` trailer AND whose run_id is known to the engineer-runs
+    store AND have no open PR AND are older than ``--min-age-minutes``. Any
+    branch touched by the operator (commit without trailer) is kept forever.
+    """
+    from minions.scheduled.branch_sweep import run_branch_sweep
+
+    report = run_branch_sweep(
+        projects_dir=PROJECTS_DIR,
+        open_github_client=_open_github_client,
+        dry_run=dry_run,
+        min_age_minutes=min_age_minutes,
+    )
+
+    suffix = " (dry-run)" if dry_run else ""
+    rprint(
+        f"\n[bold]Branch sweep{suffix}[/bold] — "
+        f"deleted {report.deleted}, would_delete {report.would_delete}, "
+        f"kept {report.kept}, errored {report.errored}"
+    )
+    for o in report.outcomes:
+        tag = {
+            "deleted": "[red]✗ deleted[/red]",
+            "would_delete": "[yellow]⚠ would delete[/yellow]",
+            "kept_no_trailer": "[dim]· kept (no trailer)[/dim]",
+            "kept_unknown_run_id": "[dim]· kept (unknown run)[/dim]",
+            "kept_too_young": "[dim]· kept (too young)[/dim]",
+            "kept_open_pr": "[dim]· kept (open PR)[/dim]",
+            "kept_outside_namespace": "[dim]· kept (outside namespace)[/dim]",
+            "error": "[red]✗ error[/red]",
+        }.get(o.status, o.status)
+        line = f"  {tag} {o.repo}  {o.branch}"
+        if o.reason:
+            line += f" — {o.reason[:80]}"
+        rprint(line)
+
+
 @cron_app.command("pr-followup")
 def cron_pr_followup(
     dry_run: bool = typer.Option(
@@ -1216,7 +2607,7 @@ def cron_pr_followup(
         help="Dry run skips submitting fix Decisions and posting PR comments.",
     ),
     max_attempts: int = typer.Option(
-        1, "--max-attempts", help="Cap on auto-fix attempts per original PR."
+        3, "--max-attempts", help="Cap on auto-fix attempts per original PR."
     ),
 ) -> None:
     """Watch minions PRs; on CI failure, queue a fix Decision automatically."""
@@ -1257,6 +2648,70 @@ def cron_pr_followup(
             line += f" [ci={o.ci_conclusion}]"
         if o.fix_decision_id:
             line += f" → fix decision {o.fix_decision_id[:8]}"
+        if o.reason:
+            line += f" — {o.reason[:80]}"
+        rprint(line)
+
+
+@cron_app.command("pr-review-loop")
+def cron_pr_review_loop(
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run/--no-dry-run",
+        help="Dry run skips PR comments and engineer-run updates.",
+    ),
+) -> None:
+    """Assign internal reviewers and post structured PR review comments."""
+    from contextlib import suppress
+
+    from minions.crews.engineer_runs_store_factory import make_engineer_runs_store
+    from minions.scheduled import run_pr_review_loop
+
+    # When the Anthropic key is available, reviewers run LLM-driven and
+    # actually read the diff + prior comments. Without it, the legacy
+    # deterministic stub kicks in — kept so dry-runs and credentialless
+    # cron firings still complete without crashing.
+    api_key: str | None = None
+    with suppress(SecretNotFound):
+        api_key = get_anthropic_api_key()
+
+    report = run_pr_review_loop(
+        projects_dir=PROJECTS_DIR,
+        store=_store(),
+        engineer_runs_store=make_engineer_runs_store(ENGINEER_RUNS_PATH),
+        open_github_client=_open_github_client,
+        dry_run=dry_run,
+        api_key=api_key,
+    )
+
+    rprint(
+        f"\n[bold]PR review-loop sweep[/bold] — "
+        f"assigned {report.assigned}, reviewed {report.reviewed}, "
+        f"creator_responded {report.creator_responded}, merged {report.merged}, "
+        f"handoff {report.handoff}, errored {report.errored}, "
+        f"total_checked {len(report.outcomes)}"
+    )
+    for o in report.outcomes:
+        tag = {
+            "assigned": "[cyan]+[/cyan]",
+            "reviewed": "[green]✓[/green]",
+            "creator_responded": "[yellow]↻[/yellow]",
+            "conflict_queued": "[yellow]⚠[/yellow]",
+            "superseded": "[cyan]↦[/cyan]",
+            "merged": "[green]✓[/green]",
+            "handoff": "[yellow]→[/yellow]",
+            "skipped": "[dim]⊘[/dim]",
+            "error": "[red]✗[/red]",
+        }[o.status]
+        line = f"  {tag} {o.project} — {o.pr_url or o.decision_id[:8]}"
+        if o.review_status:
+            line += f" [{o.review_status}]"
+        if o.comments_posted:
+            line += f" comments={o.comments_posted}"
+        if o.fix_decision_id:
+            line += f" fix={o.fix_decision_id[:8]}"
+        if o.assigned_reviewers:
+            line += " reviewers=" + ",".join(o.assigned_reviewers)
         if o.reason:
             line += f" — {o.reason[:80]}"
         rprint(line)

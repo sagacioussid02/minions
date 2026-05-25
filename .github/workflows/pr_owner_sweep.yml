@@ -1,0 +1,46 @@
+name: PR owner sweep
+
+# Every 2h. Walks every open minions-authored PR and, when CI failed
+# or the merge is dirty, re-dispatches the ORIGINAL owner engineer agent
+# in-place on the existing branch. No new Decision Records are filed.
+# After ``flow_control.max_retries_per_pr`` retries on the same PR, the
+# sweep files ONE Question Record to the operator and stops dispatching.
+#
+# Replaces the runaway-loop pattern where pr_followup / pr_review_loop
+# filed "Fix CI failure on PR #N" / "Resolve merge conflict on PR #N"
+# Decisions on every tick — those filers are now no-ops; this sweep
+# is the only path that re-dispatches the engineer crew.
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Skip engineer-crew dispatches + question writes (default: false)'
+        required: false
+        type: boolean
+        default: false
+      max-dispatches:
+        description: 'Max engineer-crew dispatches per sweep tick (default: 5)'
+        required: false
+        type: string
+        default: '5'
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  pr-owner-sweep:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: >-
+        ${{
+          format(
+            'cron pr-owner-sweep{0} --max-dispatches {1}',
+            inputs.dry-run && '' || ' --no-dry-run',
+            inputs.max-dispatches || '5'
+          )
+        }}
+    secrets: inherit

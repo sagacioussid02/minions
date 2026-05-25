@@ -10,8 +10,10 @@ from __future__ import annotations
 
 from importlib.resources import files
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from psycopg import Connection
+if TYPE_CHECKING:
+    from psycopg import Connection
 
 from minions.db.connection import connect
 

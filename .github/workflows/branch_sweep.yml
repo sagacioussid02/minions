@@ -1,0 +1,38 @@
+name: Branch sweep
+
+# Every 4h cleanup of stranded `minions/eng/*` branches that the engineer
+# crew's in-process rollback didn't catch (hard crashes, killed runners,
+# pre-rollback legacy). Safety guards live in `scheduled/branch_sweep.py`:
+# only deletes branches whose every commit carries the Minions-Run-Id
+# trailer AND whose run_id matches a known engineer_runs row AND have no
+# open PR AND are >30 min old. Any operator-touched branch is kept.
+
+on:
+  schedule:
+    - cron: '40 */4 * * *'  # :40 past every 4h (offset from other crons)
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Dry run (report would_delete without touching branches)'
+        required: false
+        type: boolean
+        default: false
+      min-age-minutes:
+        description: 'Skip branches younger than this'
+        required: false
+        type: string
+        default: '30'
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: >-
+        ${{ inputs.dry-run
+            && format('cron branch-sweep --min-age-minutes {0}', inputs.min-age-minutes || '30')
+            || format('cron branch-sweep --no-dry-run --min-age-minutes {0}', inputs.min-age-minutes || '30') }}
+    secrets: inherit

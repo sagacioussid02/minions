@@ -1,21 +1,11 @@
 [project]
-name = "minionscli"
+name = "minions"
 version = "0.0.1"
-description = "Autonomous AI engineering organization for managing a portfolio of software projects (CLI)."
+description = "Autonomous AI engineering organization for managing a portfolio of software projects."
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "MIT" }
-authors = [{ name = "Siddharth Shankar" }]
-keywords = ["ai", "agents", "autonomous", "crewai", "anthropic", "claude", "llm"]
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
-    "Topic :: Software Development",
-]
+license = { text = "Proprietary" }
+authors = [{ name = "Siddharth Shankar", email = "operator@example.com" }]
 
 dependencies = [
     "anthropic>=0.40.0",
@@ -48,11 +38,6 @@ dev = [
 [project.scripts]
 minions = "minions.__main__:app"
 
-[project.urls]
-Homepage = "https://github.com/sagacioussid02/minions"
-Repository = "https://github.com/sagacioussid02/minions"
-Issues = "https://github.com/sagacioussid02/minions/issues"
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -67,31 +52,35 @@ src = ["src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "B", "UP", "C4", "T10", "T20", "PT", "RET", "SIM"]
-# Carried-forward cosmetic noise from the alpha codebase. Each is tracked as
-# a `good first issue`; remove from this list as PRs land.
-ignore = [
-    "PT006",   # pytest-parametrize-names-wrong-type
-    "PT011",   # pytest-raises-too-broad
-    "PT017",   # pytest-assert-in-except
-    "PT018",   # pytest-composite-assertion
-    "PT019",   # pytest-fixture-param-without-value
-    "SIM103",  # needless-bool
-    "SIM105",  # suppressible-exception
-    "SIM108",  # if-else-block-instead-of-if-exp
-    "SIM110",  # reimplemented-builtin
-    "SIM114",  # if-with-same-arms
-    "SIM117",  # multiple-with-statements
-    "SIM300",  # yoda-conditions
-    "RET504",  # unnecessary-assign
-    "C408",    # unnecessary-collection-call
-    "B007",    # unused-loop-control-variable
-    "B017",    # assert-raises-exception
-    "N818",    # error-suffix-on-exception-name
-    "E501",    # line-too-long (formatter handles most; rest is Markdown in strings)
-]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101", "F841"]
+# Tests carry a lot of fixture/assertion idioms ruff flags as style; none
+# are bugs and rewriting them is busywork. Real bugs (F821/F841/etc.) still
+# fire — only stylistic noise is suppressed.
+"tests/*" = [
+  "S101",   # asserts are the whole point of tests
+  "E501",   # long signatures + fixture parametrize tuples
+  "PT006",  # parametrize names tuple vs comma-string — both fine
+  "PT011",  # pytest.raises(Exception) is allowed in negative-path tests
+  "PT017",  # asserting on exception inside `except` is allowed
+  "PT018",  # composite-assert (assert a and b) is allowed for readability
+  "PT019",  # fixture-param-without-value is fine
+  "B007",   # unused loop var sometimes intentional in test scaffolding
+  "B017",   # pytest.raises(Exception) — see PT011
+  "C408",   # dict(...) calls — explicit reads fine in tests
+  "N802",   # function-name casing for HTTP-verb mocks
+  "N806",   # variable casing in fixtures
+  "N818",   # exception-name suffix — internal test exceptions
+  "RET504", # explicit assign-then-return reads clearer in tests
+  "SIM105", # contextlib.suppress vs try/except pass — both fine
+  "SIM108", # ternary vs if/else — clarity over conciseness in tests
+  "SIM117", # nested `with` blocks — readable in tests
+]
+"src/*" = [
+  "E501",   # long lines on prompts + JSON examples; not worth churning
+  "SIM105", # contextlib.suppress vs try/except pass — fine in sweep loops
+  "SIM117", # nested `with` blocks readable in github client + sweeps
+]
 
 [tool.mypy]
 python_version = "3.12"

@@ -13,6 +13,7 @@ import pytest
 from minions.crews.engineer import (
     EngineerOutput,
     FilePatch,
+    branch_name_for_decision,
     filter_files,
     is_forbidden_path,
     run_engineer_crew,
@@ -39,6 +40,16 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def test_slugify(given, expected_prefix):
     out = slugify(given)
     assert out == expected_prefix or out.startswith(expected_prefix)
+
+
+def test_branch_name_includes_decision_id_suffix():
+    first = _decision()
+    second = _decision()
+    second.summary = first.summary
+
+    assert branch_name_for_decision(first).startswith("minions/eng/add-a-changelog-file-")
+    assert branch_name_for_decision(second).startswith("minions/eng/add-a-changelog-file-")
+    assert branch_name_for_decision(first) != branch_name_for_decision(second)
 
 
 @pytest.mark.parametrize(

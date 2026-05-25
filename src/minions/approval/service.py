@@ -11,11 +11,16 @@ processes.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from minions.approval.store import DecisionStore
 from minions.models.decision import Decision, DecisionStatus
 from minions.notify.base import Notifier
+
+if TYPE_CHECKING:
+    from minions.tasks.store_factory import TaskStoreLike
+
 
 DEFAULT_TIMEOUT_HOURS = 72
 
@@ -44,6 +49,7 @@ def resolve(
     notifier: Notifier,
     action: str,
     reason: str | None = None,
+    task_store: TaskStoreLike | None = None,
 ) -> Decision:
     """Resolve a pending Decision.
 
@@ -54,6 +60,10 @@ def resolve(
         raise ValueError(f"action must be 'approve' or 'reject', got {action!r}")
     new_status = DecisionStatus.APPROVED if action == "approve" else DecisionStatus.REJECTED
     decision = store.update_status(decision_id, new_status, reason=reason)
+    if new_status is DecisionStatus.REJECTED and task_store is not None:
+        for task in task_store.list_by_decision(decision_id):
+            if task.status not in {"done", "cancelled"}:
+                task_store.update_status(task.id, "cancelled")
     notifier.notify_decision_resolved(decision)
     return decision
 

@@ -9,7 +9,7 @@ from typing import Any
 from minions.approval.store import DecisionStore
 from minions.crews.engineer import EngineerResult
 from minions.crews.engineer_runs_store import EngineerRunRecord, EngineerRunStore
-from minions.models.decision import DecisionStatus, DecisionType
+from minions.models.decision import DecisionStatus
 from minions.notify.base import Notifier
 from minions.scheduled.pr_followup import run_pr_followup
 
@@ -102,7 +102,10 @@ def test_success_ci_only_updates_record(tmp_path: Path) -> None:
     assert decisions.list_by_status(DecisionStatus.APPROVED) == []
 
 
-def test_failure_queues_auto_approved_fix_decision(tmp_path: Path) -> None:
+def test_failure_does_not_queue_fix_decision(tmp_path: Path) -> None:
+    """pr-ownership-sweep Phase 4: pr_followup MUST NOT file fix Decisions
+    anymore. CI failure is handled by pr_owner_sweep dispatching the
+    original owner in-place. pr_followup just records the CI snapshot."""
     decisions = DecisionStore(tmp_path / "d.json")
     runs = EngineerRunStore(tmp_path / "r.json")
     _save_record(runs, _seed_open_pr("Demo", pr_number=7, decision_id="dec-fail"))
@@ -118,29 +121,25 @@ def test_failure_queues_auto_approved_fix_decision(tmp_path: Path) -> None:
         open_github_client=lambda _m: gh,
     )
 
-    assert report.queued_fixes == 1
+    # Zero new Decisions filed — that's the contract.
+    assert decisions.list_by_status(DecisionStatus.APPROVED) == []
+    assert decisions.list_by_status(DecisionStatus.PENDING) == []
 
-    # New fix Decision exists and is APPROVED (so execute-approved will pick it up).
-    approved = decisions.list_by_status(DecisionStatus.APPROVED)
-    assert len(approved) == 1
-    fix = approved[0]
-    assert fix.type is DecisionType.BUG
-    assert fix.project == "Demo"
-    assert fix.proposer_role == "pr_followup"
-    assert "PR #7" in fix.summary or "pull/7" in (fix.diff_or_plan or "")
-
-    # Comment posted on the failing PR.
-    assert gh.comments and gh.comments[0][0] == 7
-    assert "follow-up" in gh.comments[0][1].lower()
-
-    # Counter bumped on original record.
+    # CI snapshot still captured on the original record.
     after = runs.get("dec-fail")
     assert after is not None
-    assert after.followup_attempts == 1
     assert after.ci_conclusion == "failure"
+    assert after.ci_last_checked_at is not None
+    # Counter NOT touched by pr_followup — owner sweep owns it.
+    assert after.followup_attempts == 0
 
-    # The operator must NOT be paged — fix Decisions are internal traffic and
-    # are auto-approved, so an approval-request email would be misleading noise.
+    # Outcome shape: status=ok with reason explaining handoff.
+    assert report.outcomes[0].status == "ok"
+    assert "owner sweep" in (report.outcomes[0].reason or "")
+
+    # No PR comment, no operator page — owner sweep posts its own
+    # comment when it actually re-dispatches.
+    assert gh.comments == []
     assert notifier.approval_calls == []
 
 
@@ -180,7 +179,7 @@ def test_dry_run_does_not_persist_decision_or_comment(tmp_path: Path) -> None:
 
     gh = _FakeGH(ci_for={9: ("failure", None)})
 
-    report = run_pr_followup(
+    run_pr_followup(
         projects_dir=PROJECTS_DIR,
         store=decisions,
         engineer_runs_store=runs,
@@ -189,11 +188,13 @@ def test_dry_run_does_not_persist_decision_or_comment(tmp_path: Path) -> None:
         dry_run=True,
     )
 
-    assert report.queued_fixes == 1  # outcome marked queued
-    assert decisions.list_by_status(DecisionStatus.APPROVED) == []  # nothing persisted
-    assert gh.comments == []  # no comments posted
+    # pr-ownership-sweep Phase 4: pr_followup no longer files fix
+    # Decisions at all (dry-run or otherwise). The dry-run path here
+    # exercises the same "ci=failure → owner sweep will retry" exit.
+    assert decisions.list_by_status(DecisionStatus.APPROVED) == []
+    assert gh.comments == []
 
-    # And the counter is NOT bumped on dry-run (we didn't actually do work).
+    # Counter not touched by pr_followup — owner sweep owns it.
     after = runs.get("dec-dry")
     assert after is not None
     assert after.followup_attempts == 0

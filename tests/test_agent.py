@@ -17,8 +17,8 @@ def test_safety_preamble_present_in_system_prompt():
 
 
 def test_role_name_includes_project():
-    agent = MinionAgent.for_role(Role.PRODUCT_OWNER, project="demo_four", cadence="v0_frugal")
-    assert agent.name == "product_owner@demo_four"
+    agent = MinionAgent.for_role(Role.PRODUCT_OWNER, project="demo_two", cadence="v0_frugal")
+    assert agent.name == "product_owner@demo_two"
 
 
 def test_shared_role_has_org_scope():

@@ -95,9 +95,9 @@ def test_running_now_skips_expired_starts() -> None:
 
 
 def test_is_role_running_matches_project_and_role() -> None:
-    append(_entry(run_id="r1", project="demo_three", agents=("engineer",)))
-    assert is_role_running("demo_three", "engineer") is True
-    assert is_role_running("demo_three", "manager") is False
+    append(_entry(run_id="r1", project="demo_five", agents=("engineer",)))
+    assert is_role_running("demo_five", "engineer") is True
+    assert is_role_running("demo_five", "manager") is False
     assert is_role_running("demo", "engineer") is False
 
 

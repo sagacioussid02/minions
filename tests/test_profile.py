@@ -164,10 +164,16 @@ def test_build_profile_full_local_repo(tmp_path: Path) -> None:
     assert "1 remaining" in md.replace("**", "")
 
 
-def test_build_profile_raises_on_missing_path(tmp_path: Path) -> None:
+def test_build_profile_raises_on_missing_path_and_no_repo(tmp_path: Path) -> None:
+    """When neither path resolves nor repo is set, the resolver gives up."""
+    from minions.working_tree import WorkingTreeError
+
     bogus = tmp_path / "does-not-exist"
-    with pytest.raises(ValueError, match="does not exist"):
-        build_profile(_make_manifest("demo", bogus))
+    manifest = _make_manifest("demo", bogus)
+    # _make_manifest doesn't populate source.repo — confirm that's still true.
+    assert manifest.source.repo is None
+    with pytest.raises(WorkingTreeError, match="cannot resolve"):
+        build_profile(manifest, cache_dir=tmp_path / "clones")
 
 
 def test_build_profile_with_git_recent_commits(tmp_path: Path) -> None:

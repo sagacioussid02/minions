@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import suppress
 from datetime import UTC, datetime
 
 from psycopg.types.json import Jsonb
@@ -39,11 +40,17 @@ class PostgresEngineerRunStore:
                     Jsonb(payload),
                 ),
             )
+        with suppress(Exception):
+            from minions.learning.capture import capture_engineer_run
+            from minions.learning.store_postgres import PostgresAgentLearningStore
+
+            capture_engineer_run(record, PostgresAgentLearningStore())
         return record
 
     def save(self, result: EngineerResult, *, project: str) -> EngineerRunRecord:
         record = EngineerRunRecord(
             decision_id=result.decision_id,
+            task_id=result.task_id,
             project=project,
             completed_at=datetime.now(tz=UTC),
             pr_url=result.pr_url,

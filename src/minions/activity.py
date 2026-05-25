@@ -5,7 +5,7 @@ level *what's running right now* signal for the dashboard. Schema kept
 deliberately tight in v0; extend cautiously.
 
   {"timestamp": "...", "event": "crew_started",
-   "crew": "planning", "project": "demo_three",
+   "crew": "planning", "project": "demo_five",
    "decision_id": "abc-123", "agents": ["product_owner", "manager"]}
 
 A "running right now" agent is one that appears in a ``crew_started`` event
@@ -36,10 +36,10 @@ _log_path_override: Path | None = None
 _force_jsonl: bool = False
 
 
-def set_log_path(path: Path) -> None:
+def set_log_path(path: Path, *, force_jsonl: bool = True) -> None:
     global _log_path_override, _force_jsonl
     _log_path_override = path
-    _force_jsonl = True
+    _force_jsonl = force_jsonl
 
 
 def get_log_path() -> Path:
@@ -67,13 +67,24 @@ def _use_postgres() -> bool:
 RUNNING_WINDOW_SECONDS = 10 * 60  # 10 minutes
 
 
-Event = Literal["crew_started", "crew_finished", "crew_failed", "guardrail_blocked"]
+Event = Literal[
+    "crew_started",
+    "crew_finished",
+    "crew_failed",
+    "crew_checkin",
+    "scrum_created",
+    "sprint_planned",
+    "monthly_demo_ready",
+    "pm_answered",
+    "spokesperson_answered",
+    "agent_spoke",  # per-task transcript message (see crew-transcripts)
+    "guardrail_blocked",  # safety layer refused an unsafe action
+]
 
 
-# Guardrail layer identifiers — match the four layers in ARCHITECTURE.md.
-# "layer1" is the prompt preamble (agent self-restraint), "layer2" is the
-# in-process tooling deny-list. Layers 3/4 (branch protection, egress) are
-# enforced outside this codebase and are not instrumented here.
+# Which safety layer emitted the block (Layer 1 = prompt-level refusals,
+# Layer 2 = tool / GitHub client refusals). Layers 3 + 4 (branch protection,
+# network egress allowlist) are enforced outside this codebase.
 GuardrailLayer = Literal["layer1_prompt", "layer2_tooling"]
 
 
@@ -87,6 +98,11 @@ class ActivityEntry:
     decision_id: str
     agents: tuple[str, ...]
     error: str | None = None
+    # Free-form per-event context that round-trips through ``payload`` so the
+    # UI feed can render real content (e.g. scrum summary + blockers) instead
+    # of a generic "shared a daily scrum update" placeholder. Keep small —
+    # truncate long fields at the call-site.
+    extra: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -100,6 +116,12 @@ class ActivityEntry:
         }
         if self.error is not None:
             d["error"] = self.error
+        if self.extra:
+            # Merge into the top-level dict so the UI's `event.payload[<key>]`
+            # access pattern stays unchanged.
+            for k, v in self.extra.items():
+                if k not in d:  # never let extra clobber a core field
+                    d[k] = v
         return d
 
 
@@ -240,10 +262,7 @@ def is_role_running(
     now: datetime | None = None,
 ) -> bool:
     """True if any in-flight crew involves this (project, role)."""
-    for e in running_now(path=path, now=now):
-        if e.project == project and role in e.agents:
-            return True
-    return False
+    return any(e.project == project and role in e.agents for e in running_now(path=path, now=now))
 
 
 def record_guardrail_block(
@@ -255,16 +274,10 @@ def record_guardrail_block(
     role: str | None = None,
     path: Path | None = None,
 ) -> None:
-    """Emit a ``guardrail_blocked`` event when the system refuses an unsafe action.
-
-    Reuses the existing ActivityEntry schema:
-      * ``crew``         — ``"guardrail:<layer>"`` (e.g., ``"guardrail:layer2_tooling"``)
-      * ``agents``       — ``(kind,)`` (e.g., ``("protected_branch",)``)
-      * ``error``        — human-readable detail
-      * ``decision_id``  — empty (these aren't tied to a Decision)
+    """Emit a ``guardrail_blocked`` event when a safety layer refuses an action.
 
     Never raises — observability code must not crash the safety check that
-    produced the block. A failed append is logged at debug and swallowed.
+    produced the block.
     """
     try:
         entry = ActivityEntry(
@@ -278,8 +291,8 @@ def record_guardrail_block(
             error=details[:200],
         )
         append(entry, path=path)
-    except Exception as e:  # noqa: BLE001
-        logger.debug("record_guardrail_block failed: %s", e)
+    except Exception:  # noqa: BLE001
+        logger.debug("activity.record_guardrail_block failed", exc_info=True)
 
 
 def guardrail_blocks(
@@ -287,7 +300,7 @@ def guardrail_blocks(
     since: datetime | None = None,
     path: Path | None = None,
 ) -> list[ActivityEntry]:
-    """Return guardrail_blocked events, newest first, optionally filtered by ``since``."""
+    """Return ``guardrail_blocked`` events, newest first, optionally filtered by since."""
     out = [e for e in read_log(path) if e.event == "guardrail_blocked"]
     if since is not None:
         out = [e for e in out if e.timestamp >= since]

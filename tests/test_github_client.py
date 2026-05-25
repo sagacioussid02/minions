@@ -181,6 +181,37 @@ def test_update_file_creates_new_file():
     assert sha == "newsha"
 
 
+def test_get_text_file_decodes_contents_api_payload():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path == "/repos/org/repo/contents/README.md"
+        return httpx.Response(
+            200,
+            json={"encoding": "base64", "content": "SGVsbG8gZnJvbSBHaXRIdWI="},
+        )
+
+    assert _client(handler).get_text_file(path="README.md", branch="main") == "Hello from GitHub"
+
+
+def test_list_files_uses_recursive_tree_endpoint():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path == "/repos/org/repo/git/trees/main"
+        assert request.url.params["recursive"] == "1"
+        return httpx.Response(
+            200,
+            json={
+                "tree": [
+                    {"path": "README.md", "type": "blob"},
+                    {"path": "docs", "type": "tree"},
+                    {"path": "deploy/render.yaml", "type": "blob"},
+                ]
+            },
+        )
+
+    assert _client(handler).list_files(branch="main") == ["README.md", "deploy/render.yaml"]
+
+
 def test_update_file_passes_existing_sha_when_updating():
     def handler(request: httpx.Request) -> httpx.Response:
         body = json_lib.loads(request.content)
@@ -246,11 +277,22 @@ def test_open_pr_defaults_to_draft_targeting_main():
     assert pr.head == "minions/eng/feat"
 
 
-def test_no_merge_method_exists():
-    """Hard guarantee — ProtectedBranch + branch protection are layered, but
-    structurally the client cannot call a merge endpoint either."""
-    client = _client(lambda r: httpx.Response(200, json={}))
-    assert not hasattr(client, "merge_pull_request")
+def test_merge_pull_request_uses_pr_merge_endpoint():
+    """Merge is intentionally constrained to GitHub's PR merge endpoint.
+
+    Branch protection remains the final gate; this client still cannot push to
+    protected branches directly.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "PUT"
+        assert request.url.path == "/repos/org/repo/pulls/42/merge"
+        body = json_lib.loads(request.content)
+        assert body["merge_method"] == "squash"
+        return httpx.Response(200, json={"merged": True})
+
+    client = _client(handler)
+    assert client.merge_pull_request(number=42) is True
     assert not hasattr(client, "merge")
     assert not hasattr(client, "squash_merge")
 

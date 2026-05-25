@@ -1,0 +1,93 @@
+# Agent name registry — gives each role-per-project agent a human name.
+#
+# Phase 4 of openspec/sprint-tasks-memory. Names are persisted history;
+# renaming an agent updates the display in new emissions but does NOT
+# rewrite already-stored Decision / Task records (those keep the name
+# they were stamped with at creation).
+#
+# Manage via:
+#   minions agents name <agent_id> "<Display Name>"   # write
+#   minions agents list                               # show all
+#
+# Agent IDs follow the pattern `role@project`. Shared roles (executive
+# / specialist pool / audit) use `role@shared`.
+#
+# Seed names below — feel free to rename. Convention is short, memorable,
+# distinct first names so the operator can talk about "Sasha shipped X"
+# without ambiguity.
+
+agents:
+  # ---- Project pods (per project) ----
+  product_owner@Demo:    "Aria"
+  manager@Demo:          "Mira"
+  tech_team_lead@Demo:   "Theo"
+  # Engineer seat 0 (base) + seats 1..2 (suffix #1, #2). Multi-seat
+  # round-robin lets the load-balancer assign tasks across Sasha, Vera,
+  # Eli. Engineer seat count comes from `Manifest.team.engineers`.
+  engineer@Demo:         "Sasha"
+  engineer@Demo#1:       "Vera"
+  engineer@Demo#2:       "Eli"
+
+  product_owner@demo_three:    "Pavi"
+  manager@demo_three:          "Maya"
+  tech_team_lead@demo_three:   "Tobi"
+  engineer@demo_three:         "Vera"
+  engineer@demo_three#1:       "Felix"
+  engineer@demo_three#2:       "Nora"
+
+  product_owner@demo_two:  "Quinn"
+  manager@demo_two:        "Rina"
+  tech_team_lead@demo_two: "Leo"
+  engineer@demo_two:       "Nora"
+  engineer@demo_two#1:     "Sage"
+  engineer@demo_two#2:     "Iggy"
+
+  product_owner@demo_four:    "Skye"
+  manager@demo_four:          "Hana"
+  tech_team_lead@demo_four:   "Yusuf"
+  engineer@demo_four:         "Jay"
+  engineer@demo_four#1:       "Kira"
+  engineer@demo_four#2:       "Otto"
+
+  product_owner@demo_five:    "Ravi"
+  manager@demo_five:          "Cleo"
+  tech_team_lead@demo_five:   "Iggy"
+  engineer@demo_five:         "Beni"
+  engineer@demo_five#1:       "Maya"
+  engineer@demo_five#2:       "Reed"
+
+  # ---- Shared bench (one identity, lent across projects) ----
+  ceo@shared:                 "Dara"
+  cto@shared:                 "Ines"
+  managing_director@shared:   "Omar"
+  chief_product_officer@shared: "Asha"
+  coo@shared:                 "Pria"
+
+  principal_engineer@shared:  "Kira"
+  team_architect@shared:      "Zhen"
+  cloud_devops@shared:        "Milo"
+  senior_devops@shared:       "Reed"
+  devsecops@shared:           "Sage"
+  security_champion@shared:   "Noor"
+  qa_engineer@shared:         "Lior"
+
+  senior_engineer@shared:        "Wren"
+  intern@shared:                 "Pip"
+  data_engineer@shared:          "Imani"
+  documentation_engineer@shared: "Otis"
+
+  # ---- Audit + guardrails ----
+  chief_auditor@shared:    "Faye"
+  process_auditor@shared:  "Rohan"
+  code_auditor@shared:     "Naya"
+  cost_auditor@shared:     "Bram"
+  devils_advocate@shared:  "Hela"
+  test_architect@shared:   "Edda"
+  performance_engineer@shared: "Iris"
+
+  # ---- Synthetic / process agents ----
+  pr_followup@shared:           "Cron-PR-Followup"
+  pr_review_loop@shared:        "Cron-PR-Review-Loop"
+  conflict_resolution@shared:   "Cron-Conflict-Resolver"
+  creator_response@shared:      "Creator Response Bot"
+  spokesperson@shared:          "Spokesperson"

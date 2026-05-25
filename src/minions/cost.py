@@ -2,7 +2,7 @@
 
 Captures one JSONL line per LLM call into ``data/local/cost_log.jsonl``:
 
-  {"timestamp": "...", "project": "demo_three", "decision_id": "...",
+  {"timestamp": "...", "project": "demo_five", "decision_id": "...",
    "role": "manager", "model": "claude-sonnet-4-6",
    "input_tokens": 1234, "output_tokens": 567, "cost_usd": 0.012}
 

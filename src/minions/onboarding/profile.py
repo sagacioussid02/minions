@@ -21,7 +21,9 @@ from typing import TYPE_CHECKING, Literal
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
+    from minions.dossiers.store_factory import DossierStoreLike
     from minions.github.client import GitHubClient
+    from minions.models.dossier import DossierDigest
     from minions.models.manifest import Manifest
 
 
@@ -135,6 +137,12 @@ class ProjectProfile(BaseModel):
     open_issues: list[IssueRef] = Field(default_factory=list)
     recent_commits: list[CommitRef] = Field(default_factory=list)
 
+    # Populated by ``build_profile`` when a dossier store is supplied. The
+    # planning crew consumes the digest as additional grounding; freshness
+    # gates the planning crew's behaviour (see ``crews/planning.py``).
+    dossier_digest: DossierDigest | None = None
+    dossier_freshness: str | None = None  # ok | stale | very_stale | none
+
     generated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
 
     def to_planning_context(self) -> str:
@@ -174,7 +182,20 @@ class ProjectProfile(BaseModel):
             out.append("\n## Recent commits\n")
             for c in self.recent_commits:
                 out.append(f"- `{c.sha}` ({c.age_days}d) — {c.subject}")
+        if self.dossier_digest is not None:
+            from minions.dossiers.digest import render_digest_for_planning
+
+            out.append("\n")
+            out.append(render_digest_for_planning(self.dossier_digest))
         return "\n".join(out)
+
+
+# Resolve the forward reference to DossierDigest used in the ProjectProfile
+# model so Pydantic v2 can construct instances without callers having to call
+# model_rebuild() themselves.
+from minions.models.dossier import DossierDigest  # noqa: E402, F401  (resolves forward ref)
+
+ProjectProfile.model_rebuild()
 
 
 def build_profile(
@@ -183,16 +204,28 @@ def build_profile(
     github_client: GitHubClient | None = None,
     issue_limit: int = 10,
     commit_limit: int = 10,
+    cache_dir: Path | None = None,
+    github_token: str | None = None,
+    dossier_store: DossierStoreLike | None = None,
 ) -> ProjectProfile:
-    """Profile a managed project from its local working tree.
+    """Profile a managed project from its working tree.
 
-    `github_client` is optional; when provided and the manifest source is
-    GitHub, open issues are fetched. Filesystem scanning is identical for
-    both source kinds (every manifest has a local `source.path`).
+    Resolution order:
+    1. If ``manifest.source.path`` exists on disk, use it (operator's laptop).
+    2. Else clone ``manifest.source.repo`` into ``cache_dir`` and use that
+       (CI runners, fresh boxes, etc.).
+
+    See :mod:`minions.working_tree` for the resolver. ``github_client`` is
+    still optional and used for fetching open issues via the API.
     """
-    root = Path(manifest.source.path).expanduser()
-    if not root.exists() or not root.is_dir():
-        raise ValueError(f"manifest source path does not exist or is not a directory: {root}")
+    from minions.working_tree import resolve_working_tree
+
+    if cache_dir is None:
+        # data/local/clones lives next to the JSON stores; the orchestrator
+        # already creates data/local on startup.
+        cache_dir = Path(__file__).resolve().parents[3] / "data" / "local" / "clones"
+
+    root = resolve_working_tree(manifest, cache_dir=cache_dir, token=github_token)
 
     languages = _count_languages(root)
     package_files = _find_package_files(root)
@@ -223,6 +256,25 @@ def build_profile(
         except Exception:  # noqa: BLE001 — GitHub fetch is opportunistic enrichment
             open_issues = []
 
+    dossier_digest = None
+    dossier_freshness: str | None = None
+    if dossier_store is not None:
+        try:
+            from minions.dossiers.digest import digest_from_draft
+            from minions.dossiers.freshness import compute_freshness
+
+            latest = dossier_store.latest_merged(manifest.name)
+            if latest is not None:
+                dossier_digest = digest_from_draft(latest, manifest=manifest, repo_root=root)
+                dossier_freshness = dossier_digest.freshness
+            else:
+                dossier_freshness = compute_freshness(
+                    None, overrides=manifest.dossier.freshness_overrides
+                ).label
+        except Exception:  # noqa: BLE001 — dossier fetch is opportunistic
+            dossier_digest = None
+            dossier_freshness = None
+
     return ProjectProfile(
         project=manifest.name,
         source_kind=manifest.source.kind,
@@ -238,6 +290,8 @@ def build_profile(
         todo_count=todo_count,
         open_issues=open_issues,
         recent_commits=recent_commits,
+        dossier_digest=dossier_digest,
+        dossier_freshness=dossier_freshness,
     )
 
 

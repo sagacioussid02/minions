@@ -10,8 +10,14 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 
 class ManifestSource(BaseModel):
+    """Where the project lives. Either ``path`` (local working tree) or
+    ``repo`` (``owner/name``) must be set; if both are provided, ``path``
+    is preferred when it exists. Resolution happens in
+    :func:`minions.working_tree.resolve_working_tree`.
+    """
+
     kind: Literal["github", "local"]
-    path: str
+    path: str | None = None
     repo: str | None = None
     default_branch: str = "main"
 
@@ -57,12 +63,101 @@ class DeliveryTargets(BaseModel):
     tech_debt_per_week: float | None = None
 
 
+class DossierFreshnessOverrides(BaseModel):
+    """Per-project freshness thresholds for ``PROJECT_DOSSIER.md``.
+
+    Planning reads the latest merged dossier and labels it ``ok``/``stale``/
+    ``very_stale`` based on these. Defaults match the spec.
+    """
+
+    ok_max_age_days: int = 14
+    ok_max_commit_drift: int = 200
+    stale_max_age_days: int = 30
+    stale_max_commit_drift: int = 500
+
+
+class DossierConfig(BaseModel):
+    """Per-project knobs for the agent-authored dossier.
+
+    The dossier itself is generated and maintained by the discoverer crew; this
+    block only configures publication target and the rate-limit on agent-
+    proposed GitHub issues. See ``openspec/changes/project-dossier-and-
+    grounded-planning/``.
+    """
+
+    publish: bool = True
+    max_new_issues_per_cycle: int = 5
+    freshness_overrides: DossierFreshnessOverrides = Field(
+        default_factory=DossierFreshnessOverrides
+    )
+
+    @field_validator("max_new_issues_per_cycle")
+    @classmethod
+    def _cap_must_be_positive(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("max_new_issues_per_cycle must be >= 0")
+        return v
+
+
 class HeadcountLimits(BaseModel):
     engineers: int = 8
     senior_engineers: int = 4
     qa: int = 3
     architects: int = 2
     total_team_size: int = 20
+
+
+class HealthCheck(BaseModel):
+    """One probe against the deployed site after a merge."""
+
+    path: str  # "/" or "/api/health"
+    expect_status: int = 200
+    expect_body_contains: str | None = None
+    timeout_seconds: float = 10.0
+
+
+class DeployConfig(BaseModel):
+    """Per-project post-deploy verification config.
+
+    ``target=none`` skips verification entirely (used for projects that
+    do not deploy on every merge — pure libraries, docs-only repos, etc.).
+    For ``target=vercel``, the orchestrator polls the Vercel API for the
+    deployment matching the merge sha, then probes ``production_url``
+    via each ``health_checks`` entry. On any failed check, files a
+    ``risk=high`` Decision proposing rollback.
+    """
+
+    target: str = "none"  # "vercel" | "generic" | "none"
+    production_url: str | None = None
+    health_checks: list[HealthCheck] = Field(default_factory=list)
+    # When True the verifier also fetches the first N <img src="…"> URLs
+    # off the production_url home page and checks each returns 2xx.
+    # Catches the next/image-optimizer outage class without a headless
+    # browser.
+    check_image_assets: bool = True
+    max_image_assets: int = 5
+    max_wait_minutes: int = 15
+
+
+class FlowControl(BaseModel):
+    """Per-project flow-control knobs that guard token spend + GitHub noise.
+
+    `max_open_prs` caps the number of distinct open minions-authored PRs the
+    sweep is allowed to leave outstanding for one project at once. Default
+    is 5; the operator can lift it per project in the manifest. When the
+    cap is hit, the next ``execute-approved`` and ``pr-followup`` sweeps
+    refuse to queue new work for that project until existing PRs are
+    merged or closed.
+    """
+
+    max_open_prs: int = 5
+
+    # Max in-place retries the owner sweep is allowed against ONE PR before
+    # escalating to the operator. After the cap, no more engineer-crew
+    # dispatches fire for that PR until the operator answers the escalation
+    # Question Record. Keeps a stuck PR from burning the project's monthly
+    # budget on infinite retries.
+    max_retries_per_pr: int = 3
 
 
 class Manifest(BaseModel):
@@ -97,11 +192,32 @@ class Manifest(BaseModel):
 
     risk_thresholds: dict[str, Any] | None = None
 
+    dossier: DossierConfig = Field(default_factory=DossierConfig)
+    flow_control: FlowControl = Field(default_factory=FlowControl)
+    preflight: PreflightConfig = Field(default_factory=lambda: _default_preflight())
+    deploy: DeployConfig = Field(default_factory=DeployConfig)
+
     @field_validator("agents", mode="before")
     @classmethod
     def _coerce_agents(cls, v: Any) -> Any:
         # YAML parses an empty mapping with only commented children as None.
         return {} if v is None else v
+
+
+def _default_preflight() -> PreflightConfig:
+    # Local import to avoid a cycle: preflight.models imports nothing from
+    # manifest, and manifest only needs the type at field-construction time.
+    from minions.preflight.models import PreflightConfig
+
+    return PreflightConfig()
+
+
+# Resolve the forward reference so Pydantic can construct Manifest instances
+# without callers having to call model_rebuild() themselves. Mirrors the
+# pattern used for DossierDigest at the bottom of onboarding/profile.py.
+from minions.preflight.models import PreflightConfig  # noqa: E402, F401
+
+Manifest.model_rebuild()
 
 
 def load_manifest(path: Path) -> Manifest:

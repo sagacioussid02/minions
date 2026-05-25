@@ -1,0 +1,22 @@
+name: Daily monitor
+
+# Daily 09:00 UTC. Read-only profile sweep + 72h timeout sweep + PR sync.
+# Code Auditor fires when ANTHROPIC_API_KEY is set AND a sampled PR was
+# just merged (typically 0–2 invocations per week).
+
+on:
+  schedule:
+    # 2x/day (10:00 + 22:00 UTC). Read-only sweep — cost-tuned down from */6h.
+    - cron: '0 10,22 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: cron daily
+    secrets: inherit

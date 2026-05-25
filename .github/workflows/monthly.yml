@@ -1,0 +1,28 @@
+name: Monthly portfolio review
+
+# First Monday of each month at 09:00 UTC. The day-of-month guard keeps this
+# from running on every Monday.
+on:
+  schedule:
+    - cron: '0 9 1-7 * 1'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Run without LLM calls / notifications (default: false)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  monthly:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: >-
+        ${{ inputs.dry-run
+            && 'cron monthly'
+            || 'cron monthly --no-dry-run' }}
+    secrets: inherit

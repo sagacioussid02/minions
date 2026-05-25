@@ -11,9 +11,10 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
 
-import psycopg
-from psycopg import Connection
+if TYPE_CHECKING:
+    from psycopg import Connection
 
 from minions.secrets import SecretNotFound, get_secret
 
@@ -47,6 +48,8 @@ def connect() -> Iterator[Connection]:
     wrap multi-statement work in transactions. Caller's ``with`` block
     commits on success / rolls back on exception via psycopg's protocol.
     """
+    import psycopg
+
     url = get_database_url()
     with psycopg.connect(url) as conn:
         yield conn
