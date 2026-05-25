@@ -1,17 +1,13 @@
 import { SprintBoard } from "@/components/sprint/SprintBoard";
-import { AgilePanel } from "@/components/agile/AgilePanel";
 import { AmbientParticles } from "@/components/AmbientParticles";
 import { HeartbeatDot } from "@/components/HeartbeatDot";
-import { listAgilePanel, listSprintBoard } from "@/lib/queries";
+import { listSprintBoard } from "@/lib/queries";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
 export default async function SprintPage() {
-  const [board, agile] = await Promise.all([
-    listSprintBoard(undefined, "this_week"),
-    listAgilePanel(),
-  ]);
+  const board = await listSprintBoard(undefined, "this_week");
   return (
     <div className="relative flex min-h-screen flex-col">
       <main className="relative flex-1 overflow-hidden">
@@ -58,7 +54,6 @@ export default async function SprintPage() {
           </div>
         </header>
         <div className="relative flex flex-col gap-4 p-6">
-          <AgilePanel initial={agile} />
           <SprintBoard initial={board} />
         </div>
       </main>
