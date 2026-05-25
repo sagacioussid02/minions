@@ -1,0 +1,28 @@
+name: Execute expedited decisions
+
+# Fast lane for leadership-created investigations and self-healing PR fixes.
+# The normal execute-approved sweep still runs every 6h for backlog. This
+# workflow only touches Decisions already stamped expedited by the backend.
+
+on:
+  schedule:
+    - cron: '*/20 * * * *'
+  workflow_dispatch:
+    inputs:
+      max-runs:
+        description: 'Hard cap on expedited engineer runs per invocation'
+        required: false
+        type: string
+        default: '3'
+
+concurrency:
+  group: minions-expedited
+  cancel-in-progress: false
+
+jobs:
+  execute-expedited:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: >-
+        ${{ format('cron execute-approved --no-dry-run --only-expedited --max-runs {0}', inputs.max-runs || '3') }}
+    secrets: inherit

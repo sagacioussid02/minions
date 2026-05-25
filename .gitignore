@@ -43,8 +43,7 @@ logs/
 # Local data
 *.db
 *.sqlite
-data/
+data/local/
 
-# Claude Code internal
+# Local Claude Code state (per-session lock + tool outputs)
 .claude/
-CLAUDE.md

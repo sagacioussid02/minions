@@ -7,12 +7,21 @@ from pathlib import Path
 
 import pytest
 
+from minions import activity
+from minions.activity import read_log, set_log_path
+from minions.agile.store import AgileStore
 from minions.approval.store import DecisionStore
+from minions.crews.engineer import EngineerResult
+from minions.crews.engineer_runs_store import EngineerRunStore
 from minions.models.decision import Decision, DecisionStatus, DecisionType
 from minions.models.manifest import Manifest
+from minions.models.question import QuestionRecord, QuestionStatus
+from minions.questions.store import QuestionStore
 from minions.scheduled import (
+    run_crew_heartbeat,
     run_daily_monitor,
     run_friday_digest,
+    run_scrum,
     run_weekly_planning,
 )
 
@@ -105,6 +114,40 @@ def test_daily_monitor_isolates_per_project_failure(
     assert by_name["beta"].status == "ok"
 
 
+def test_crew_heartbeat_records_project_and_shared_checkins(
+    fake_portfolio: tuple[Path, Path], tmp_path: Path
+) -> None:
+    projects_dir, _ = fake_portfolio
+    activity_path = tmp_path / "activity.jsonl"
+    set_log_path(activity_path)
+
+    try:
+        report = run_crew_heartbeat(projects_dir=projects_dir)
+
+        assert report.errored == 0
+        assert report.checked_in == 3
+        by_scope = {outcome.scope: outcome for outcome in report.outcomes}
+        assert "project:alpha" in by_scope
+        assert "project:beta" in by_scope
+        assert "shared" in by_scope
+        assert "product_owner" in by_scope["project:alpha"].roles
+        assert "engineer" in by_scope["project:alpha"].roles
+        assert "ceo" in by_scope["shared"].roles
+        assert "code_auditor" in by_scope["shared"].roles
+
+        events = read_log(activity_path)
+        assert [event.event for event in events] == [
+            "crew_checkin",
+            "crew_checkin",
+            "crew_checkin",
+        ]
+        assert events[0].crew == "crew_heartbeat"
+        assert "tech_team_lead" in events[0].agents
+    finally:
+        activity._log_path_override = None
+        activity._force_jsonl = False
+
+
 def test_weekly_planning_submits_one_decision_per_project(
     fake_portfolio: tuple[Path, Path], tmp_path: Path
 ) -> None:
@@ -122,6 +165,112 @@ def test_weekly_planning_submits_one_decision_per_project(
     assert report.errored == 0
     assert len(notifier.approval_requests) == 2
     assert len(store.list_all()) == 2
+    decision = store.list_all()[0]
+    assert decision.diff_or_plan is not None
+    assert "## Planning conversation" in decision.diff_or_plan
+    assert "Product Owner → Principal Engineer" in decision.diff_or_plan
+    assert "Principal Engineer → Manager" in decision.diff_or_plan
+    assert "Manager → Operator" in decision.diff_or_plan
+
+
+def test_weekly_planning_records_sprint_ritual(
+    fake_portfolio: tuple[Path, Path], tmp_path: Path
+) -> None:
+    projects_dir, _ = fake_portfolio
+    store = DecisionStore(tmp_path / "decisions.json")
+    agile = AgileStore(tmp_path / "agile.json")
+
+    report = run_weekly_planning(
+        projects_dir=projects_dir,
+        store=store,
+        notifier=_RecordingNotifier(),
+        dry_run=True,
+        projects=["alpha"],
+        agile_store=agile,
+        activity_log_path=tmp_path / "activity.jsonl",
+    )
+
+    assert report.submitted == 1
+    rituals = agile.list_rituals("alpha")
+    assert len(rituals) == 1
+    assert rituals[0].ritual == "sprint_planning"
+    assert rituals[0].related_decision_ids
+
+
+def test_scrum_records_blockers_and_next_actions(
+    fake_portfolio: tuple[Path, Path], tmp_path: Path
+) -> None:
+    projects_dir, _ = fake_portfolio
+    decisions = DecisionStore(tmp_path / "decisions.json")
+    runs = EngineerRunStore(tmp_path / "runs.json")
+    agile = AgileStore(tmp_path / "agile.json")
+    questions = QuestionStore(tmp_path / "questions.json")
+    pending = Decision(
+        project="alpha",
+        type=DecisionType.FEATURE,
+        summary="Needs approval",
+        rationale="test",
+        proposer_role="manager",
+        proposer_agent_id="manager@alpha",
+        status=DecisionStatus.PENDING,
+    )
+    decisions.save(pending)
+    result = EngineerResult(
+        decision_id=str(pending.id),
+        pr_url="https://github.com/x/alpha/pull/1",
+        pr_number=1,
+        branch_name="minions/eng/test",
+        files_changed=["README.md"],
+    )
+    run = runs.save(result, project="alpha")
+    run.ci_conclusion = "failure"
+    runs.update(run)
+    q = QuestionRecord(
+        project="alpha",
+        asker_role="manager",
+        asker_agent_id="manager@alpha",
+        target_role="product_owner",
+        question="What should ship next?",
+        status=QuestionStatus.OPEN,
+    )
+    questions.save(q)
+
+    report = run_scrum(
+        projects_dir=projects_dir,
+        store=decisions,
+        engineer_runs_store=runs,
+        agile_store=agile,
+        questions_store=questions,
+        activity_log_path=tmp_path / "activity.jsonl",
+    )
+
+    alpha = next(o for o in report.outcomes if o.project == "alpha")
+    assert alpha.status == "recorded"
+    assert any("failing CI" in b for b in alpha.blockers)
+    assert any("awaiting operator approval" in b for b in alpha.blockers)
+    ritual = agile.list_rituals("alpha")[0]
+    assert ritual.ritual == "scrum"
+    assert "alpha scrum" in ritual.summary
+
+
+def test_weekly_planning_can_scan_one_project(
+    fake_portfolio: tuple[Path, Path], tmp_path: Path
+) -> None:
+    projects_dir, _ = fake_portfolio
+    store = DecisionStore(tmp_path / "decisions.json")
+    notifier = _RecordingNotifier()
+
+    report = run_weekly_planning(
+        projects_dir=projects_dir,
+        store=store,
+        notifier=notifier,
+        dry_run=True,
+        projects=["beta"],
+    )
+
+    assert report.submitted == 1
+    assert [o.project for o in report.outcomes] == ["beta"]
+    assert [d.project for d in store.list_all()] == ["beta"]
 
 
 def test_weekly_planning_isolates_failure(

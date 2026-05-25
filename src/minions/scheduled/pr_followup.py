@@ -108,7 +108,7 @@ def run_pr_followup(
     store: DecisionStore,
     engineer_runs_store: EngineerRunStore,
     notifier: Notifier,
-    open_github_client: Callable[[Manifest], GitHubClient | None],
+    open_github_client: "Callable[[Manifest], GitHubClient | None]",
     max_attempts: int = 1,
     dry_run: bool = False,
     api_key: str | None = None,
@@ -131,15 +131,13 @@ def run_pr_followup(
 
         github = open_github_client(manifest)
         if github is None:
-            outcomes.append(
-                PRFollowupOutcome(
-                    decision_id=record.decision_id,
-                    project=record.project,
-                    pr_url=record.pr_url,
-                    status="error",
-                    reason="failed to open GitHub client",
-                )
-            )
+            outcomes.append(PRFollowupOutcome(
+                decision_id=record.decision_id,
+                project=record.project,
+                pr_url=record.pr_url,
+                status="error",
+                reason="failed to open GitHub client",
+            ))
             continue
 
         try:
@@ -176,108 +174,103 @@ def run_pr_followup(
                                 pass
 
                     engineer_runs_store.update(record)
-                    outcomes.append(
-                        PRFollowupOutcome(
-                            decision_id=record.decision_id,
-                            project=record.project,
-                            pr_url=record.pr_url,
-                            ci_conclusion=conclusion,
-                            status="ok",
-                        )
-                    )
-                    continue
-
-                if record.followup_attempts >= max_attempts:
-                    engineer_runs_store.update(record)
-                    outcomes.append(
-                        PRFollowupOutcome(
-                            decision_id=record.decision_id,
-                            project=record.project,
-                            pr_url=record.pr_url,
-                            ci_conclusion=conclusion,
-                            status="skipped",
-                            reason=f"followup_attempts={record.followup_attempts} ≥ max={max_attempts}",
-                        )
-                    )
-                    continue
-
-                # File the fix Decision (auto-approved). execute-approved picks it up.
-                fix = Decision(
-                    project=record.project,
-                    type=DecisionType.BUG,
-                    summary=_fix_decision_summary(record),
-                    rationale=(
-                        f"PR follow-up agent observed failed CI on {record.pr_url}. "
-                        "Queuing an automated retry through the standard engineer crew."
-                    ),
-                    diff_or_plan=_fix_decision_plan(record, details_url),
-                    risk="low",
-                    proposer_role="pr_followup",
-                    proposer_agent_id=f"pr_followup@{record.project}",
-                    proposer_display_name="PR follow-up agent",
-                    status=DecisionStatus.PENDING,
-                )
-
-                if dry_run:
-                    outcomes.append(
-                        PRFollowupOutcome(
-                            decision_id=record.decision_id,
-                            project=record.project,
-                            pr_url=record.pr_url,
-                            ci_conclusion=conclusion,
-                            status="queued_fix",
-                            reason="dry-run — would submit + auto-approve",
-                            fix_decision_id=str(fix.id),
-                        )
-                    )
-                    continue
-
-                # Skip the notifier — this Decision is internal traffic. Mailing
-                # the operator an "approve/reject" prompt for something we're
-                # about to auto-approve is just noise. The next execute-approved
-                # tick will surface the new PR; that's the meaningful signal.
-                fix.status = DecisionStatus.APPROVED
-                fix.resolved_reason = "auto-approved by PR follow-up agent"
-                store.save(fix)
-
-                # Post a courtesy comment on the failing PR.
-                try:
-                    github.comment_on_pull_request(
-                        number=record.pr_number,
-                        body=(
-                            "🤖 **PR follow-up agent:** CI is failing on this branch. "
-                            f"I've queued a fix attempt as Decision `{str(fix.id)[:8]}`. "
-                            "It will open a fresh PR with the correction; this PR will be "
-                            "left as-is for the operator to close or learn from."
-                        ),
-                    )
-                except Exception:  # noqa: BLE001
-                    pass
-
-                record.followup_attempts += 1
-                record.last_followup_at = datetime.now(tz=UTC)
-                engineer_runs_store.update(record)
-
-                outcomes.append(
-                    PRFollowupOutcome(
+                    outcomes.append(PRFollowupOutcome(
                         decision_id=record.decision_id,
                         project=record.project,
                         pr_url=record.pr_url,
                         ci_conclusion=conclusion,
-                        status="queued_fix",
-                        fix_decision_id=str(fix.id),
-                    )
+                        status="ok",
+                    ))
+                    continue
+
+                # Dedupe + cap guards: prevent the runaway PR loop where
+                # each fix Decision spawns a new engineer_runs row whose
+                # followup_attempts counter starts at 0, defeating the
+                # per-record max_attempts cap.
+                from minions.crews.flow_control import (
+                    distinct_open_pr_count,
+                    has_open_fix_decision_for_pr,
                 )
-        except Exception as e:  # noqa: BLE001
-            outcomes.append(
-                PRFollowupOutcome(
+
+                if has_open_fix_decision_for_pr(
+                    project=record.project,
+                    pr_number=record.pr_number,
+                    store=store,
+                ):
+                    outcomes.append(PRFollowupOutcome(
+                        decision_id=record.decision_id,
+                        project=record.project,
+                        pr_url=record.pr_url,
+                        ci_conclusion=conclusion,
+                        status="skipped",
+                        reason=(
+                            f"a fix Decision is already pending/approved for "
+                            f"PR #{record.pr_number}"
+                        ),
+                    ))
+                    continue
+
+                open_prs = distinct_open_pr_count(
+                    project=record.project,
+                    engineer_runs_store=engineer_runs_store,
+                )
+                cap = manifest.flow_control.max_open_prs
+                if open_prs >= cap:
+                    outcomes.append(PRFollowupOutcome(
+                        decision_id=record.decision_id,
+                        project=record.project,
+                        pr_url=record.pr_url,
+                        ci_conclusion=conclusion,
+                        status="skipped",
+                        reason=(
+                            f"open_pr_cap={cap} reached "
+                            f"({open_prs} open) — merge or close PRs first"
+                        ),
+                    ))
+                    continue
+
+                if record.followup_attempts >= max_attempts:
+                    engineer_runs_store.update(record)
+                    outcomes.append(PRFollowupOutcome(
+                        decision_id=record.decision_id,
+                        project=record.project,
+                        pr_url=record.pr_url,
+                        ci_conclusion=conclusion,
+                        status="skipped",
+                        reason=f"followup_attempts={record.followup_attempts} ≥ max={max_attempts}",
+                    ))
+                    continue
+
+                # pr-ownership-sweep Phase 4: do NOT file a new "Fix CI
+                # failure" Decision Record. The owner sweep
+                # (scheduled/pr_owner_sweep.py) is now solely responsible
+                # for CI-failure retries: it walks the same record, sees
+                # ci_conclusion=failure, re-dispatches the original owner
+                # agent in-place on the existing branch, bumps its own
+                # sticky followup_attempts, and escalates to the operator
+                # via a Question Record after the cap.
+                #
+                # pr_followup's remaining job is the CI snapshot above +
+                # the QA review on the success path. Don't touch the
+                # counter here — owner sweep owns it.
+                engineer_runs_store.update(record)
+                outcomes.append(PRFollowupOutcome(
                     decision_id=record.decision_id,
                     project=record.project,
                     pr_url=record.pr_url,
-                    status="error",
-                    reason=f"{type(e).__name__}: {e}",
-                )
-            )
+                    ci_conclusion=conclusion,
+                    status="ok",
+                    reason="ci=failure (owner sweep will retry)",
+                ))
+                continue
+        except Exception as e:  # noqa: BLE001
+            outcomes.append(PRFollowupOutcome(
+                decision_id=record.decision_id,
+                project=record.project,
+                pr_url=record.pr_url,
+                status="error",
+                reason=f"{type(e).__name__}: {e}",
+            ))
 
     return PRFollowupReport(
         started_at=started,

@@ -1,0 +1,78 @@
+name: Project planning scan
+
+# Weekday project-specific planning scans. Each run invokes the planning crew
+# for one project: Product Owner scouts value, Principal Engineer checks
+# feasibility, and Manager packages the Decision.
+
+on:
+  schedule:
+    # 15:00 UTC is morning in US Mountain time for most of the year.
+    - cron: '0 15 * * 1' # Monday — Demo
+    - cron: '0 15 * * 2' # Tuesday — demo_five
+    - cron: '0 15 * * 3' # Wednesday — demo_two
+    - cron: '0 15 * * 4' # Thursday — demo_four
+    - cron: '0 15 * * 5' # Friday — demo_three
+  workflow_dispatch:
+    inputs:
+      project:
+        description: 'Project to scan'
+        required: true
+        type: choice
+        options:
+          - Demo
+          - demo_five
+          - demo_two
+          - demo_four
+          - demo_three
+      dry-run:
+        description: 'Run without LLM calls / emails (default: false)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  monday-Demo:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 15 * * 1'
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: cron weekly --no-dry-run --project Demo
+    secrets: inherit
+
+  tuesday-demo_five:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 15 * * 2'
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: cron weekly --no-dry-run --project demo_five
+    secrets: inherit
+
+  wednesday-demo_two:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 15 * * 3'
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: cron weekly --no-dry-run --project demo_two
+    secrets: inherit
+
+  thursday-demo_four:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 15 * * 4'
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: cron weekly --no-dry-run --project demo_four
+    secrets: inherit
+
+  friday-demo_three:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 15 * * 5'
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: cron weekly --no-dry-run --project demo_three
+    secrets: inherit
+
+  manual:
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: ${{ inputs.dry-run && format('cron weekly --project {0}', inputs.project) || format('cron weekly --no-dry-run --project {0}', inputs.project) }}
+    secrets: inherit

@@ -17,7 +17,7 @@ LANGFUSE_SECRET_KEY=sk-lf-...
 LANGFUSE_HOST=https://cloud.langfuse.com   # or your self-hosted URL (optional)
 ```
 
-Then ``minions langfuse`` to verify, ``minions plan demo --no-dry-run`` to
+Then ``minions langfuse`` to verify, ``minions plan Demo --no-dry-run`` to
 generate your first trace.
 
 ## Why a lazy wrapper
@@ -32,9 +32,8 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable
 from functools import wraps
-from typing import Any, TypeVar
+from typing import Any, Callable, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +42,10 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 def has_credentials() -> bool:
     """True if Langfuse public + secret keys are present in the environment."""
-    return bool(os.environ.get("LANGFUSE_PUBLIC_KEY") and os.environ.get("LANGFUSE_SECRET_KEY"))
+    return bool(
+        os.environ.get("LANGFUSE_PUBLIC_KEY")
+        and os.environ.get("LANGFUSE_SECRET_KEY")
+    )
 
 
 def init_langfuse(*, verbose: bool = False) -> bool:

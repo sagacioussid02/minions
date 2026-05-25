@@ -226,6 +226,34 @@ def get_anthropic_api_key() -> str:
     return get_secret("anthropic-api-key")
 
 
+def get_vercel_token(project: str | None = None) -> str:
+    """Resolve a Vercel API token, optionally per-project.
+
+    Order:
+    1. ``MINIONS_SECRET_VERCEL_TOKEN_<PROJECT_UPPER>`` env var (project override)
+    2. ``MINIONS_SECRET_VERCEL_TOKEN`` env var (global)
+    3. ``VERCEL_TOKEN`` env var (developer convention)
+    4. Secret backends: ``minions/vercel-token-<project>`` then
+       ``minions/vercel-token``
+    """
+    if project:
+        scoped = os.environ.get(
+            f"MINIONS_SECRET_VERCEL_TOKEN_{project.upper().replace('-', '_')}"
+        )
+        if scoped:
+            return scoped
+    for env_name in ("MINIONS_SECRET_VERCEL_TOKEN", "VERCEL_TOKEN"):
+        v = os.environ.get(env_name)
+        if v:
+            return v
+    if project:
+        try:
+            return get_secret(f"vercel-token-{project}")
+        except SecretNotFound:
+            pass
+    return get_secret("vercel-token")
+
+
 def get_token_signing_key() -> str:
     """Resolve the HMAC key used to sign approval magic-link tokens.
 

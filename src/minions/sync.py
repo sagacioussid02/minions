@@ -36,7 +36,7 @@ class SyncOutcome:
     decision_id: str
     project: str
     before: str | None  # previous pr_state
-    after: str | None  # new pr_state
+    after: str | None   # new pr_state
     error: str | None = None
 
     @property
@@ -72,7 +72,7 @@ def _pr_state_from_response(*, merged: bool, state: str) -> str:
 def sync_record(
     record: EngineerRunRecord,
     *,
-    github: GitHubClient,
+    github: "GitHubClient",
     store: EngineerRunStore,
     now: datetime | None = None,
 ) -> SyncOutcome:
@@ -171,8 +171,8 @@ def _backfill_records_from_decisions(
 def sync_pr_status(
     *,
     store: EngineerRunStore,
-    open_github_client: Callable[[Manifest], GitHubClient | None],
-    manifests: dict[str, Manifest],
+    open_github_client: "Callable[[Manifest], GitHubClient | None]",
+    manifests: dict[str, "Manifest"],
     decision_store: DecisionStore | None = None,
     now: datetime | None = None,
 ) -> SyncReport:
@@ -191,7 +191,7 @@ def sync_pr_status(
 
     outcomes: list[SyncOutcome] = []
     # Cache one client per project so we don't reopen for each run.
-    clients: dict[str, GitHubClient | None] = {}
+    clients: dict[str, "GitHubClient | None"] = {}
 
     for record in store.list_all():
         if record.pr_url is None:

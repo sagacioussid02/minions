@@ -1,0 +1,115 @@
+# Scrub rules consumed by sync_to_public.py.
+#
+# Order matters: longer/more-specific strings first so e.g. "Demo" matches
+# before "aag" would (currently no overlap, but keep the discipline).
+#
+# All replacements are CASE-SENSITIVE unless `case_insensitive: true`.
+# Project-name replacements use case-insensitive matching because we have
+# "Demo" in code comments and "Demo" in roster keys for the same project.
+
+text_replacements:
+  # Operator personal identifiers
+  - find: "operator@example.com"
+    replace: "operator@example.com"
+  - find: "operator"
+    replace: "operator"
+  - find: "your-github-org"
+    replace: "your-github-org"
+
+  # Project name mapping — real → demo. Case-insensitive (handles
+  # both `Demo` in CLI examples and `Demo` in roster keys).
+  - find: "Demo"
+    replace: "Demo"
+    case_insensitive: true
+  # Underscored to match public's demo project filenames:
+  # projects/demo.yaml, demo_two.yaml, demo_three.yaml, ...
+  - find: "demo_two"
+    replace: "demo_two"
+    case_insensitive: true
+  - find: "demo_two"
+    replace: "demo_two"
+    case_insensitive: true
+  - find: "demo_three"
+    replace: "demo_three"
+    case_insensitive: true
+  - find: "demo_three"
+    replace: "demo_three"
+    case_insensitive: true
+  - find: "demo_four"
+    replace: "demo_four"
+    case_insensitive: true
+  - find: "demo_five"
+    replace: "demo_five"
+    case_insensitive: true
+
+# Files that ONLY get scrubbed (no other transforms). All other ships
+# are verbatim copies.
+scrub_files:
+  - "README.md"
+  - "config/portfolio.yaml"
+  - "config/agent_names.yaml"
+  - "src/minions/__main__.py"
+  - "src/minions/activity.py"
+  - "src/minions/cost.py"
+  - "src/minions/observability.py"
+  - "src/minions/dashboard/app.py"
+  - "src/minions/spokesperson/interview_relay.py"
+  - "src/minions/deployments/verifier.py"
+  - "src/minions/scheduled/pr_owner_sweep.py"
+  - "src/minions/scheduled/scrum.py"
+
+# Paths never synced to public. Public's own copy (if any) wins.
+drop_paths:
+  - "projects/Demo.yaml"
+  - "projects/demo_two.yaml"
+  - "projects/demo_four.yaml"
+  - "projects/demo_five.yaml"
+  - "projects/demo_three.yaml"
+  - "projects/_deferred"
+  - ".git/AUTO_MERGE"
+  - ".ruff_cache"
+
+# Paths that exist in public but not private — preserve them on sync.
+preserve_in_target:
+  - ".github/CODEOWNERS"
+  - ".github/ISSUE_TEMPLATE"
+  - ".github/dependabot.yml"
+  - ".github/pull_request_template.md"
+  - ".github/workflows/ci.yml"
+  - ".github/workflows/release.yml"
+  - ".github/workflows/welcome.yml"
+  - "projects/demo.yaml"
+  - "projects/demo_two.yaml"
+  - "projects/demo_three.yaml"
+  - "projects/demo_four.yaml"
+  - "projects/demo_five.yaml"
+  - "tests/test_cli_decisions.py"
+  - "tests/test_guardrail_events.py"
+
+# Top-level directories included in the sync. Anything outside is ignored.
+include_roots:
+  - "src"
+  - "tests"
+  - "config"
+  - ".github/workflows"
+  - "scripts/sync_public"
+
+# Files explicitly synced individually (outside include_roots).
+include_files:
+  - "README.md"
+  - "pyproject.toml"
+  - ".gitignore"
+
+# Structural patches applied AFTER text-replacement scrub.
+# Each entry is keyed by relative path and contains a list of
+# (find, replace) pairs that are stricter than the global text_replacements
+# (e.g., a hardcoded string in a UI caption that needs to be replaced
+# with an environment-lookup expression).
+structural_patches:
+  "src/minions/dashboard/app.py":
+    - find: 'st.caption("operator@example.com — sole human-in-the-loop approver")'
+      # Note: use single-quoted YAML so the f-string's inner double quotes pass
+      # through verbatim. Inside a single-quoted YAML scalar, '' is an escaped
+      # single quote and everything else is literal.
+      replace: 'st.caption(f''{os.getenv("OPERATOR_EMAIL", "operator@example.com")} — sole human-in-the-loop approver'')'
+      requires_import: "os"

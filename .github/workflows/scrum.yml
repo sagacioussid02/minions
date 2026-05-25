@@ -1,0 +1,26 @@
+name: Agile scrum
+
+# Two-day lightweight Scrum ritual. Records current work, blockers, and next
+# actions for every configured project without opening PRs.
+
+on:
+  schedule:
+    - cron: '0 14 */2 * *'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Run without writing Agile artifacts (default: false)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  scrum:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: ${{ inputs.dry-run && 'cron scrum --dry-run' || 'cron scrum --no-dry-run' }}
+    secrets: inherit

@@ -44,7 +44,7 @@ def run_friday_digest(
     store: DecisionStore,
     notifier: Notifier,
     week_window_days: int = 7,
-    open_github_client: Callable[[Manifest], GitHubClient | None] | None = None,
+    open_github_client: "Callable[[Manifest], GitHubClient | None] | None" = None,
     send: bool = True,
 ) -> FridayDigestReport:
     started = datetime.now(tz=UTC).isoformat()

@@ -1,12 +1,13 @@
 """Scoped GitHub REST client.
 
 By design this client cannot:
-  - merge a pull request (no method exists — see test_no_merge_method_exists)
   - push commits to ``main``/``master``/``trunk``/``develop`` (refused at
     the client level AND by server-side branch protection on the repo)
 
 These are belt-and-suspenders against any prompt-injection or mistake that
-gets past the agent's safety preamble.
+gets past the agent's safety preamble. PR merge is allowed only through the
+explicit ``merge_pull_request`` method, which lets GitHub branch protection make
+the final decision.
 """
 
 from __future__ import annotations
@@ -16,7 +17,6 @@ from typing import Any
 
 import httpx
 
-from minions.activity import record_guardrail_block
 from minions.github.models import BranchRef, Issue, PullRequest, Repo
 
 
@@ -100,13 +100,9 @@ class GitHubClient:
             )
         return response
 
-    def _check_not_protected(self, branch: str, *, op: str = "write") -> None:
+    @staticmethod
+    def _check_not_protected(branch: str) -> None:
         if branch.lower() in _PROTECTED_BRANCHES:
-            record_guardrail_block(
-                layer="layer2_tooling",
-                kind="protected_branch",
-                details=f"{op} refused on {branch!r} for repo {self.repo}",
-            )
             raise ProtectedBranchError(
                 f"refusing to operate on protected branch {branch!r}. "
                 f"Create a feature branch (e.g., minions/<role>/<summary>) and open a PR."
@@ -150,6 +146,30 @@ class GitHubClient:
         r = self._request("GET", f"/repos/{self.repo}/issues/{number}")
         return _normalize_issue(r.json())
 
+    def list_issue_comments(
+        self, *, number: int, per_page: int = 30
+    ) -> list[dict[str, Any]]:
+        """List conversation comments on an issue / PR (most-recent last).
+
+        PR comments live on the issue-comments endpoint; PR reviews
+        (file-level inline) live on a separate one we don't need here.
+        Returns flattened ``{user, created_at, body}`` dicts.
+        """
+        r = self._request(
+            "GET",
+            f"/repos/{self.repo}/issues/{number}/comments",
+            params={"per_page": per_page},
+        )
+        out: list[dict[str, Any]] = []
+        for c in r.json():
+            user_obj = c.get("user") or {}
+            out.append({
+                "user": user_obj.get("login", ""),
+                "created_at": c.get("created_at", ""),
+                "body": c.get("body", "") or "",
+            })
+        return out
+
     def comment_on_issue(self, *, number: int, body: str) -> None:
         self._request(
             "POST",
@@ -157,11 +177,25 @@ class GitHubClient:
             json={"body": body},
         )
 
+    def create_issue(
+        self,
+        *,
+        title: str,
+        body: str,
+        labels: list[str] | None = None,
+    ) -> Issue:
+        """Create a new GitHub issue. No assignees, no milestones — keep it minimal."""
+        payload: dict[str, Any] = {"title": title, "body": body}
+        if labels:
+            payload["labels"] = labels
+        r = self._request("POST", f"/repos/{self.repo}/issues", json=payload)
+        return _normalize_issue(r.json())
+
     # ---- Branching ----
 
     def create_branch(self, *, name: str, base_sha: str) -> BranchRef:
         """Create a new ref. Refuses protected branch names."""
-        self._check_not_protected(name, op="create_branch")
+        self._check_not_protected(name)
         r = self._request(
             "POST",
             f"/repos/{self.repo}/git/refs",
@@ -169,12 +203,88 @@ class GitHubClient:
         )
         return BranchRef(name=name, sha=r.json()["object"]["sha"])
 
+    def delete_branch(self, *, name: str) -> None:
+        """Delete a branch ref. Refuses protected branches.
+
+        Used by the engineer crew to roll back a stranded branch when PR
+        creation fails, and by the branch sweeper to garbage-collect old
+        engineer-created branches that never got a PR opened.
+        """
+        self._check_not_protected(name)
+        # GitHub returns 204 on success, 422 if the ref does not exist. Treat
+        # 422/404 as a no-op so callers can be idempotent.
+        try:
+            self._request("DELETE", f"/repos/{self.repo}/git/refs/heads/{name}")
+        except GitHubError as e:
+            if e.status_code in (404, 422):
+                return
+            raise
+
+    def list_branches(self, *, prefix: str | None = None) -> list[BranchRef]:
+        """List branches in the repo, optionally filtered by name prefix.
+
+        Paginates through all branches; intended for low-traffic admin paths
+        (the branch sweeper) — not the engineer hot path.
+        """
+        out: list[BranchRef] = []
+        page = 1
+        while True:
+            r = self._request(
+                "GET",
+                f"/repos/{self.repo}/branches",
+                params={"per_page": "100", "page": str(page)},
+            )
+            items = r.json()
+            if not items:
+                break
+            for item in items:
+                name = item.get("name")
+                sha = (item.get("commit") or {}).get("sha")
+                if not isinstance(name, str) or not isinstance(sha, str):
+                    continue
+                if prefix is not None and not name.startswith(prefix):
+                    continue
+                out.append(BranchRef(name=name, sha=sha))
+            if len(items) < 100:
+                break
+            page += 1
+        return out
+
+    def list_branch_commits(self, *, branch: str, limit: int = 100) -> list[dict[str, Any]]:
+        """Return raw commit objects for a branch (newest first).
+
+        Each item has at least: ``sha``, ``commit.message``, ``commit.author``
+        (with ``name``, ``email``, ``date``). Used by the branch sweeper to
+        verify ownership trailers and age before deleting.
+        """
+        r = self._request(
+            "GET",
+            f"/repos/{self.repo}/commits",
+            params={"sha": branch, "per_page": str(min(limit, 100))},
+        )
+        items = r.json()
+        return items if isinstance(items, list) else []
+
+    def find_pull_request_for_branch(self, *, branch: str) -> PullRequest | None:
+        """Return the most recent PR whose head ref is ``branch``, any state."""
+        r = self._request(
+            "GET",
+            f"/repos/{self.repo}/pulls",
+            params={"head": f"{self.repo.split('/')[0]}:{branch}", "state": "all", "per_page": "1"},
+        )
+        items = r.json()
+        if not isinstance(items, list) or not items:
+            return None
+        return _normalize_pull_request(items[0])
+
     # ---- File commits (single file via Contents API) ----
 
     def get_file_sha(self, *, path: str, branch: str) -> str | None:
         """Return the blob SHA for an existing file, or None if it doesn't exist."""
         try:
-            r = self._request("GET", f"/repos/{self.repo}/contents/{path}", params={"ref": branch})
+            r = self._request(
+                "GET", f"/repos/{self.repo}/contents/{path}", params={"ref": branch}
+            )
         except GitHubError as e:
             if e.status_code == 404:
                 return None
@@ -183,10 +293,45 @@ class GitHubClient:
         if isinstance(body, list):
             # Path is a directory; not what the caller asked for.
             return None
-        if not isinstance(body, dict):
+        return body.get("sha")
+
+    def get_text_file(self, *, path: str, branch: str) -> str | None:
+        """Read a UTF-8 text file through the GitHub Contents API.
+
+        This is intentionally read-only and returns None for missing files,
+        directories, non-base64 payloads, or files GitHub does not inline.
+        """
+        try:
+            r = self._request(
+                "GET", f"/repos/{self.repo}/contents/{path}", params={"ref": branch}
+            )
+        except GitHubError as e:
+            if e.status_code == 404:
+                return None
+            raise
+        body = r.json()
+        if isinstance(body, list) or body.get("encoding") != "base64":
             return None
-        sha = body.get("sha")
-        return sha if isinstance(sha, str) else None
+        raw = body.get("content")
+        if not isinstance(raw, str):
+            return None
+        try:
+            return base64.b64decode(raw).decode("utf-8", errors="ignore")
+        except (ValueError, TypeError):
+            return None
+
+    def list_files(self, *, branch: str) -> list[str]:
+        """List repository file paths using the read-only git tree endpoint."""
+        r = self._request(
+            "GET",
+            f"/repos/{self.repo}/git/trees/{branch}",
+            params={"recursive": "1"},
+        )
+        return [
+            item["path"]
+            for item in r.json().get("tree", [])
+            if item.get("type") == "blob" and isinstance(item.get("path"), str)
+        ]
 
     def update_file(
         self,
@@ -203,7 +348,7 @@ class GitHubClient:
         (use :meth:`get_file_sha`). Returns the resulting commit SHA.
         Refuses protected branches.
         """
-        self._check_not_protected(branch, op="update_file")
+        self._check_not_protected(branch)
         content_bytes = content.encode("utf-8") if isinstance(content, str) else content
         body: dict[str, Any] = {
             "message": message,
@@ -213,12 +358,7 @@ class GitHubClient:
         if sha is not None:
             body["sha"] = sha
         r = self._request("PUT", f"/repos/{self.repo}/contents/{path}", json=body)
-        response_body = r.json()
-        commit = response_body.get("commit") if isinstance(response_body, dict) else None
-        commit_sha = commit.get("sha") if isinstance(commit, dict) else None
-        if not isinstance(commit_sha, str):
-            raise GitHubError("GitHub update_file response did not include commit.sha")
-        return commit_sha
+        return r.json()["commit"]["sha"]
 
     # ---- Pull requests ----
 
@@ -233,11 +373,6 @@ class GitHubClient:
     ) -> PullRequest:
         """Open a PR. Default is draft. Refuses head=protected branch."""
         if head.lower() in _PROTECTED_BRANCHES:
-            record_guardrail_block(
-                layer="layer2_tooling",
-                kind="protected_branch",
-                details=f"open_pull_request refused with head={head!r} for repo {self.repo}",
-            )
             raise ProtectedBranchError(
                 f"refusing to open a PR with head={head!r}; "
                 f"feature branches must be of the form minions/<role>/<summary>."
@@ -263,6 +398,45 @@ class GitHubClient:
         r = self._request("GET", f"/repos/{self.repo}/pulls/{number}")
         return _normalize_pull_request(r.json())
 
+    def close_pull_request(self, *, number: int) -> PullRequest:
+        """Close an open PR without merging it."""
+        r = self._request(
+            "PATCH",
+            f"/repos/{self.repo}/pulls/{number}",
+            json={"state": "closed"},
+        )
+        return _normalize_pull_request(r.json())
+
+    def get_pr_merge_state(self, number: int) -> str | None:
+        """Return GitHub's mergeability state for a PR when available.
+
+        GitHub computes this field asynchronously, so callers should treat
+        ``None`` or ``"unknown"`` as inconclusive and retry on a later sweep.
+        """
+        return self.get_pull_request(number).mergeable_state
+
+    def merge_pull_request(
+        self,
+        *,
+        number: int,
+        commit_title: str | None = None,
+        commit_message: str | None = None,
+        method: str = "squash",
+    ) -> bool:
+        """Ask GitHub to merge a PR.
+
+        This does not bypass branch protection. GitHub returns 405/409/422 when
+        required reviews, checks, or repo rules block the merge; callers should
+        treat those as a human/operator handoff.
+        """
+        body: dict[str, Any] = {"merge_method": method}
+        if commit_title:
+            body["commit_title"] = commit_title
+        if commit_message:
+            body["commit_message"] = commit_message
+        r = self._request("PUT", f"/repos/{self.repo}/pulls/{number}/merge", json=body)
+        return bool(r.json().get("merged", False))
+
     def get_pr_check_status(self, number: int) -> tuple[str | None, str | None]:
         """Return ``(conclusion, details_url)`` for the latest CI on a PR.
 
@@ -279,7 +453,9 @@ class GitHubClient:
         # 403s on some private-repo + token combinations. Either way, "unknown"
         # is the right answer — the sweep should not error on a stale PR.
         try:
-            r = self._request("GET", f"/repos/{self.repo}/commits/{pr.head_sha}/check-runs")
+            r = self._request(
+                "GET", f"/repos/{self.repo}/commits/{pr.head_sha}/check-runs"
+            )
         except GitHubError as e:
             if e.status_code in {403, 404, 422}:
                 return None, None
@@ -308,7 +484,9 @@ class GitHubClient:
             return "pending", None
         return "success", None
 
-    def list_pull_request_files(self, number: int, *, per_page: int = 30) -> list[dict[str, Any]]:
+    def list_pull_request_files(
+        self, number: int, *, per_page: int = 30
+    ) -> list[dict[str, Any]]:
         """Return PR files: filename, status, additions, deletions, patch (when present).
 
         GitHub caps per_page at 100 and excludes patches over 5MB. This is good
@@ -370,4 +548,5 @@ def _normalize_pull_request(item: dict[str, Any]) -> PullRequest:
         merged=bool(item.get("merged", False)),
         merged_at=item.get("merged_at"),
         closed_at=item.get("closed_at"),
+        mergeable_state=item.get("mergeable_state"),
     )

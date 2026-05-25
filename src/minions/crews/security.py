@@ -38,7 +38,7 @@ def attach_review(
     decision: Decision,
     *,
     api_key: str | None = None,
-    portfolio: PortfolioConfig | None = None,
+    portfolio: "PortfolioConfig | None" = None,
     output_override: SecurityReview | None = None,
 ) -> SecurityReview | None:
     """Run Security Champion (if risk gate passes) and attach to ``decision.security_review``."""
@@ -79,7 +79,7 @@ def review(
     decision: Decision,
     *,
     api_key: str | None = None,
-    portfolio: PortfolioConfig | None = None,
+    portfolio: "PortfolioConfig | None" = None,
     output_override: SecurityReview | None = None,
 ) -> SecurityReview | None:
     """Generate a SecurityReview for a proposed Decision."""
@@ -125,7 +125,7 @@ def review(
         {decision.rationale}
 
         Plan:
-        {decision.diff_or_plan or "(none)"}
+        {decision.diff_or_plan or '(none)'}
 
         ## Your task
         Produce a SecurityReview with three fields:

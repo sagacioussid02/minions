@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from email.message import Message
+from email.mime.multipart import MIMEMultipart
+
+import pytest
 
 from minions.models.decision import (
     Decision,
@@ -94,7 +97,9 @@ def test_text_body_contains_decision_fields_and_cli_command():
 
 def test_html_body_escapes_user_content():
     decision = _decision(summary="<script>alert(1)</script>", rationale="A & B < C")
-    html = _render_approval_html(decision, proposer="Marcus", approve_token="x", reject_token="y")
+    html = _render_approval_html(
+        decision, proposer="Marcus", approve_token="x", reject_token="y"
+    )
     # User-controlled values must be escaped
     assert "<script>" not in html
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
@@ -109,13 +114,17 @@ def test_critique_renders_when_present():
     )
     decision = _decision(critique=critique)
 
-    text = _render_approval_text(decision, proposer="Marcus", approve_token="x", reject_token="y")
+    text = _render_approval_text(
+        decision, proposer="Marcus", approve_token="x", reject_token="y"
+    )
     assert "Devil's Advocate" in text
     assert "Scope is too broad" in text
     assert "test coverage gap" in text
     assert "Split into two PRs" in text
 
-    html = _render_approval_html(decision, proposer="Marcus", approve_token="x", reject_token="y")
+    html = _render_approval_html(
+        decision, proposer="Marcus", approve_token="x", reject_token="y"
+    )
     assert "Devil&#x27;s Advocate" in html or "Devil's Advocate" in html
     assert "Scope is too broad" in html
 

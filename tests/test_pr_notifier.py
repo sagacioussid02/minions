@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json as json_lib
-from collections.abc import Callable
 from pathlib import Path
+from typing import Callable
 
 import httpx
 
@@ -37,7 +37,7 @@ def _decision() -> Decision:
 
 
 def _manifest():
-    return load_manifest(REPO_ROOT / "projects" / "demo.yaml")
+    return load_manifest(REPO_ROOT / "projects" / "Demo.yaml")
 
 
 def _client(handler: Callable[[httpx.Request], httpx.Response]) -> GitHubClient:
@@ -62,7 +62,9 @@ def _override() -> EngineerOutput:
 
 
 def test_operator_comment_includes_decision_metadata() -> None:
-    body = _build_operator_review_comment(_decision(), _manifest(), _override(), _override().files)
+    body = _build_operator_review_comment(
+        _decision(), _manifest(), _override(), _override().files
+    )
     assert "Operator review requested" in body
     assert "Demo" in body
     assert "Marcus" in body
@@ -81,15 +83,7 @@ def test_operator_comment_is_posted_after_pr_open() -> None:
     def handler(req: httpx.Request) -> httpx.Response:
         path = req.url.path
         if req.method == "GET" and path == "/repos/org/repo":
-            return httpx.Response(
-                200,
-                json={
-                    "full_name": "org/repo",
-                    "default_branch": "main",
-                    "private": False,
-                    "html_url": "u",
-                },
-            )
+            return httpx.Response(200, json={"full_name": "org/repo", "default_branch": "main", "private": False, "html_url": "u"})
         if req.method == "GET" and path == "/repos/org/repo/git/ref/heads/main":
             return httpx.Response(200, json={"object": {"sha": "basesha"}})
         if req.method == "GET" and path.startswith("/repos/org/repo/git/ref/heads/minions/"):
@@ -141,15 +135,7 @@ def test_operator_comment_failure_does_not_break_pr() -> None:
     def handler(req: httpx.Request) -> httpx.Response:
         path = req.url.path
         if req.method == "GET" and path == "/repos/org/repo":
-            return httpx.Response(
-                200,
-                json={
-                    "full_name": "org/repo",
-                    "default_branch": "main",
-                    "private": False,
-                    "html_url": "u",
-                },
-            )
+            return httpx.Response(200, json={"full_name": "org/repo", "default_branch": "main", "private": False, "html_url": "u"})
         if req.method == "GET" and path == "/repos/org/repo/git/ref/heads/main":
             return httpx.Response(200, json={"object": {"sha": "basesha"}})
         if req.method == "GET" and path.startswith("/repos/org/repo/git/ref/heads/minions/"):

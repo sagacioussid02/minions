@@ -1,0 +1,20 @@
+name: Crew heartbeat
+
+# Daily lightweight availability check-in. This records dashboard activity for
+# every configured role without running LLMs, opening PRs, or writing GitHub.
+
+on:
+  schedule:
+    - cron: '30 13 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  crew-heartbeat:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: cron crew-heartbeat
+    secrets: inherit

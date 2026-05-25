@@ -1,0 +1,29 @@
+name: PR review loop
+
+# Runs between PR follow-up ticks. Assigns internal crew reviewers and posts
+# structured review comments on minions-authored PRs.
+
+on:
+  schedule:
+    - cron: '45 */2 * * *'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Skip PR comments and engineer-run updates (default: false)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  pr-review-loop:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: >-
+        ${{ inputs.dry-run
+            && 'cron pr-review-loop --dry-run'
+            || 'cron pr-review-loop --no-dry-run' }}
+    secrets: inherit

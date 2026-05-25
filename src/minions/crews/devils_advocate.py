@@ -48,8 +48,9 @@ def attach_critique(
     decision: Decision,
     *,
     api_key: str | None = None,
-    portfolio: PortfolioConfig | None = None,
+    portfolio: "PortfolioConfig | None" = None,
     output_override: DevilsAdvocateCritique | None = None,
+    memory_store: object | None = None,
 ) -> DevilsAdvocateCritique | None:
     """Run Devil's Advocate (if the risk gate passes) and attach to ``decision.critique``.
 
@@ -88,6 +89,15 @@ def attach_critique(
 
     if result is not None:
         decision.critique = result
+        if memory_store is not None and hasattr(memory_store, "record"):
+            memory_store.record(
+                agent_id=f"devils_advocate@{decision.project}",
+                sprint_number=decision.sprint_number,
+                decision_id=decision.id,
+                event="lesson_learned",
+                summary=f"Flagged risk for '{decision.summary}': {result.counter_argument}",
+                details="; ".join(result.failure_modes),
+            )
     return result
 
 
@@ -96,7 +106,7 @@ def critique(
     decision: Decision,
     *,
     api_key: str | None = None,
-    portfolio: PortfolioConfig | None = None,
+    portfolio: "PortfolioConfig | None" = None,
     output_override: DevilsAdvocateCritique | None = None,
 ) -> DevilsAdvocateCritique | None:
     """Generate a Devil's Advocate critique for a proposed Decision.
@@ -148,7 +158,7 @@ def critique(
         {decision.rationale}
 
         Plan:
-        {decision.diff_or_plan or "(none)"}
+        {decision.diff_or_plan or '(none)'}
 
         ## Your task
         Produce a DevilsAdvocateCritique with three fields:

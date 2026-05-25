@@ -17,9 +17,9 @@ from typing import Literal
 # 5-field cron (minute hour day-of-month month day-of-week, where 0/7 = Sunday
 # but we use 1=Mon for clarity below — the resolver handles both).
 V0_FRUGAL_SCHEDULES: dict[str, str] = {
-    "weekly_planning": "0 9 * * 1",  # Mon 09:00 local
-    "daily_monitor": "0 9 * * *",  # 09:00 local every day
-    "friday_digest": "0 16 * * 5",  # Fri 16:00 local
+    "weekly_planning": "0 9 * * 1",   # Mon 09:00 local
+    "daily_monitor":   "0 9 * * *",   # 09:00 local every day
+    "friday_digest":   "0 16 * * 5",  # Fri 16:00 local
 }
 
 # Which roles are invoked by which crews. event-driven roles (engineer,
@@ -154,7 +154,9 @@ def _next_fire(cron: str, *, now: datetime) -> datetime | None:
             return None
 
     fire_time = time(hour=hour, minute=minute)
-    today_at = now.replace(hour=fire_time.hour, minute=fire_time.minute, second=0, microsecond=0)
+    today_at = now.replace(
+        hour=fire_time.hour, minute=fire_time.minute, second=0, microsecond=0
+    )
     candidate = today_at if today_at > now else today_at + timedelta(days=1)
 
     # Walk forward up to 7 days to find the matching weekday.

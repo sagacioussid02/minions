@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import suppress
 from datetime import UTC, datetime
 
 from psycopg.types.json import Jsonb
@@ -39,11 +40,17 @@ class PostgresEngineerRunStore:
                     Jsonb(payload),
                 ),
             )
+        with suppress(Exception):
+            from minions.learning.capture import capture_engineer_run
+            from minions.learning.store_postgres import PostgresAgentLearningStore
+
+            capture_engineer_run(record, PostgresAgentLearningStore())
         return record
 
     def save(self, result: EngineerResult, *, project: str) -> EngineerRunRecord:
         record = EngineerRunRecord(
             decision_id=result.decision_id,
+            task_id=result.task_id,
             project=project,
             completed_at=datetime.now(tz=UTC),
             pr_url=result.pr_url,
@@ -73,7 +80,9 @@ class PostgresEngineerRunStore:
 
     def list_all(self) -> list[EngineerRunRecord]:
         with connect() as conn, conn.cursor() as cur:
-            cur.execute("SELECT payload FROM engineer_runs ORDER BY completed_at DESC")
+            cur.execute(
+                "SELECT payload FROM engineer_runs ORDER BY completed_at DESC"
+            )
             rows = cur.fetchall()
         return [
             EngineerRunRecord.model_validate(r[0] if isinstance(r[0], dict) else json.loads(r[0]))
@@ -83,7 +92,8 @@ class PostgresEngineerRunStore:
     def list_by_project(self, project: str) -> list[EngineerRunRecord]:
         with connect() as conn, conn.cursor() as cur:
             cur.execute(
-                "SELECT payload FROM engineer_runs WHERE project = %s ORDER BY completed_at DESC",
+                "SELECT payload FROM engineer_runs WHERE project = %s "
+                "ORDER BY completed_at DESC",
                 (project,),
             )
             rows = cur.fetchall()

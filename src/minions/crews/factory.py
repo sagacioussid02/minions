@@ -6,10 +6,16 @@ that don't exercise the LLM stay fast and provider-agnostic.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from crewai import Agent
 
 from minions.agents.base import MinionAgent
+from minions.agents.memory import recent_work_preamble
 from minions.llm import llm_for_tier
+
+if TYPE_CHECKING:
+    from minions.agents.memory_store_factory import AgentMemoryStoreLike
 
 
 def make_crewai_agent(
@@ -17,6 +23,7 @@ def make_crewai_agent(
     *,
     api_key: str,
     max_tokens: int | None = None,
+    memory_store: AgentMemoryStoreLike | None = None,
 ) -> Agent:
     """Translate a MinionAgent config into a runnable CrewAI Agent.
 
@@ -30,7 +37,12 @@ def make_crewai_agent(
     contents; TTL review → long review markdown). The default is enough for
     short reviews / critiques.
     """
-    backstory = f"{agent.backstory}\n\n{agent.system_prompt}"
+    memory = ""
+    if memory_store is not None:
+        memory = recent_work_preamble(memory_store.list_hot(agent.name, char_cap=5000))
+    backstory = "\n\n".join(
+        part for part in [agent.backstory, memory, agent.system_prompt] if part
+    )
     pretty_role = agent.role.value.replace("_", " ").title()
     role_str = f"{agent.display_name}, {pretty_role}" if agent.display_name else pretty_role
     llm_kwargs: dict[str, object] = {"api_key": api_key}

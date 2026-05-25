@@ -1,0 +1,19 @@
+name: Agent memory demotion
+
+# Keeps prompt-loaded memory small by demoting older hot records to cold storage.
+
+on:
+  schedule:
+    - cron: '45 8 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  agent-memory-demote:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: cron agent-memory-demote
+    secrets: inherit

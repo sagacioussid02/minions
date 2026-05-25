@@ -26,10 +26,10 @@ from __future__ import annotations
 import logging
 import os
 import smtplib
-from collections.abc import Callable
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from html import escape
+from typing import Callable
 from urllib.parse import urlencode
 
 from minions.approval.tokens import sign
@@ -99,7 +99,10 @@ class GmailNotifier:
         self, decision: Decision, approve_token: str, reject_token: str
     ) -> MIMEMultipart:
         proposer = decision.proposer_display_name or decision.proposer_agent_id
-        subject = f"[minions/{decision.project}/{decision.type.value}] {decision.summary[:80]}"
+        subject = (
+            f"[minions/{decision.project}/{decision.type.value}] "
+            f"{decision.summary[:80]}"
+        )
 
         text_body = _render_approval_text(decision, proposer, approve_token, reject_token)
         html_body = _render_approval_html(decision, proposer, approve_token, reject_token)
@@ -253,10 +256,10 @@ def _render_approval_html(
     else:
         buttons_html = (
             "<h3>Approve or reject</h3>"
-            '<pre style="background:#f6f8fa;padding:12px;border-radius:6px;font-size:13px;">'
+            "<pre style=\"background:#f6f8fa;padding:12px;border-radius:6px;font-size:13px;\">"
             f"minions decisions approve {e(str(decision.id))}\n"
             f"minions decisions reject  {e(str(decision.id))}</pre>"
-            '<p style="color:#888;font-size:12px;margin-top:24px;">'
+            "<p style=\"color:#888;font-size:12px;margin-top:24px;\">"
             "Magic-link tokens (HMAC-signed, 72h TTL — set "
             "<code>MINIONS_WEBHOOK_BASE_URL</code> to make these clickable):<br>"
             f"approve: <code>{e(approve_token[:32])}…</code><br>"
@@ -273,7 +276,7 @@ def _render_approval_html(
 <h3>Rationale</h3>
 <p>{e(decision.rationale)}</p>
 <h3>Plan</h3>
-<pre style="background:#f6f8fa;padding:12px;border-radius:6px;overflow:auto;font-size:13px;">{e(decision.diff_or_plan or "(none)")}</pre>
+<pre style="background:#f6f8fa;padding:12px;border-radius:6px;overflow:auto;font-size:13px;">{e(decision.diff_or_plan or '(none)')}</pre>
 {critique_html}
 {buttons_html}
 </body></html>"""

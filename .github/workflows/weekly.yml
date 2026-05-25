@@ -1,0 +1,36 @@
+name: Weekly planning
+
+# Monday 09:00 UTC. Real LLM run: profiles each active project, runs the
+# (grounded) planning crew, attaches a Devil's Advocate critique on
+# risk>=medium proposals, and emails the operator one Decision per project
+# via the approval pipeline.
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Run without LLM calls / emails (default: false)'
+        required: false
+        type: boolean
+        default: false
+      project:
+        description: 'Limit to a single project (omit to run all).'
+        required: false
+        type: string
+        default: ''
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  weekly:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: >-
+        ${{ inputs.dry-run
+            && format('cron weekly{0}', inputs.project && format(' --project {0}', inputs.project) || '')
+            || format('cron weekly --no-dry-run{0}', inputs.project && format(' --project {0}', inputs.project) || '') }}
+    secrets: inherit

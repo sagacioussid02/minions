@@ -8,7 +8,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_dry_run_returns_pending_decision():
-    manifest = load_manifest(REPO_ROOT / "projects" / "demo.yaml")
+    manifest = load_manifest(REPO_ROOT / "projects" / "Demo.yaml")
     decision = run_planning_crew(manifest, dry_run=True)
     assert decision.project == "Demo"
     assert decision.type is DecisionType.FEATURE
@@ -19,7 +19,7 @@ def test_dry_run_returns_pending_decision():
 
 
 def test_dry_run_assigns_low_risk():
-    manifest = load_manifest(REPO_ROOT / "projects" / "demo_five.yaml")
+    manifest = load_manifest(REPO_ROOT / "projects" / "demo_three.yaml")
     decision = run_planning_crew(manifest, dry_run=True)
     assert decision.risk == "low"
 

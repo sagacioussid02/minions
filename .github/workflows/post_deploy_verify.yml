@@ -1,0 +1,50 @@
+name: Post-deploy verify
+
+# Twice a week (Mon + Thu, 10:00 UTC). For each active project with
+# deploy.target != none, fetch the latest merged sha, probe
+# production_url + each configured health_checks path + the first N
+# <img src> URLs from the home page. On any failure files a risk=high
+# revert Decision (deduped per sha).
+#
+# Cadence rationale: post-deploy regressions don't appear on idle days
+# (we'd just probe the same sha repeatedly). Two ticks/week is enough
+# to catch a broken merge within ~3-4 days; operator can workflow-
+# dispatch manually after a known risky merge for faster confirmation.
+#
+# No LLM. Deterministic HTTP probes only. Catches the next/image-
+# optimizer outage class (demo_five 2026-05-21) without needing a
+# headless browser.
+
+on:
+  schedule:
+    - cron: '0 10 * * 1,4'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Skip URL probes + revert-decision filing (default: false)'
+        required: false
+        type: boolean
+        default: false
+      project:
+        description: 'Limit to a single project (omit to run all).'
+        required: false
+        type: string
+        default: ''
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  post-deploy:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: >-
+        ${{
+          format(
+            'cron post-deploy-verify{0}{1}',
+            inputs.dry-run && '' || ' --no-dry-run',
+            inputs.project && format(' --project {0}', inputs.project) || ''
+          )
+        }}
+    secrets: inherit

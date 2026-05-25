@@ -1,0 +1,22 @@
+name: Refine approved sprints
+
+# Phase 3 of openspec/sprint-tasks-memory. Every 30 minutes, break newly-
+# approved Sprint Proposals into individual Tasks (with owner assignments
+# from the roster). Idempotent — Decisions that already have Tasks are
+# skipped, so the cost is near zero on a quiet sweep.
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  refine:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: 'cron refine-approved'
+    secrets: inherit

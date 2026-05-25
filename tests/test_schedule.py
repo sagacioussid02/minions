@@ -13,6 +13,7 @@ from minions.dashboard.schedule import (
     next_run_for_role,
 )
 
+
 # ---- crew schedule mapping is what we documented --------------------------
 
 
@@ -56,7 +57,9 @@ def test_engineering_roles_are_on_approval(role: str) -> None:
 # ---- shared layers ---------------------------------------------------------
 
 
-@pytest.mark.parametrize("role", ["ceo", "cto", "chief_auditor", "code_auditor", "devils_advocate"])
+@pytest.mark.parametrize(
+    "role", ["ceo", "cto", "chief_auditor", "code_auditor", "devils_advocate"]
+)
 def test_unwired_shared_roles_are_not_scheduled(role: str) -> None:
     nr = next_run_for_role(role)
     assert nr.kind == "not_scheduled"

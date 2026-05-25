@@ -126,7 +126,9 @@ def _try_gh_cli() -> str | None:
         logger.debug("gh auth token invocation failed: %s", e)
         return None
     if result.returncode != 0:
-        logger.debug("gh auth token returned %d: %s", result.returncode, result.stderr.strip())
+        logger.debug(
+            "gh auth token returned %d: %s", result.returncode, result.stderr.strip()
+        )
         return None
     token = result.stdout.strip()
     return token or None

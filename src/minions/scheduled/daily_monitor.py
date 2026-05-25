@@ -48,21 +48,23 @@ class DailyMonitorReport(BaseModel):
     finished_at: str
     entries: list[ProjectMonitorEntry] = Field(default_factory=list)
     timed_out: list[str] = Field(default_factory=list)  # decision ids auto-rejected this run
-    pr_state_changes: int = 0  # how many PRs flipped state during this run
-    pr_audits_run: int = 0  # how many merged PRs the Code Auditor reviewed
+    pr_state_changes: int = 0       # how many PRs flipped state during this run
+    pr_audits_run: int = 0          # how many merged PRs the Code Auditor reviewed
     pr_findings_by_severity: dict[str, int] = Field(default_factory=dict)
 
     def to_markdown(self) -> str:
         lines: list[str] = ["# Daily monitoring report", ""]
         if self.timed_out:
-            lines.append(
-                f"⏱ **Auto-rejected {len(self.timed_out)} stale decision(s)**: "
-                + ", ".join(f"`{d[:8]}`" for d in self.timed_out)
-            )
+            lines.append(f"⏱ **Auto-rejected {len(self.timed_out)} stale decision(s)**: "
+                         + ", ".join(f"`{d[:8]}`" for d in self.timed_out))
             lines.append("")
         if self.pr_state_changes:
-            audit_note = f", {self.pr_audits_run} audited" if self.pr_audits_run else ""
-            lines.append(f"🔄 **PR sync:** {self.pr_state_changes} state change(s){audit_note}")
+            audit_note = (
+                f", {self.pr_audits_run} audited" if self.pr_audits_run else ""
+            )
+            lines.append(
+                f"🔄 **PR sync:** {self.pr_state_changes} state change(s){audit_note}"
+            )
             for sev, n in sorted(self.pr_findings_by_severity.items()):
                 emoji = {"high": "🔴", "medium": "🟡", "advisory": "🔵"}.get(sev, "•")
                 lines.append(f"  {emoji} {n} {sev} finding(s)")
@@ -82,14 +84,14 @@ class DailyMonitorReport(BaseModel):
 def run_daily_monitor(
     *,
     projects_dir: Path,
-    open_github_client: Callable[[Manifest], GitHubClient | None] | None = None,
+    open_github_client: "Callable[[Manifest], GitHubClient | None] | None" = None,
     store: DecisionStore | None = None,
     notifier: Notifier | None = None,
     timeout_hours: float = DEFAULT_TIMEOUT_HOURS,
     engineer_runs_store: EngineerRunStore | None = None,
     audit_findings_store: AuditFindingStore | None = None,
     api_key: str | None = None,
-    portfolio: PortfolioConfig | None = None,
+    portfolio: "PortfolioConfig | None" = None,
 ) -> DailyMonitorReport:
     from datetime import UTC, datetime
 
@@ -99,7 +101,9 @@ def run_daily_monitor(
     timed_out_ids: list[str] = []
     if store is not None and notifier is not None:
         try:
-            timed_out = sweep_timeouts(store=store, notifier=notifier, ttl_hours=timeout_hours)
+            timed_out = sweep_timeouts(
+                store=store, notifier=notifier, ttl_hours=timeout_hours
+            )
             timed_out_ids = [str(d.id) for d in timed_out]
         except Exception:  # noqa: BLE001 — sweep failure must not abort monitor
             timed_out_ids = []
@@ -108,7 +112,11 @@ def run_daily_monitor(
     pr_state_changes = 0
     pr_audits_run = 0
     pr_findings_by_severity: dict[str, int] = {}
-    if engineer_runs_store is not None and store is not None and open_github_client is not None:
+    if (
+        engineer_runs_store is not None
+        and store is not None
+        and open_github_client is not None
+    ):
         try:
             sync_report = sync_pr_status(
                 store=engineer_runs_store,

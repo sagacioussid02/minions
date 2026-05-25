@@ -8,12 +8,14 @@ file). Three pages in the sidebar:
   📊 Sprint Board — per-project kanban (pending / approved / PR open / done)
 
 All data is read fresh from cost log + decision store on every render. The
-``@st.cache_data(ttl=5)`` decorator on the loader keeps the UI snappy.
+``@st.cache_data(ttl=60)`` decorator on the loader keeps the UI snappy.
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+import os
+
+from datetime import UTC, datetime
 from pathlib import Path
 
 import streamlit as st
@@ -24,8 +26,7 @@ from minions.dashboard.data import (
     SprintBoard,
     build_dashboard_data,
 )
-from minions.dashboard.styles import banner, risk_pill, status_pill
-from minions.dashboard.styles import inject as inject_css
+from minions.dashboard.styles import banner, inject as inject_css, risk_pill, status_pill
 from minions.models.decision import Decision, DecisionStatus
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -110,9 +111,13 @@ def render_agents(data: DashboardData) -> None:
         project_filter = st.multiselect("Project", projects, default=projects)
     statuses = ["active", "idle", "stale", "error"]
     with col2:
-        status_filter = st.multiselect("Status", statuses, default=["active", "idle", "stale"])
+        status_filter = st.multiselect(
+            "Status", statuses, default=["active", "idle", "stale"]
+        )
     with col3:
-        sort_by = st.selectbox("Sort by", ["status", "last activity", "cost (7d)", "calls (total)"])
+        sort_by = st.selectbox(
+            "Sort by", ["status", "last activity", "cost (7d)", "calls (total)"]
+        )
 
     visible = [
         a
@@ -122,10 +127,7 @@ def render_agents(data: DashboardData) -> None:
 
     def sort_key(a: AgentSummary) -> tuple[float, ...]:
         if sort_by == "status":
-            return (
-                STATUS_ORDER[a.status],
-                -(a.last_activity.timestamp() if a.last_activity else 0),
-            )
+            return (STATUS_ORDER[a.status], -(a.last_activity.timestamp() if a.last_activity else 0))
         if sort_by == "last activity":
             return (-(a.last_activity.timestamp() if a.last_activity else 0),)
         if sort_by == "cost (7d)":
@@ -153,19 +155,13 @@ def render_agents(data: DashboardData) -> None:
 _SHARED_LAYER_ROLES = {
     "Executive": {"ceo", "cto", "managing_director", "org_owner"},
     "Specialist": {"cloud_devops", "devsecops", "team_architect"},
-    "Audit": {
-        "chief_auditor",
-        "process_auditor",
-        "code_auditor",
-        "cost_auditor",
-        "devils_advocate",
-    },
+    "Audit": {"chief_auditor", "process_auditor", "code_auditor", "cost_auditor", "devils_advocate"},
 }
 
 
 def _render_tree(agents: list[AgentSummary]) -> None:
     """Render agents as a nested tree:
-    Operator → Layer (shared) / Project (project) → Role → Seat
+        Operator → Layer (shared) / Project (project) → Role → Seat
     """
     project_agents: dict[str, list[AgentSummary]] = {}
     shared_layer_agents: dict[str, list[AgentSummary]] = {n: [] for n in _SHARED_LAYER_ROLES}
@@ -185,36 +181,16 @@ def _render_tree(agents: list[AgentSummary]) -> None:
                 other_shared.append(a)
 
     st.markdown("### 👑 Owner")
-    st.caption("portfolio owner — sole human-in-the-loop approver")
+    st.caption(f'{os.getenv("OPERATOR_EMAIL", "operator@example.com")} — sole human-in-the-loop approver')
 
     # Sidebar-style toggle: collapse all by default, or expand. Default expanded
     # because the whole point of the tree view is to *see* the hierarchy.
-    prev_expand_all = st.session_state.get("agents_tree_expand", True)
     expand_all = st.toggle(
-        "Expand all",
-        value=True,
-        key="agents_tree_expand",
-        help="Toggle off to collapse every layer",
+        "Expand all", value=True, key="agents_tree_expand", help="Toggle off to collapse every layer"
     )
 
-    # When the toggle changes, force-update every expander's session-state key
-    # so the change takes effect even after the user has manually opened/closed one.
-    _tree_expander_keys = [
-        "tree_exp_executive",
-        "tree_exp_specialist",
-        "tree_exp_audit",
-        "tree_exp_other_shared",
-    ]
-    # Build project keys dynamically
-    project_keys = [f"tree_exp_proj_{p}" for p in sorted(project_agents)]
-    _tree_expander_keys.extend(project_keys)
-
-    if expand_all != prev_expand_all:
-        for k in _tree_expander_keys:
-            st.session_state[k] = expand_all
-
     # Shared layers
-    for idx, layer_name in enumerate(["Executive", "Specialist", "Audit"]):
+    for layer_name in ["Executive", "Specialist", "Audit"]:
         members = shared_layer_agents[layer_name]
         if not members:
             continue
@@ -226,16 +202,13 @@ def _render_tree(agents: list[AgentSummary]) -> None:
             f"**{layer_name}** — {len(members)} agents · "
             f"🟢 {active_count} active · ⚪ {stale_count} stale{live}",
             expanded=expand_all or running > 0,
-            key=_tree_expander_keys[idx],
         ):
             for a in members:
                 _render_tree_row(a)
 
     if other_shared:
         with st.expander(
-            f"**Other shared** — {len(other_shared)} agents",
-            expanded=expand_all,
-            key=_tree_expander_keys[3],
+            f"**Other shared** — {len(other_shared)} agents", expanded=expand_all
         ):
             for a in other_shared:
                 _render_tree_row(a)
@@ -243,7 +216,7 @@ def _render_tree(agents: list[AgentSummary]) -> None:
     st.divider()
 
     # Per-project crews
-    for idx, project in enumerate(sorted(project_agents)):
+    for project in sorted(project_agents):
         members = project_agents[project]
         running = sum(1 for m in members if m.running_now)
         active_count = sum(1 for m in members if m.status == "active")
@@ -255,7 +228,6 @@ def _render_tree(agents: list[AgentSummary]) -> None:
             f"🟢 {active_count} active · ⚪ {stale_count} stale · "
             f"7d ${cost_7d:.4f}{live}",
             expanded=expand_all or running > 0,
-            key=project_keys[idx],
         ):
             for a in sorted(members, key=lambda x: (x.role, x.primary_label)):
                 _render_tree_row(a)
@@ -274,11 +246,11 @@ def _render_tree_row(a: AgentSummary) -> None:
     with cols[0]:
         st.markdown(
             f'<div class="tree-row">'
-            f"{status_pill(a.status, running=a.running_now)} "
+            f'{status_pill(a.status, running=a.running_now)} '
             f'<span class="label">{primary}</span>'
             f'<span class="role">· {role_pretty}{seat_note}</span>'
             f'<span class="meta">last seen {last_seen}{cost_note} · next: {next_desc}</span>'
-            f"</div>",
+            f'</div>',
             unsafe_allow_html=True,
         )
     if cols[1].button("Details", key=f"tree-{a.scope}-{a.project}-{a.role}"):
@@ -317,9 +289,9 @@ def _render_sparkline(project: str, role: str) -> None:
         return  # don't bother rendering an empty sparkline
     import pandas as pd
 
-    df = pd.DataFrame({"day": [p[0] for p in points], "cost": [p[1] for p in points]}).set_index(
-        "day"
-    )
+    df = pd.DataFrame(
+        {"day": [p[0] for p in points], "cost": [p[1] for p in points]}
+    ).set_index("day")
     st.line_chart(df, height=60, use_container_width=True)
 
 
@@ -417,7 +389,9 @@ def _render_agent_detail(data: DashboardData) -> None:
         if agent.project:
             from minions.activity import history_for_role
 
-            history = history_for_role(agent.project, agent.role, limit=20, path=ACTIVITY_LOG_PATH)
+            history = history_for_role(
+                agent.project, agent.role, limit=20, path=ACTIVITY_LOG_PATH
+            )
             with st.expander(f"Recent crew activity ({len(history)})", expanded=True):
                 if not history:
                     st.caption("No activity events recorded yet.")
@@ -612,9 +586,7 @@ def _resolve_in_dashboard(d: Decision, *, action: str, reason: str | None) -> No
 def render_sprint_board(data: DashboardData) -> None:
     cols = st.columns([6, 2])
     cols[0].header("📊 Sprint board")
-    if cols[1].button(
-        "🔄 Sync PR status", help="Pull merge/close state from GitHub", use_container_width=True
-    ):
+    if cols[1].button("🔄 Sync PR status", help="Pull merge/close state from GitHub", use_container_width=True):
         _sync_in_dashboard()
 
     if not data.sprint_boards:
@@ -630,6 +602,8 @@ def render_sprint_board(data: DashboardData) -> None:
 def _sync_in_dashboard() -> None:
     """Run the PR-state sync in-process. Reuses the CLI's GitHub client factory."""
     try:
+        from minions.approval.store import DecisionStore
+        from minions.crews.engineer_runs_store import EngineerRunStore
         from minions.github.auth import get_github_token
         from minions.github.client import GitHubClient
         from minions.models.manifest import load_active_manifests
@@ -677,9 +651,7 @@ def _render_board(b: SprintBoard) -> None:
         f"{len(b.pr_open)} PR open · {len(b.done)} done"
     )
     if b.total == 0:
-        st.info(
-            f"No decisions yet for {b.project}. Run `minions plan {b.project} --no-dry-run` to seed one."
-        )
+        st.info(f"No decisions yet for {b.project}. Run `minions plan {b.project} --no-dry-run` to seed one.")
         return
 
     cols = st.columns(5)
@@ -695,7 +667,9 @@ def _render_board(b: SprintBoard) -> None:
 
 
 def _render_kanban_card(d: Decision) -> None:
-    risk_color = {"low": "#16a34a", "medium": "#ca8a04", "high": "#dc2626"}.get(d.risk, "#94a3b8")
+    risk_color = {"low": "#16a34a", "medium": "#ca8a04", "high": "#dc2626"}.get(
+        d.risk, "#94a3b8"
+    )
     proposer = d.proposer_display_name or d.proposer_agent_id
     with st.container(border=True):
         st.markdown(
@@ -726,9 +700,7 @@ def render_audit(data: DashboardData) -> None:
     open_count = sum(1 for f in findings if f.status == FindingStatus.OPEN)
     high = sum(1 for f in findings if f.severity == "high" and f.status == FindingStatus.OPEN)
     medium = sum(1 for f in findings if f.severity == "medium" and f.status == FindingStatus.OPEN)
-    advisory = sum(
-        1 for f in findings if f.severity == "advisory" and f.status == FindingStatus.OPEN
-    )
+    advisory = sum(1 for f in findings if f.severity == "advisory" and f.status == FindingStatus.OPEN)
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Open", open_count)
@@ -833,150 +805,6 @@ def _render_finding_detail(f) -> None:  # type: ignore[no-untyped-def]
 
 
 # ---------------------------------------------------------------------------
-# Page: Activity (live timeline + guardrails)
-# ---------------------------------------------------------------------------
-
-
-def render_activity(data: DashboardData) -> None:
-    """Chronological stream of crew lifecycle events + guardrails strip.
-
-    Reads the same activity log that powers the per-agent "running now" dot.
-    The guardrails strip surfaces the four safety layers as live evidence
-    rather than a README bullet list — so contributors can *see* the system
-    refusing to do unsafe things.
-    """
-    from minions.activity import read_log, running_now
-
-    st.header("📡 Activity")
-    st.caption(
-        "Live stream of every crew lifecycle event and guardrail block. One row per "
-        "`crew_started` / `crew_finished` / `crew_failed` / `guardrail_blocked`."
-    )
-
-    # --- Guardrails strip ---------------------------------------------------
-    entries = read_log(ACTIVITY_LOG_PATH)
-    in_flight = running_now(path=ACTIVITY_LOG_PATH)
-    cutoff_24h = datetime.now(tz=UTC) - timedelta(days=1)
-    last_24h = [e for e in entries if e.timestamp >= cutoff_24h]
-    starts_24h = sum(1 for e in last_24h if e.event == "crew_started")
-    fails_24h = sum(1 for e in last_24h if e.event == "crew_failed")
-    finished_24h = sum(1 for e in last_24h if e.event == "crew_finished")
-    success_rate = (
-        f"{(finished_24h / max(finished_24h + fails_24h, 1)) * 100:.0f}%"
-        if (finished_24h + fails_24h) > 0
-        else "—"
-    )
-
-    layer1_blocks_24h = sum(
-        1
-        for e in last_24h
-        if e.event == "guardrail_blocked" and e.crew == "guardrail:layer1_prompt"
-    )
-    layer2_blocks_24h = sum(
-        1
-        for e in last_24h
-        if e.event == "guardrail_blocked" and e.crew == "guardrail:layer2_tooling"
-    )
-
-    st.subheader("🛡️ Guardrails")
-    g1, g2, g3, g4 = st.columns(4)
-    g1.metric(
-        "Layer 1 · Prompt",
-        f"{layer1_blocks_24h} blocked · 24h",
-        help=(
-            "Safety preamble prepended to every agent (src/minions/agents/safety.py). "
-            "Counter shows agent self-reported refusals captured via "
-            "activity.record_guardrail_block(layer='layer1_prompt', ...)."
-        ),
-    )
-    g2.metric(
-        "Layer 2 · Tooling",
-        f"{layer2_blocks_24h} blocked · 24h",
-        help=(
-            "GitHub client refuses pushes to main/master/trunk/develop and has no merge(). "
-            "Counter shows real ProtectedBranchError raises in the last 24h."
-        ),
-    )
-    g3.metric(
-        "Layer 3 · Branch protect",
-        "GitHub",
-        help="Required reviews on main — enforced outside this codebase.",
-    )
-    g4.metric(
-        "Layer 4 · Egress",
-        "Sandbox",
-        help="Runtime egress allowlist — enforced outside this codebase.",
-    )
-
-    st.divider()
-
-    # --- Live counters ------------------------------------------------------
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Running now", len(in_flight))
-    c2.metric("Started · 24h", starts_24h)
-    c3.metric("Success rate · 24h", success_rate)
-    c4.metric(
-        "Failed · 24h",
-        fails_24h,
-        delta=None,
-        delta_color="inverse",
-    )
-
-    if not entries:
-        st.info(
-            "No activity yet. Run `minions cron weekly --no-dry-run` to emit "
-            "lifecycle events, or hit the dashboard after the next scheduled "
-            "tick."
-        )
-        return
-
-    # --- Filters ------------------------------------------------------------
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        projects = sorted({e.project for e in entries if e.project})
-        project_filter = st.multiselect("Project", projects, default=projects)
-    with col2:
-        crews = sorted({e.crew for e in entries if e.crew})
-        crew_filter = st.multiselect("Crew", crews, default=crews)
-    with col3:
-        events = ["crew_started", "crew_finished", "crew_failed", "guardrail_blocked"]
-        event_filter = st.multiselect("Event", events, default=events)
-
-    visible = [
-        e
-        for e in entries
-        if (e.project or "") in project_filter and e.crew in crew_filter and e.event in event_filter
-    ]
-    visible.sort(key=lambda e: e.timestamp, reverse=True)
-    visible = visible[:200]  # cap render cost
-
-    if not visible:
-        st.info("No events match the current filters.")
-        return
-
-    icon = {
-        "crew_started": "▶️",
-        "crew_finished": "✅",
-        "crew_failed": "🔴",
-        "guardrail_blocked": "🛡️",
-    }
-    rows = [
-        {
-            "when": e.timestamp.strftime("%m-%d %H:%M:%S"),
-            "event": f"{icon.get(e.event, '·')} {e.event.replace('crew_', '')}",
-            "crew": e.crew,
-            "project": e.project or "—",
-            "agents": ", ".join(e.agents) if e.agents else "—",
-            "decision": (e.decision_id or "—")[:8],
-            "error": (e.error or "")[:60],
-        }
-        for e in visible
-    ]
-    st.dataframe(rows, use_container_width=True, hide_index=True)
-    st.caption(f"Showing {len(visible)} most recent of {len(entries)} total events.")
-
-
-# ---------------------------------------------------------------------------
 # Entry
 # ---------------------------------------------------------------------------
 
@@ -997,7 +825,7 @@ def main() -> None:
         st.caption("Autonomous engineering org")
         page = st.radio(
             "Page",
-            ["🤖 Agents", "📡 Activity", "📋 Decisions", "📊 Sprint Board", "🛡️ Audit"],
+            ["🤖 Agents", "📋 Decisions", "📊 Sprint Board", "🛡️ Audit"],
         )
         st.divider()
         if st.button("🔄 Refresh now", use_container_width=True):
@@ -1013,8 +841,6 @@ def main() -> None:
     if page == "🤖 Agents":
         _render_agent_detail(data)
         render_agents(data)
-    elif page == "📡 Activity":
-        render_activity(data)
     elif page == "📋 Decisions":
         render_decisions(data)
     elif page == "📊 Sprint Board":

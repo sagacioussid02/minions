@@ -45,11 +45,8 @@ def test_valid_env_token_short_circuits_validation(monkeypatch):
     import httpx
 
     def mock_get(*args, **kwargs):
-        return httpx.Response(
-            200,
-            json={"login": "octocat"},
-            request=httpx.Request("GET", "https://api.github.com/user"),
-        )
+        return httpx.Response(200, json={"login": "octocat"},
+                              request=httpx.Request("GET", "https://api.github.com/user"))
 
     with patch.object(github_auth.httpx, "get", side_effect=mock_get):
         assert github_auth.get_github_token() == "fresh-token"
@@ -67,9 +64,8 @@ def test_validation_cached_per_token(monkeypatch):
 
     def mock_get(*args, **kwargs):
         call_count["n"] += 1
-        return httpx.Response(
-            200, json={}, request=httpx.Request("GET", "https://api.github.com/user")
-        )
+        return httpx.Response(200, json={},
+                              request=httpx.Request("GET", "https://api.github.com/user"))
 
     with patch.object(github_auth.httpx, "get", side_effect=mock_get):
         github_auth.get_github_token()

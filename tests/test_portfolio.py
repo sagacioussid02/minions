@@ -29,7 +29,7 @@ def test_procurement_safe_defaults():
         "delegated paid signups must remain disabled until operator opts in"
     )
     # User-applied configuration:
-    assert cfg.procurement.email_alias_template == "you+{vendor}@example.com"
+    assert cfg.procurement.email_alias_template == "operator+{vendor}@gmail.com"
     assert cfg.procurement.secret_storage == "aws_secrets_manager"
     assert cfg.procurement.delegated_card.provider == "stripe_issuing"
 

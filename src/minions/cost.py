@@ -2,7 +2,7 @@
 
 Captures one JSONL line per LLM call into ``data/local/cost_log.jsonl``:
 
-  {"timestamp": "...", "project": "demo_three", "decision_id": "...",
+  {"timestamp": "...", "project": "demo_five", "decision_id": "...",
    "role": "manager", "model": "claude-sonnet-4-6",
    "input_tokens": 1234, "output_tokens": 567, "cost_usd": 0.012}
 
@@ -267,7 +267,9 @@ def _pg_read_log() -> list[CostEntry]:
 # ---------------------------------------------------------------------------
 
 
-def cost_by_project(*, since: datetime | None = None, path: Path | None = None) -> dict[str, float]:
+def cost_by_project(
+    *, since: datetime | None = None, path: Path | None = None
+) -> dict[str, float]:
     """Sum costs per project, optionally filtered to entries on/after ``since``."""
     out: dict[str, float] = {}
     for e in read_log(path):

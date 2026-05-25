@@ -56,9 +56,7 @@ def test_count_languages_groups_by_extension(tmp_path: Path) -> None:
 
 def test_count_deps_npm(tmp_path: Path) -> None:
     pkg = tmp_path / "package.json"
-    pkg.write_text(
-        json.dumps({"dependencies": {"a": "1", "b": "2"}, "devDependencies": {"c": "3"}})
-    )
+    pkg.write_text(json.dumps({"dependencies": {"a": "1", "b": "2"}, "devDependencies": {"c": "3"}}))
     assert _count_deps(pkg, "npm") == 3
 
 
@@ -139,9 +137,7 @@ def test_build_profile_full_local_repo(tmp_path: Path) -> None:
     wf.mkdir(parents=True)
     (wf / "ci.yml").write_text("name: ci")
     (tmp_path / "openspec").mkdir()
-    (tmp_path / "openspec" / "tasks.md").write_text(
-        "| 1 | a | ✅ Done | f |\n| 2 | b | ⬜ Todo | g |\n"
-    )
+    (tmp_path / "openspec" / "tasks.md").write_text("| 1 | a | ✅ Done | f |\n| 2 | b | ⬜ Todo | g |\n")
 
     prof = build_profile(_make_manifest("demo", tmp_path))
 
@@ -164,19 +160,29 @@ def test_build_profile_full_local_repo(tmp_path: Path) -> None:
     assert "1 remaining" in md.replace("**", "")
 
 
-def test_build_profile_raises_on_missing_path(tmp_path: Path) -> None:
+def test_build_profile_raises_on_missing_path_and_no_repo(tmp_path: Path) -> None:
+    """When neither path resolves nor repo is set, the resolver gives up."""
+    from minions.working_tree import WorkingTreeError
+
     bogus = tmp_path / "does-not-exist"
-    with pytest.raises(ValueError, match="does not exist"):
-        build_profile(_make_manifest("demo", bogus))
+    manifest = _make_manifest("demo", bogus)
+    # _make_manifest doesn't populate source.repo — confirm that's still true.
+    assert manifest.source.repo is None
+    with pytest.raises(WorkingTreeError, match="cannot resolve"):
+        build_profile(manifest, cache_dir=tmp_path / "clones")
 
 
 def test_build_profile_with_git_recent_commits(tmp_path: Path) -> None:
     subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
-    subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "t@t"], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "config", "user.email", "t@t"], check=True
+    )
     subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "t"], check=True)
     (tmp_path / "README.md").write_text("# x")
     subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
-    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "initial"], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "commit", "-q", "-m", "initial"], check=True
+    )
 
     prof = build_profile(_make_manifest("demo", tmp_path))
     assert len(prof.recent_commits) == 1
@@ -191,7 +197,5 @@ def test_build_profile_skips_github_fetch_when_kind_local(tmp_path: Path) -> Non
         def list_open_issues(self, **_: object) -> list[object]:
             raise AssertionError("must not be called for kind=local")
 
-    prof = build_profile(
-        _make_manifest("demo", tmp_path, kind="local"), github_client=ExplodingClient()
-    )  # type: ignore[arg-type]
+    prof = build_profile(_make_manifest("demo", tmp_path, kind="local"), github_client=ExplodingClient())  # type: ignore[arg-type]
     assert prof.open_issues == []

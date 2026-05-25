@@ -1,21 +1,22 @@
-# =============================================================================
-# Portfolio configuration — this is the SHIPPED EXAMPLE.
+
+# Portfolio-level configuration for the minions org.
 #
-# Replace owner: with your email and edit projects/*.yaml to point at your
-# own repositories. The minions/ tree ships with five demo manifests so
-# `pytest` and `minions check` work out of the box; delete or rename them
-# once you've added your real projects.
-# =============================================================================
+# Per-project manifests in `minions/projects/` reference this via
+# `delivery_targets.scope: portfolio` and a `share_weight`. The orchestrator
+# normalizes weights and allocates the portfolio-wide slots across projects.
 
 delivery_cadence:
-  option: A                       # A = portfolio-wide; B = per-project. See ARCHITECTURE.md.
-  features_per_week: 1
-  bugs_per_week: 2.3
-  tech_debt_per_week: 1
+  option: A                       # A = portfolio-wide; B = per-project. See design.md "Delivery Cadence" section.
+  features_per_week: 1            # 1 feature shipped per week across the portfolio
+  bugs_per_week: 2.3              # ~1 bug every 2-3 days across the portfolio
+  tech_debt_per_week: 1           # 1 tech-debt item retired per week across the portfolio
   scope: portfolio
+
 
 # How the orchestrator allocates the portfolio's weekly slots across projects.
 # Each project's manifest sets `delivery_targets.share_weight`; weights are normalized.
+# The orchestrator picks each slot's recipient project stochastically by weight,
+# but SKIPS projects whose discovery yields no real candidates (no fabrication).
 allocation:
   policy: weighted_stochastic
   no_fabrication: true            # empty slot reported in Friday digest if no real backlog item exists
@@ -26,13 +27,13 @@ budget_envelope:
   monthly_total_ceiling_usd: 30
   current_v0_target_usd: 14       # sum of active project monthly caps
 
-# Cadence profile presets — projects override via `cadence_profile` in their manifest.
+# Cadence profile presets — projects may override via `cadence_profile` in their manifest.
 cadence_profiles:
   v0_frugal:
     weekly_planning: monday_09_local
     weekly_digest: friday_16_local
     daily_monitoring: 09_local
-    standups: disabled
+    standups: disabled            # consolidated into weekly digest for v0
     on_demand: webhook
   v1_balanced:
     weekly_planning: monday_09_local
@@ -59,9 +60,9 @@ audit:
   reports_to: operator                       # not to executive layer; findings cannot be suppressed
   write_access: false                        # read-only by design
   sampling:
-    pr_code_audit: 0.25
-    pr_audit_risk_weighted: true
-    high_risk_decisions_devils_advocate: 1.0
+    pr_code_audit: 0.25                      # 25% of merged PRs sampled, risk-weighted
+    pr_audit_risk_weighted: true             # Engineer/Intern PRs sampled more; Sr Eng less
+    high_risk_decisions_devils_advocate: 1.0 # 100% — every risk≥medium decision
     procurement_cost_audit: 1.0
     team_composition_process_audit: 1.0
     sprint_process_audit_weekly: true
@@ -82,7 +83,7 @@ team_composition:
     - performance_engineer
     - data_engineer
     - documentation_engineer
-  cost_coupled_approval: true
+  cost_coupled_approval: true                # composition change + budget raise must be approved together when applicable
 
 role_definitions:
   qa_engineer:
@@ -102,25 +103,36 @@ role_definitions:
     tools: [repo_read, pr_open, pr_comment]
 
 # ===== Procurement =====
-# Defaults to disabled. Opt in only after wiring a real secret store + spending card.
 procurement:
   enabled: true
-  monthly_budget_usd: 0                      # $0 — nothing buys until you raise this
-  delegated_signup_free_tier: false
+  monthly_budget_usd: 0                      # opt in by raising — defaults to $0 so nothing buys until you say so
+  delegated_signup_free_tier: false          # operator must enable explicitly after AWS Secrets Manager is provisioned
   delegated_card:
-    enabled: false
+    enabled: false                           # operator must enable explicitly after Stripe Issuing card is provisioned
     monthly_cap_usd: 0
-    provider: stripe_issuing
-  email_alias_template: "you+{vendor}@example.com"
-  secret_storage: aws_secrets_manager
-  tos_acceptance_authorized: false           # MUST stay false; per-vendor authorization only
+    provider: stripe_issuing                 # configured target; switch enabled=true once card exists
+  email_alias_template: "operator+{vendor}@gmail.com"   # Gmail subaddressing
+  secret_storage: aws_secrets_manager        # vendor credentials stored here, referenced by name only
+  tos_acceptance_authorized: false           # MUST stay false by default; per-vendor authorization only
   quarterly_subscription_review: true
 
 # Optional display names for shared layers. Same shape as per-project `agents:`.
+# Multi-seat: provide a list (e.g., 2 Org Owners covering different project pairs).
 named_agents:
   # ceo: Cassia
   # cto: Theo
   # managing_director: Maeve
+  # org_owner:
+  #   - Otto    # owns Demo + demo_two
+  #   - Mae     # owns demo_three + demo_four
+  # cloud_devops: Cleo
+  # devsecops: Dax
+  # team_architect: Aria
+  # chief_auditor: Audra
+  # process_auditor: Pip
+  # code_auditor: Quinn
+  # cost_auditor: Curt
+  # devils_advocate: Diabolo
 
-owner: you@example.com
-locked_in_at: 2026-01-01
+owner: operator@example.com
+locked_in_at: 2026-04-30

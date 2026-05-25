@@ -1,84 +1,77 @@
-name: Shared cron runner
+name: Minions cron (shared)
+
+# Reusable workflow called by daily.yml / weekly.yml / friday.yml.
+# Runs the requested ``minions`` subcommand against the Neon Postgres
+# backend — all five stores (decisions, audit findings, engineer runs,
+# cost log, activity log) read/write the database directly.
 
 on:
   workflow_call:
     inputs:
       command:
-        description: "Minions cron command to run."
+        description: 'minions subcommand, e.g. "cron daily" or "cron weekly --no-dry-run".'
         required: true
         type: string
+    secrets:
+      ANTHROPIC_API_KEY:
+        required: true
+      LANGFUSE_PUBLIC_KEY:
+        required: false
+      LANGFUSE_SECRET_KEY:
+        required: false
+      LANGFUSE_HOST:
+        required: false
+      MINIONS_SECRET_GMAIL_APP_PASSWORD:
+        required: true
+      MINIONS_GH_PAT:
+        required: true
+      MINIONS_DATABASE_URL:
+        required: true
 
-# Public repo default permissions are intentionally read-only. Cron jobs that
-# need to open PRs/comments should use MINIONS_GH_PAT, not the repo-scoped
-# github.token.
 permissions:
   contents: read
 
 jobs:
-  cron:
-    name: ${{ inputs.command }}
+  run:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
     steps:
-      - name: Preflight public cron secrets
-        id: preflight
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          MINIONS_DATABASE_URL: ${{ secrets.MINIONS_DATABASE_URL }}
-          MINIONS_GH_PAT: ${{ secrets.MINIONS_GH_PAT }}
-        run: |
-          missing=()
-          [ -n "$ANTHROPIC_API_KEY" ] || missing+=("ANTHROPIC_API_KEY")
-          [ -n "$MINIONS_DATABASE_URL" ] || missing+=("MINIONS_DATABASE_URL")
-          [ -n "$MINIONS_GH_PAT" ] || missing+=("MINIONS_GH_PAT")
-
-          if [ "${#missing[@]}" -gt 0 ]; then
-            joined="$(printf "%s, " "${missing[@]}")"
-            joined="${joined%, }"
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
-            echo "::warning title=Minions cron skipped::Missing optional public-repo secret(s): $joined"
-            {
-              echo "## Minions cron skipped"
-              echo ""
-              echo "Command: \`minions ${{ inputs.command }}\`"
-              echo ""
-              echo "This public repo does not have all live cron secrets configured."
-              echo "Missing: \`$joined\`."
-              echo ""
-              echo "The workflow is marked successful intentionally so public scheduled"
-              echo "Actions do not page the operator for an unconfigured demo repo."
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          echo "should_run=true" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout
-        if: steps.preflight.outputs.should_run == 'true'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Set up uv
-        if: steps.preflight.outputs.should_run == 'true'
-        uses: astral-sh/setup-uv@8d55fbecc275b1c35dbe060458839f8d30439ccf # v3
+      - name: Check out code
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        if: steps.preflight.outputs.should_run == 'true'
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
-      - name: Install
-        if: steps.preflight.outputs.should_run == 'true'
-        run: uv pip install --system -e .
+      - name: Install minions
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
 
-      - name: Run cron command
-        if: steps.preflight.outputs.should_run == 'true'
-        run: minions ${{ inputs.command }}
+      - name: Run command
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
+          MINIONS_NOTIFIER: gmail
+          MINIONS_SECRET_GMAIL_APP_PASSWORD: ${{ secrets.MINIONS_SECRET_GMAIL_APP_PASSWORD }}
+          # Use the PAT for managed-project repo access. Workflow token is
+          # scoped to this repo only.
           GITHUB_TOKEN: ${{ secrets.MINIONS_GH_PAT }}
+          # All stores route through Neon when this is set. Required.
           MINIONS_DATABASE_URL: ${{ secrets.MINIONS_DATABASE_URL }}
-          MINIONS_TOKEN_SECRET: ${{ secrets.MINIONS_TOKEN_SECRET }}
-          MINIONS_WEBHOOK_BASE_URL: ${{ secrets.MINIONS_WEBHOOK_BASE_URL }}
-          MINIONS_NOTIFIER: console
+        run: |
+          echo "Running: minions ${{ inputs.command }}"
+          {
+            echo "## minions \`${{ inputs.command }}\`"
+            echo ""
+            echo "_Started $(date -u +%Y-%m-%dT%H:%M:%SZ)_"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          set -o pipefail
+          minions ${{ inputs.command }} 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"

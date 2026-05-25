@@ -34,7 +34,7 @@ def test_get_missing_returns_none(tmp_path):
 def test_list_by_status(tmp_path):
     store = DecisionStore(tmp_path / "decisions.json")
     a = _decision("Demo")
-    b = _decision("demo_five")
+    b = _decision("demo_three")
     store.save(a)
     store.save(b)
     pending = store.list_by_status(DecisionStatus.PENDING)
@@ -57,4 +57,6 @@ def test_update_status_records_resolution(tmp_path):
 def test_update_status_missing_raises(tmp_path):
     store = DecisionStore(tmp_path / "decisions.json")
     with pytest.raises(KeyError):
-        store.update_status("00000000-0000-0000-0000-000000000000", DecisionStatus.APPROVED)
+        store.update_status(
+            "00000000-0000-0000-0000-000000000000", DecisionStatus.APPROVED
+        )
