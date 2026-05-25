@@ -61,9 +61,33 @@ async function fetchBoard(project: string | null, window: SprintWindow): Promise
   return r.json();
 }
 
+function primaryOwner(card: SprintCard): string | null {
+  // Most common task owner on this card — what the operator scans for.
+  const counts = new Map<string, number>();
+  for (const t of card.tasks) {
+    const name = t.owner_display_name;
+    if (!name) continue;
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  let best: string | null = null;
+  let bestCount = 0;
+  for (const [name, n] of counts) {
+    if (n > bestCount) {
+      best = name;
+      bestCount = n;
+    }
+  }
+  return best;
+}
+
+const CLOSED_REVIEW_STATES = new Set(["closed", "superseded"]);
+
 export function SprintBoard({ initial }: { initial: Board }) {
   const [tab, setTab] = useState<string | null>(null); // null = All
   const [window, setWindow] = useState<SprintWindow>("this_week");
+  const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
+  const [sprintFilter, setSprintFilter] = useState<number | null>(null);
+  const [showClosed, setShowClosed] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   const { data } = useQuery({
@@ -78,15 +102,45 @@ export function SprintBoard({ initial }: { initial: Board }) {
   // Stable palette assignments.
   registerProjects(board.projects);
 
+  const ownerOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of board.cards) {
+      for (const t of c.tasks) {
+        if (t.owner_display_name) set.add(t.owner_display_name);
+      }
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [board.cards]);
+
+  const sprintOptions = useMemo(() => {
+    const set = new Set<number>();
+    for (const c of board.cards) {
+      if (c.sprint_number !== null) set.add(c.sprint_number);
+    }
+    return [...set].sort((a, b) => b - a);
+  }, [board.cards]);
+
+  const filteredCards = useMemo(() => {
+    return board.cards.filter((c) => {
+      if (!showClosed && CLOSED_REVIEW_STATES.has(c.review_status)) return false;
+      if (sprintFilter !== null && c.sprint_number !== sprintFilter) return false;
+      if (ownerFilter !== null) {
+        const matches = c.tasks.some((t) => t.owner_display_name === ownerFilter);
+        if (!matches) return false;
+      }
+      return true;
+    });
+  }, [board.cards, showClosed, sprintFilter, ownerFilter]);
+
   const byColumn = useMemo(() => {
     const m = new Map<SprintColumn, SprintCard[]>();
-    for (const c of board.cards) {
+    for (const c of filteredCards) {
       const arr = m.get(c.column) ?? [];
       arr.push(c);
       m.set(c.column, arr);
     }
     return m;
-  }, [board.cards]);
+  }, [filteredCards]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -94,7 +148,17 @@ export function SprintBoard({ initial }: { initial: Board }) {
         <Tabs current={tab} projects={board.projects} onChange={setTab} />
         <WindowFilter current={window} onChange={setWindow} />
       </div>
-      <SprintHeaderStrip cards={board.cards} />
+      <FilterRow
+        ownerOptions={ownerOptions}
+        owner={ownerFilter}
+        onOwnerChange={setOwnerFilter}
+        sprintOptions={sprintOptions}
+        sprint={sprintFilter}
+        onSprintChange={setSprintFilter}
+        showClosed={showClosed}
+        onShowClosedChange={setShowClosed}
+      />
+      <SprintHeaderStrip cards={filteredCards} />
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 xl:grid-cols-6">
         {COLUMN_ORDER.map((col) => (
           <Column
@@ -115,6 +179,73 @@ export function SprintBoard({ initial }: { initial: Board }) {
           onClose={() => setSelectedTask(null)}
         />
       )}
+    </div>
+  );
+}
+
+function FilterRow({
+  ownerOptions,
+  owner,
+  onOwnerChange,
+  sprintOptions,
+  sprint,
+  onSprintChange,
+  showClosed,
+  onShowClosedChange,
+}: {
+  ownerOptions: string[];
+  owner: string | null;
+  onOwnerChange: (v: string | null) => void;
+  sprintOptions: number[];
+  sprint: number | null;
+  onSprintChange: (v: number | null) => void;
+  showClosed: boolean;
+  onShowClosedChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      <label className="flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--bg-surface)] px-2 py-1.5">
+        <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+          Agent
+        </span>
+        <select
+          value={owner ?? ""}
+          onChange={(e) => onOwnerChange(e.target.value || null)}
+          className="bg-transparent text-xs text-[var(--text-primary)] outline-none"
+        >
+          <option value="">All</option>
+          {ownerOptions.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--bg-surface)] px-2 py-1.5">
+        <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+          Sprint
+        </span>
+        <select
+          value={sprint ?? ""}
+          onChange={(e) => onSprintChange(e.target.value ? Number(e.target.value) : null)}
+          className="bg-transparent text-xs text-[var(--text-primary)] outline-none"
+        >
+          <option value="">All</option>
+          {sprintOptions.map((n) => (
+            <option key={n} value={n}>
+              Sprint {n}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--bg-surface)] px-2 py-1.5 text-[var(--text-muted)]">
+        <input
+          type="checkbox"
+          checked={showClosed}
+          onChange={(e) => onShowClosedChange(e.target.checked)}
+        />
+        <span>Show closed/superseded</span>
+      </label>
     </div>
   );
 }
@@ -325,6 +456,7 @@ function Card({ card, onTaskSelect }: { card: SprintCard; onTaskSelect: (task: T
 
   const busy = approve.isPending || reject.isPending || merge.isPending;
   const errMsg = approve.error?.message ?? reject.error?.message ?? merge.error?.message;
+  const owner = primaryOwner(card);
 
   return (
     <li
@@ -343,6 +475,14 @@ function Card({ card, onTaskSelect }: { card: SprintCard; onTaskSelect: (task: T
             <span>{card.project}</span>
             <span>·</span>
             <span>{card.proposer_display_name ?? prettyRole(card.proposer_role ?? "system")}</span>
+            {owner && (
+              <span
+                className="rounded bg-[var(--bg-surface)] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-[var(--text-primary)]"
+                title={`Owner: ${owner}`}
+              >
+                👤 {owner}
+              </span>
+            )}
             <PriorityPill priority={card.priority} expedited={card.expedited} />
             <RiskPill risk={card.risk} />
             {card.has_devils_advocate && <Pill label="DA" tone="audit" />}
