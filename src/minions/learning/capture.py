@@ -8,6 +8,7 @@ from collections.abc import Iterable
 from minions.crews.engineer_runs_store import EngineerRunRecord
 from minions.learning.store_factory import AgentLearningStoreLike
 from minions.models.agile import AgileRitualRecord, PMAnswerRecord
+from minions.models.deployment import DeploymentRecord
 from minions.models.interview import InterviewMessageRecord
 from minions.models.learning import AgentLearningRecord, LearningConfidence, LearningKind
 
@@ -158,6 +159,57 @@ def capture_interview_answer(
         source_id=str(answer.id),
         confidence=_message_confidence(answer),
     )
+    return _save_unique(store, [learning])
+
+
+def capture_deploy_outcome(
+    *,
+    record: DeploymentRecord,
+    healthy: bool,
+    store: AgentLearningStoreLike,
+) -> list[AgentLearningRecord]:
+    """Tag deploy outcomes for the executive layer.
+
+    Failures are CTO learnings (kind=risk, high confidence): the dossier
+    should reflect that this sha broke prod so future planning avoids
+    similar patterns. Successes are CEO learnings (kind=ops, medium): a
+    rolling signal of portfolio stability.
+    """
+    if not capture_enabled():
+        return []
+    project = record.project
+    sha = record.merge_sha[:12]
+    if healthy:
+        learning = AgentLearningRecord(
+            agent_id=f"ceo@{project}",
+            role="ceo",
+            project=project,
+            kind="ops",
+            fact=_compact(
+                f"{project} deploy {sha} verified HEALTHY across "
+                f"{len(record.health_check_results)} probes."
+            ),
+            source_type="deploy_outcome",
+            source_id=str(record.id),
+            confidence="medium",
+        )
+    else:
+        failed_urls = [r.url for r in record.health_check_results if not r.ok][:4]
+        learning = AgentLearningRecord(
+            agent_id=f"cto@{project}",
+            role="cto",
+            project=project,
+            kind="risk",
+            fact=_compact(
+                f"{project} deploy {sha} UNHEALTHY ({record.failed_count} of "
+                f"{len(record.health_check_results)} probes failed); "
+                f"failing URLs: {', '.join(failed_urls) or 'n/a'}. "
+                f"Notes: {record.findings_md or 'see deployment record'}."
+            ),
+            source_type="deploy_outcome",
+            source_id=str(record.id),
+            confidence="high",
+        )
     return _save_unique(store, [learning])
 
 

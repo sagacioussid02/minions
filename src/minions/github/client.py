@@ -100,9 +100,17 @@ class GitHubClient:
             )
         return response
 
-    @staticmethod
-    def _check_not_protected(branch: str) -> None:
+    def _check_not_protected(self, branch: str, *, operation: str = "push") -> None:
         if branch.lower() in _PROTECTED_BRANCHES:
+            from minions.activity import record_guardrail_block
+
+            details = f"{operation} refused on {branch!r} in {self.repo}"
+            record_guardrail_block(
+                layer="layer2_tooling",
+                kind="protected_branch",
+                details=details,
+                project=self.repo.split("/", 1)[-1] if "/" in self.repo else self.repo,
+            )
             raise ProtectedBranchError(
                 f"refusing to operate on protected branch {branch!r}. "
                 f"Create a feature branch (e.g., minions/<role>/<summary>) and open a PR."
@@ -195,7 +203,7 @@ class GitHubClient:
 
     def create_branch(self, *, name: str, base_sha: str) -> BranchRef:
         """Create a new ref. Refuses protected branch names."""
-        self._check_not_protected(name)
+        self._check_not_protected(name, operation="create_branch")
         r = self._request(
             "POST",
             f"/repos/{self.repo}/git/refs",
@@ -210,7 +218,7 @@ class GitHubClient:
         creation fails, and by the branch sweeper to garbage-collect old
         engineer-created branches that never got a PR opened.
         """
-        self._check_not_protected(name)
+        self._check_not_protected(name, operation="delete_branch")
         # GitHub returns 204 on success, 422 if the ref does not exist. Treat
         # 422/404 as a no-op so callers can be idempotent.
         try:
@@ -344,7 +352,7 @@ class GitHubClient:
         (use :meth:`get_file_sha`). Returns the resulting commit SHA.
         Refuses protected branches.
         """
-        self._check_not_protected(branch)
+        self._check_not_protected(branch, operation="update_file")
         content_bytes = content.encode("utf-8") if isinstance(content, str) else content
         body: dict[str, Any] = {
             "message": message,
@@ -369,6 +377,14 @@ class GitHubClient:
     ) -> PullRequest:
         """Open a PR. Default is draft. Refuses head=protected branch."""
         if head.lower() in _PROTECTED_BRANCHES:
+            from minions.activity import record_guardrail_block
+
+            record_guardrail_block(
+                layer="layer2_tooling",
+                kind="protected_branch",
+                details=f"open_pull_request refused with head={head!r} in {self.repo}",
+                project=self.repo.split("/", 1)[-1] if "/" in self.repo else self.repo,
+            )
             raise ProtectedBranchError(
                 f"refusing to open a PR with head={head!r}; "
                 f"feature branches must be of the form minions/<role>/<summary>."

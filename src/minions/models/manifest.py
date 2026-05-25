@@ -127,7 +127,7 @@ class DeployConfig(BaseModel):
     ``risk=high`` Decision proposing rollback.
     """
 
-    target: str = "none"  # "vercel" | "fly" | "render" | "none"
+    target: str = "none"  # "vercel" | "generic" | "none"
     production_url: str | None = None
     health_checks: list[HealthCheck] = Field(default_factory=list)
     # When True the verifier also fetches the first N <img src="…"> URLs

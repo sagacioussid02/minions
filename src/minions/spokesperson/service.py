@@ -163,8 +163,12 @@ def ask_spokesperson(
                 message_id=operator_message.id,
                 project=manifest.name if manifest else None,
                 owner_role=_owner_for_kind(kind),
-                title=follow_ups[0],
-                rationale=f"Spokesperson could not answer confidently: {question}",
+                title=f"[SPIKE] {follow_ups[0]}",
+                rationale=(
+                    f"Spokesperson could not answer confidently: {question}. "
+                    "Owner crew should investigate, capture findings in the "
+                    "project dossier + agent learnings, then close this SPIKE."
+                ),
             )
         )
 
@@ -292,6 +296,28 @@ def _synthesize_answer(
         confidence = "low"
     scope = f"for {project}" if project else "for the organization"
 
+    follow_ups: list[str] = []
+    if confidence == "low":
+        owner = _owner_for_kind(kind)
+        target = project or "portfolio"
+        follow_ups.append(f"Discovery SPIKE for {owner}: answer '{question}' for {target}")
+        lines = [
+            f"{spokesperson_role} {scope}: I don't have a confident answer yet.",
+            f"Question: {question}",
+            (
+                f"I checked the project dossier, decision history, engineer runs, "
+                f"and agent learnings for this {kind} question and could not find "
+                "enough verified evidence to answer responsibly."
+            ),
+            (
+                f"I have escalated to the {owner} crew as a SPIKE so they can "
+                "investigate the codebase / deployment / docs and capture "
+                "findings into the project dossier + agent learnings."
+            ),
+            "Please reiterate this question in 24-48 hours.",
+        ]
+        return redact_secrets("\n".join(lines)), confidence, follow_ups
+
     lines = [
         f"{spokesperson_role} answer {scope}: I routed this as a {kind} question.",
         f"Question: {question}",
@@ -301,18 +327,7 @@ def _synthesize_answer(
     for consultation in consultations:
         if consultation.note:
             lines.append(f"{consultation.consulted_role}: {consultation.note}")
-
-    follow_ups: list[str] = []
-    if confidence == "low":
-        owner = _owner_for_kind(kind)
-        target = project or "portfolio"
-        follow_ups.append(f"Create discovery task for {owner}: answer '{question}' for {target}")
-        lines.append(
-            "I do not have enough verified evidence to call this complete. "
-            f"I recommend a follow-up owned by {owner}."
-        )
-    else:
-        lines.append("This answer is grounded in stored memory and inspected evidence above.")
+    lines.append("This answer is grounded in stored memory and inspected evidence above.")
     return redact_secrets("\n".join(lines)), confidence, follow_ups
 
 

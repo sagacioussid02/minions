@@ -1,9 +1,15 @@
 name: Post-deploy verify
 
-# Every 15 min. For each active project with deploy.target != none,
-# fetch the latest merged sha, probe production_url + each configured
-# health_checks path + the first N <img src> URLs from the home page.
-# On any failure files a risk=high revert Decision (deduped per sha).
+# Twice a week (Mon + Thu, 10:00 UTC). For each active project with
+# deploy.target != none, fetch the latest merged sha, probe
+# production_url + each configured health_checks path + the first N
+# <img src> URLs from the home page. On any failure files a risk=high
+# revert Decision (deduped per sha).
+#
+# Cadence rationale: post-deploy regressions don't appear on idle days
+# (we'd just probe the same sha repeatedly). Two ticks/week is enough
+# to catch a broken merge within ~3-4 days; operator can workflow-
+# dispatch manually after a known risky merge for faster confirmation.
 #
 # No LLM. Deterministic HTTP probes only. Catches the next/image-
 # optimizer outage class (demo_five 2026-05-21) without needing a
@@ -11,7 +17,7 @@ name: Post-deploy verify
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '0 10 * * 1,4'
   workflow_dispatch:
     inputs:
       dry-run:
