@@ -35,7 +35,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  monday-demo:
+  monday-Demo:
     if: github.event_name == 'schedule' && github.event.schedule == '0 15 * * 1'
     uses: ./.github/workflows/_cron-shared.yml
     with:

@@ -129,7 +129,7 @@ def test_flow_control_default_is_five() -> None:
 
 
 def test_flow_control_override_from_manifest(tmp_path: Path) -> None:
-    src = REPO_ROOT / "projects" / "demo.yaml"
+    src = REPO_ROOT / "projects" / "Demo.yaml"
     data = yaml.safe_load(src.read_text())
     data["flow_control"] = {"max_open_prs": 2}
     out = tmp_path / "x.yaml"

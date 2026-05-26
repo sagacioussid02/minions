@@ -176,6 +176,8 @@ def test_pr_review_loop_records_changes_requested_on_failed_ci(tmp_path: Path) -
         open_github_client=lambda _m: gh,
     )
 
+    # PR 2 contract: review_round bumps, NO sibling fix Decision is filed.
+    # The owner sweep handles the in-place re-dispatch on next tick.
     assert report.creator_responded == 1
     after = runs.get(str(decision.id))
     assert after is not None
@@ -183,46 +185,45 @@ def test_pr_review_loop_records_changes_requested_on_failed_ci(tmp_path: Path) -
     assert after.review_round == 1
     assert after.creator_response_posted_at is not None
     assert {r.verdict for r in after.reviewers} == {"request_changes"}
-    assert "REQUEST_CHANGES" in gh.comments[1][1]
-    assert "Creator response" in gh.comments[-1][1]
-    fixes = decisions.list_by_status(DecisionStatus.APPROVED)
-    assert len(fixes) == 1
-    assert fixes[0].proposer_role == "creator_response"
-    assert fixes[0].priority == "p2"
-    assert fixes[0].expedited is True
-    assert fixes[0].requested_by_role == "pr_review_loop"
+    # Outcome carries no sibling Decision id any more.
+    assert report.outcomes[0].fix_decision_id is None
+    # Zero approved Decisions filed by the review loop.
+    assert decisions.list_by_status(DecisionStatus.APPROVED) == []
 
 
-def test_pr_review_loop_reuses_existing_followup_fix(tmp_path: Path) -> None:
+def test_pr_review_loop_does_not_file_new_decision_even_if_legacy_one_exists(
+    tmp_path: Path,
+) -> None:
+    """A pre-existing legacy ``pr_followup`` Decision in the store from before
+    PR 2 shipped must NOT cause the review loop to file a fresh one. Idempotency
+    guard for the rollout window.
+    """
     decisions = DecisionStore(tmp_path / "decisions.json")
     runs = EngineerRunStore(tmp_path / "runs.json")
     decision = _decision()
     decisions.save(decision)
     _save_record(runs, _run_record(str(decision.id), pr_number=9))
-    existing = _decision(
+    legacy = _decision(
         type=DecisionType.BUG,
         summary="Fix CI failure on PR #9 (Demo)",
-        rationale="PR follow-up agent observed failed CI on https://github.com/x/Demo/pull/9.",
-        diff_or_plan="Fix https://github.com/x/Demo/pull/9",
         proposer_role="pr_followup",
         proposer_agent_id="pr_followup@Demo",
         status=DecisionStatus.APPROVED,
     )
-    decisions.save(existing)
+    decisions.save(legacy)
 
     gh = _FakeGH({9: ("failure", "https://ci/9")})
 
-    report = run_pr_review_loop(
+    run_pr_review_loop(
         projects_dir=PROJECTS_DIR,
         store=decisions,
         engineer_runs_store=runs,
         open_github_client=lambda _m: gh,
     )
 
-    assert report.creator_responded == 1
-    assert report.outcomes[0].fix_decision_id == str(existing.id)
+    # Only the legacy row remains; no new Decisions filed.
     fixes = decisions.list_by_status(DecisionStatus.APPROVED)
-    assert [f.id for f in fixes] == [existing.id]
+    assert [f.id for f in fixes] == [legacy.id]
 
 
 def test_pr_review_loop_does_not_double_comment(tmp_path: Path) -> None:

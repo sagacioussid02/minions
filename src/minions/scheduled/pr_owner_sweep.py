@@ -41,7 +41,15 @@ if TYPE_CHECKING:
     from minions.questions.store_factory import QuestionStoreLike
 
 
-FailureKind = Literal["ci_failure", "merge_conflict"]
+FailureKind = Literal["ci_failure", "merge_conflict", "review_changes_requested"]
+
+
+# Sprint board PR 2: when crew reviewers request changes, the owner sweep
+# now re-dispatches the original engineer on the SAME branch instead of
+# the review loop filing a sibling "fix" Decision. This is the cap on
+# how many in-place review-response rounds the owner runs before the
+# review loop escalates to the operator via a Question Record.
+MAX_REVIEW_ROUNDS_PER_PR = 2
 OutcomeStatus = Literal["retried", "healthy", "escalated", "skipped", "throttled", "error"]
 EngineerRunner = Callable[..., EngineerResult]
 
@@ -95,18 +103,24 @@ def _is_owner_actionable(record: EngineerRunRecord) -> bool:
     return record.pr_state not in ("merged", "closed")
 
 
-def _classify_failure(ci_conclusion: str | None, merge_state: str | None) -> FailureKind | None:
+def _classify_failure(
+    ci_conclusion: str | None,
+    merge_state: str | None,
+    review_status: str | None = None,
+) -> FailureKind | None:
     """Decide whether the PR needs a retry, and why.
 
     Returns ``None`` when the PR is healthy enough to leave to the standard
-    review loop (CI green / pending, merge clean). ``"merge_conflict"`` wins
-    over ``"ci_failure"`` so the engineer's prompt knows to resolve the
-    conflict first.
+    review loop. Priority: merge_conflict > ci_failure > review_changes_requested.
+    Reviewer feedback loses to harder failures because the engineer can't
+    address feedback meaningfully on a branch that won't even merge or build.
     """
     if merge_state == "dirty":
         return "merge_conflict"
     if ci_conclusion == "failure":
         return "ci_failure"
+    if review_status == "changes_requested":
+        return "review_changes_requested"
     return None
 
 
@@ -240,7 +254,7 @@ def _process_one(
         with github:
             ci_conclusion, _ = github.get_pr_check_status(record.pr_number or 0)
             merge_state = github.get_pr_merge_state(record.pr_number or 0)
-            failure = _classify_failure(ci_conclusion, merge_state)
+            failure = _classify_failure(ci_conclusion, merge_state, record.review_status)
 
             # Always persist the fresh CI snapshot so the dashboard sees it.
             record.ci_conclusion = ci_conclusion
@@ -322,6 +336,7 @@ def _process_one(
                     existing_pr_number=record.pr_number,
                     retry_attempt=record.followup_attempts + 1,
                     is_conflict_resolution=(failure == "merge_conflict"),
+                    is_review_response=(failure == "review_changes_requested"),
                 )
             except BudgetBreachError as e:
                 return OwnerSweepOutcome(

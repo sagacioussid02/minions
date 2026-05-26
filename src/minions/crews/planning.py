@@ -215,6 +215,30 @@ def run_planning_crew(
         )
 
     structured_plan = _parse_structured_plan(proposal_text, project=project)
+    composition_violations = structured_plan.validate_composition()
+    if composition_violations:
+        logger.info(
+            "sprint composition violations for %s: %s — retrying manager synthesis once",
+            project, "; ".join(composition_violations),
+        )
+        retried_text = _retry_manager_synthesis(
+            project=project,
+            api_key=api_key,
+            mgr_min=mgr_min,
+            prior_output=proposal_text,
+            violations=composition_violations,
+        )
+        if retried_text is not None:
+            retried_plan = _parse_structured_plan(retried_text, project=project)
+            if not retried_plan.validate_composition():
+                structured_plan = retried_plan
+            else:
+                logger.warning(
+                    "sprint composition still invalid after retry for %s: %s — "
+                    "submitting anyway",
+                    project, "; ".join(retried_plan.validate_composition()),
+                )
+                structured_plan = retried_plan
     # Fill the legacy diff_or_plan from the structured plan so email + every
     # existing UI surface keeps rendering exactly as before. The planning
     # conversation tail (profile snapshot etc.) is appended for traceability.
@@ -588,6 +612,66 @@ def _run_legacy_planning_pipeline(
     finally:
         clear_attribution()
     return str(result)
+
+
+def _retry_manager_synthesis(
+    *,
+    project: str,
+    api_key: str,
+    mgr_min: MinionAgent,
+    prior_output: str,
+    violations: list[str],
+) -> str | None:
+    """One-shot corrective Manager call when composition rules fail.
+
+    Returns the new raw text on success, or None on any failure (caller
+    falls back to submitting the original plan with a warning).
+    """
+    try:
+        from crewai import Crew, Process, Task
+
+        from minions.crews.factory import make_crewai_agent
+
+        mgr = make_crewai_agent(mgr_min, api_key=api_key)
+        violation_lines = "\n".join(f"- {v}" for v in violations)
+        corrective = Task(
+            description=textwrap.dedent(f"""\
+                Your previous sprint plan for '{project}' did not satisfy the
+                composition contract. Required: ≥1 feature, ≥1 tech_debt,
+                ≥1 ops, ≥1 docs, exactly 1–2 bugs.
+
+                Violations:
+                {violation_lines}
+
+                Previous output (verbatim):
+                {prior_output}
+
+                Re-emit STRICT JSON conforming to StructuredSprintPlan that
+                fixes the violations. Keep every well-grounded item from the
+                previous output; add the missing categories using signals
+                already discussed in the debate. No prose, no fences.
+            """),
+            agent=mgr,
+            expected_output="Single JSON object conforming to StructuredSprintPlan. No prose.",
+        )
+        crew = Crew(
+            agents=[mgr], tasks=[corrective],
+            process=Process.sequential, verbose=False,
+        )
+        set_attribution(project=project, role="planning")
+        try:
+            with crew_run(
+                crew="planning_retry", project=project, agents=["manager"]
+            ):
+                result = crew.kickoff()
+        finally:
+            clear_attribution()
+        return str(result)
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "manager-synthesis retry failed for %s", project, exc_info=True
+        )
+        return None
 
 
 def _parse_structured_plan(text: str, *, project: str) -> StructuredSprintPlan:

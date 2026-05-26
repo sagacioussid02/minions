@@ -172,6 +172,24 @@ class Manifest(BaseModel):
 
     cadence_profile: Literal["v0_frugal", "v1_balanced", "v2_full"] = "v0_frugal"
 
+    # Optional per-project planning day. When set, ``run_weekly_planning``
+    # only files a proposal for this project when today's UTC weekday matches.
+    # Lets the operator stagger sprint proposals across the week instead of
+    # receiving all 5 on Monday morning. None = legacy behavior (run on the
+    # cron's day regardless).
+    planning_day: (
+        Literal[
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+        ]
+        | None
+    ) = None
+
     delivery_targets: DeliveryTargets = Field(default_factory=DeliveryTargets)
 
     team: TeamOverrides = Field(default_factory=TeamOverrides)

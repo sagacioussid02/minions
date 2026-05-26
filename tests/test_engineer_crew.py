@@ -33,7 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
     "given,expected_prefix",
     [
         ("Add docstrings to README", "add-docstrings-to-readme"),
-        ("[DRY RUN] Sprint proposal for Demo", "dry-run-sprint-proposal-for-demo"),
+        ("[DRY RUN] Sprint proposal for Demo", "dry-run-sprint-proposal-for-Demo"),
         ("!!!", "change"),  # falls back when nothing alphanumeric
     ],
 )
@@ -114,7 +114,7 @@ def _decision(status: DecisionStatus = DecisionStatus.APPROVED) -> Decision:
 
 
 def _manifest():
-    return load_manifest(REPO_ROOT / "projects" / "demo.yaml")
+    return load_manifest(REPO_ROOT / "projects" / "Demo.yaml")
 
 
 def _client(handler: Callable[[httpx.Request], httpx.Response]) -> GitHubClient:

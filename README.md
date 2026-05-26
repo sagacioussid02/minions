@@ -12,7 +12,7 @@ Active managed projects (manifests in `projects/`):
 
 | Project | Repo | Monthly cap |
 |---|---|---|
-| Demo | your-github-org/demo | $4 |
+| Demo | your-github-org/Demo | $4 |
 | demo_two | your-github-org/demo_two | $4 |
 | demo_three | your-github-org/demo_three | $4 |
 | demo_four | TBD | $2 |
@@ -73,11 +73,11 @@ pip install -e ".[dev]"
 ```bash
 minions check                        # validate config/portfolio.yaml + all manifests
 minions org                          # print full org topology with model tiers
-minions roster demo                  # roster for a single project (or omit for all)
+minions roster Demo                  # roster for a single project (or omit for all)
 
 # Planning + approval flow (end-to-end demo)
-minions plan demo                    # dry-run by default — no LLM calls, $0
-minions plan demo --no-dry-run       # invoke real Claude Sonnet (~$0.05–$0.15)
+minions plan Demo                    # dry-run by default — no LLM calls, $0
+minions plan Demo --no-dry-run       # invoke real Claude Sonnet (~$0.05–$0.15)
 minions decisions list               # show pending decisions
 minions decisions show <id-prefix>   # full decision detail (4-char prefix is enough)
 minions decisions approve <id> [-r "reason"]
@@ -87,7 +87,7 @@ minions decisions reject  <id> [-r "reason"]
 For real planning runs set the API key:
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-minions plan demo --no-dry-run
+minions plan Demo --no-dry-run
 ```
 
 ## Observability (Langfuse)
@@ -110,7 +110,7 @@ Setup (3 minutes — cloud free tier):
    # → Host: https://cloud.langfuse.com
    # → ✓ authenticated to https://cloud.langfuse.com
    ```
-5. Run anything with LLM calls: `minions plan demo --no-dry-run` — your trace appears in real time at `https://cloud.langfuse.com/traces`.
+5. Run anything with LLM calls: `minions plan Demo --no-dry-run` — your trace appears in real time at `https://cloud.langfuse.com/traces`.
 
 Self-hosting works the same way: `docker compose up` from the [Langfuse repo](https://github.com/langfuse/langfuse) and point `LANGFUSE_HOST` at it.
 
@@ -149,8 +149,8 @@ The orchestrator has its own scoped GitHub REST client:
 - Defaults all PRs to draft
 
 ```bash
-minions github check demo         # repo metadata + first 5 open issues
-minions github issues demo -l mini:idea -n 20   # filter and list issues
+minions github check Demo         # repo metadata + first 5 open issues
+minions github issues Demo -l mini:idea -n 20   # filter and list issues
 ```
 
 Token resolution order:
@@ -242,7 +242,7 @@ minions/
 ├── config/
 │   └── portfolio.yaml          # portfolio-level config (cadence, audit, procurement, etc.)
 ├── projects/
-│   ├── demo.yaml               # active manifests
+│   ├── Demo.yaml               # active manifests
 │   ├── demo_two.yaml
 │   ├── demo_four.yaml
 │   ├── demo_three.yaml

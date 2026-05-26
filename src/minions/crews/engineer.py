@@ -326,6 +326,7 @@ def run_engineer_crew(
     existing_pr_number: int | None = None,
     retry_attempt: int = 0,
     is_conflict_resolution: bool = False,
+    is_review_response: bool = False,
 ) -> EngineerResult:
     """Run the engineer crew for an approved Decision. Opens a draft PR.
 
@@ -397,6 +398,7 @@ def run_engineer_crew(
             task=task,
             retry_attempt=retry_attempt,
             is_conflict_resolution=is_conflict_resolution,
+            is_review_response=is_review_response,
             existing_pr_number=existing_pr_number,
         )
 
@@ -907,6 +909,17 @@ def _gather_ci_failure_excerpt(github: GitHubClient, pr_number: int) -> str | No
     )
 
 
+def _gather_review_comments(github: GitHubClient, pr_number: int) -> list[dict[str, str]]:
+    """Best-effort fetch of PR review comments for the in-place review-response
+    path. Returns an empty list on any error so the engineer can proceed using
+    just the acceptance criteria.
+    """
+    try:
+        return github.list_issue_comments(number=pr_number)  # type: ignore[no-any-return]
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def _gather_context_files(github: GitHubClient, base_branch: str) -> list[tuple[str, str]]:
     """Best-effort fetch of likely-relevant context files. Skips on error."""
     out: list[tuple[str, str]] = []
@@ -942,6 +955,7 @@ def _run_engineer_llm(
     task: SprintTask | None = None,
     retry_attempt: int = 0,
     is_conflict_resolution: bool = False,
+    is_review_response: bool = False,
     existing_pr_number: int | None = None,
     preflight_failure: object | None = None,
 ) -> EngineerOutput:
@@ -1046,6 +1060,31 @@ def _run_engineer_llm(
             ```
             {(stdout_tail or "(empty)")[-1000:]}
             ```
+            """
+        )
+    elif is_review_response and existing_pr_number is not None:
+        review_comments = _gather_review_comments(github, existing_pr_number)
+        comments_block = (
+            "\n\n".join(
+                f"### {c.get('user', '?')} @ {c.get('created_at', '?')}\n{c.get('body', '')}"
+                for c in review_comments[-5:]
+            )
+            or "(no review comments available — diagnose from acceptance criteria)"
+        )
+        mode_block = textwrap.dedent(
+            f"""\
+            ## MODE: review response (round #{retry_attempt})
+
+            Crew reviewers requested changes on PR #{existing_pr_number}. Read
+            their feedback below and produce the smallest possible commit on
+            this same branch that addresses every legitimate concern.
+
+            **DO NOT** open a new PR. DO NOT rewrite unrelated code. If a
+            reviewer comment is out of scope for this PR, ignore it here — it
+            will be re-classified separately.
+
+            ## Reviewer feedback to address (last 5 comments)
+            {comments_block}
             """
         )
     elif retry_attempt > 0 and existing_pr_number is not None:

@@ -39,13 +39,13 @@ def _write_manifest(tmp_path: Path, agents_block: dict) -> Manifest:
 
 
 def test_default_roster_has_no_display_names():
-    manifest = load_manifest(REPO_ROOT / "projects" / "demo.yaml")
+    manifest = load_manifest(REPO_ROOT / "projects" / "Demo.yaml")
     agents = build_project_agents(manifest)
     assert all(a.display_name is None for a in agents)
 
 
 def test_seat_index_for_multi_seat_roles():
-    manifest = load_manifest(REPO_ROOT / "projects" / "demo.yaml")
+    manifest = load_manifest(REPO_ROOT / "projects" / "Demo.yaml")
     agents = build_project_agents(manifest)
     seniors = [a for a in agents if a.role is Role.SR_ENGINEER]
     assert len(seniors) == 2

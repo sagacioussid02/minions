@@ -81,7 +81,7 @@ def test_gate_passes_when_preflight_ok(monkeypatch: pytest.MonkeyPatch, tmp_path
         "minions.preflight.runner.run_preflight",
         lambda **_kw: _passing_report(),
     )
-    m = load_manifest(REPO_ROOT / "projects" / "demo.yaml")
+    m = load_manifest(REPO_ROOT / "projects" / "Demo.yaml")
     files, state, skip = _run_preflight_gate(
         decision=_decision(),
         manifest=m,
@@ -108,7 +108,7 @@ def test_gate_skips_silently_when_working_tree_fails(
         _raise,
         raising=False,
     )
-    m = load_manifest(REPO_ROOT / "projects" / "demo.yaml")
+    m = load_manifest(REPO_ROOT / "projects" / "Demo.yaml")
     files, state, skip = _run_preflight_gate(
         decision=_decision(),
         manifest=m,
@@ -136,7 +136,7 @@ def test_gate_returns_skip_when_no_api_key_for_retry(
         "minions.preflight.runner.run_preflight",
         lambda **_kw: _failing_report(),
     )
-    m = load_manifest(REPO_ROOT / "projects" / "demo.yaml")
+    m = load_manifest(REPO_ROOT / "projects" / "Demo.yaml")
     files, state, skip = _run_preflight_gate(
         decision=_decision(),
         manifest=m,

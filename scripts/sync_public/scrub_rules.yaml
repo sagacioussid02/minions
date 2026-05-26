@@ -5,7 +5,7 @@
 #
 # All replacements are CASE-SENSITIVE unless `case_insensitive: true`.
 # Project-name replacements use case-insensitive matching because we have
-# "demo" in code comments and "Demo" in roster keys for the same project.
+# "Demo" in code comments and "Demo" in roster keys for the same project.
 
 text_replacements:
   # Operator personal identifiers
@@ -16,41 +16,31 @@ text_replacements:
   - find: "your-github-org"
     replace: "your-github-org"
 
-  # Project name mapping — real → demo.
-  #
-  # CASE-SENSITIVE per variant so that filenames stay lowercase (demo.yaml
-  # → demo.yaml) while roster keys keep their original casing (Demo → Demo).
-  # Mixing case-insensitive matching with a literal replacement broke
-  # filename references — `projects/demo.yaml` was being rewritten to
-  # `projects/Demo.yaml`, which doesn't exist on public.
+  # Project name mapping — real → demo. Case-insensitive (handles
+  # both `Demo` in CLI examples and `Demo` in roster keys).
   - find: "Demo"
     replace: "Demo"
-  - find: "demo"
-    replace: "demo"
-  - find: "Demo_two"
-    replace: "Demo_two"
+    case_insensitive: true
+  # Underscored to match public's demo project filenames:
+  # projects/demo.yaml, demo_two.yaml, demo_three.yaml, ...
   - find: "demo_two"
     replace: "demo_two"
-  - find: "Demo_two"
-    replace: "Demo_two"
+    case_insensitive: true
   - find: "demo_two"
     replace: "demo_two"
-  - find: "Demo_three"
-    replace: "Demo_three"
+    case_insensitive: true
   - find: "demo_three"
     replace: "demo_three"
-  - find: "Demo_three"
-    replace: "Demo_three"
+    case_insensitive: true
   - find: "demo_three"
     replace: "demo_three"
-  - find: "Demo_four"
-    replace: "Demo_four"
+    case_insensitive: true
   - find: "demo_four"
     replace: "demo_four"
-  - find: "Demo_five"
-    replace: "Demo_five"
+    case_insensitive: true
   - find: "demo_five"
     replace: "demo_five"
+    case_insensitive: true
 
 # Files that ONLY get scrubbed (no other transforms). All other ships
 # are verbatim copies.
@@ -70,7 +60,7 @@ scrub_files:
 
 # Paths never synced to public. Public's own copy (if any) wins.
 drop_paths:
-  - "projects/demo.yaml"
+  - "projects/Demo.yaml"
   - "projects/demo_two.yaml"
   - "projects/demo_four.yaml"
   - "projects/demo_five.yaml"

@@ -15,11 +15,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.mark.skip(reason="fixture-coupled to private project YAMLs; smoke-tested by operator")
-def test_load_demo_manifest():
-    m = load_manifest(REPO_ROOT / "projects" / "demo.yaml")
+def test_load_Demo_manifest():
+    m = load_manifest(REPO_ROOT / "projects" / "Demo.yaml")
     assert m.name == "Demo"
     assert m.source.kind == "github"
-    assert m.source.repo == "your-github-org/demo"
+    assert m.source.repo == "your-github-org/Demo"
     assert m.weekly_budget_usd == 1.00
     assert m.monthly_budget_usd == 4.00
     assert m.cadence_profile == "v0_frugal"
@@ -29,7 +29,7 @@ def test_load_demo_manifest():
 
 @pytest.mark.skip(reason="fixture-coupled to private project YAMLs; smoke-tested by operator")
 def test_priority_ordering_top_three():
-    """demo_five > demo_four > demo_two > {demo, demo_three} per operator priority."""
+    """demo_five > demo_four > demo_two > {Demo, demo_three} per operator priority."""
     manifests = load_active_manifests(REPO_ROOT / "projects")
     weights = {name: m.delivery_targets.share_weight for name, m in manifests.items()}
     assert weights["demo_five"] > weights["demo_four"]
@@ -53,7 +53,7 @@ def test_total_active_budget_within_envelope():
 
 def test_dossier_config_defaults_when_absent():
     """A manifest without a `dossier:` block gets a default DossierConfig."""
-    m = load_manifest(REPO_ROOT / "projects" / "demo.yaml")
+    m = load_manifest(REPO_ROOT / "projects" / "Demo.yaml")
     assert isinstance(m.dossier, DossierConfig)
     assert m.dossier.publish is True
     assert m.dossier.max_new_issues_per_cycle == 5
@@ -63,7 +63,7 @@ def test_dossier_config_defaults_when_absent():
 
 def test_dossier_config_overrides_parse(tmp_path: Path):
     """A manifest with explicit dossier overrides loads them."""
-    src = REPO_ROOT / "projects" / "demo.yaml"
+    src = REPO_ROOT / "projects" / "Demo.yaml"
     data = yaml.safe_load(src.read_text())
     data["dossier"] = {
         "publish": False,
@@ -73,7 +73,7 @@ def test_dossier_config_overrides_parse(tmp_path: Path):
             "ok_max_commit_drift": 50,
         },
     }
-    out = tmp_path / "demo.yaml"
+    out = tmp_path / "Demo.yaml"
     out.write_text(yaml.safe_dump(data))
 
     m = load_manifest(out)
@@ -85,10 +85,10 @@ def test_dossier_config_overrides_parse(tmp_path: Path):
 
 def test_dossier_rejects_negative_issue_cap(tmp_path: Path):
     """Negative max_new_issues_per_cycle is a hard failure."""
-    src = REPO_ROOT / "projects" / "demo.yaml"
+    src = REPO_ROOT / "projects" / "Demo.yaml"
     data = yaml.safe_load(src.read_text())
     data["dossier"] = {"max_new_issues_per_cycle": -1}
-    out = tmp_path / "demo.yaml"
+    out = tmp_path / "Demo.yaml"
     out.write_text(yaml.safe_dump(data))
 
     with pytest.raises(ValueError, match="max_new_issues_per_cycle"):

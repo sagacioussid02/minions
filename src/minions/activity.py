@@ -78,14 +78,7 @@ Event = Literal[
     "pm_answered",
     "spokesperson_answered",
     "agent_spoke",  # per-task transcript message (see crew-transcripts)
-    "guardrail_blocked",  # safety layer refused an unsafe action
 ]
-
-
-# Which safety layer emitted the block (Layer 1 = prompt-level refusals,
-# Layer 2 = tool / GitHub client refusals). Layers 3 + 4 (branch protection,
-# network egress allowlist) are enforced outside this codebase.
-GuardrailLayer = Literal["layer1_prompt", "layer2_tooling"]
 
 
 @dataclass(frozen=True)
@@ -263,49 +256,6 @@ def is_role_running(
 ) -> bool:
     """True if any in-flight crew involves this (project, role)."""
     return any(e.project == project and role in e.agents for e in running_now(path=path, now=now))
-
-
-def record_guardrail_block(
-    *,
-    layer: GuardrailLayer,
-    kind: str,
-    details: str,
-    project: str | None = None,
-    role: str | None = None,
-    path: Path | None = None,
-) -> None:
-    """Emit a ``guardrail_blocked`` event when a safety layer refuses an action.
-
-    Never raises — observability code must not crash the safety check that
-    produced the block.
-    """
-    try:
-        entry = ActivityEntry(
-            timestamp=datetime.now(tz=UTC),
-            event="guardrail_blocked",
-            run_id=uuid.uuid4().hex,
-            crew=f"guardrail:{layer}",
-            project=project or "",
-            decision_id="",
-            agents=(kind,) if role is None else (kind, role),
-            error=details[:200],
-        )
-        append(entry, path=path)
-    except Exception:  # noqa: BLE001
-        logger.debug("activity.record_guardrail_block failed", exc_info=True)
-
-
-def guardrail_blocks(
-    *,
-    since: datetime | None = None,
-    path: Path | None = None,
-) -> list[ActivityEntry]:
-    """Return ``guardrail_blocked`` events, newest first, optionally filtered by since."""
-    out = [e for e in read_log(path) if e.event == "guardrail_blocked"]
-    if since is not None:
-        out = [e for e in out if e.timestamp >= since]
-    out.sort(key=lambda e: e.timestamp, reverse=True)
-    return out
 
 
 def history_for_role(

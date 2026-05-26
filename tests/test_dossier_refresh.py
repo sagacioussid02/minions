@@ -40,9 +40,9 @@ def _manifest(name: str, publish: bool = True):
 
     from minions.models.manifest import load_manifest
 
-    # Build a tiny manifest by piggybacking on demo.yaml; keeps schema in sync.
+    # Build a tiny manifest by piggybacking on Demo.yaml; keeps schema in sync.
     repo_root = Path(__file__).resolve().parents[1]
-    src = repo_root / "projects" / "demo.yaml"
+    src = repo_root / "projects" / "Demo.yaml"
     data = yaml.safe_load(src.read_text())
     data["name"] = name
     data["dossier"] = {"publish": publish}

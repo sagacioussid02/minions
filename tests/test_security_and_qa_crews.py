@@ -156,7 +156,7 @@ def test_pr_followup_posts_qa_comment_on_success_ci(monkeypatch: Any, tmp_path: 
     runs.save(
         EngineerResult(
             decision_id=str(d.id),
-            pr_url="https://github.com/x/demo/pull/1",
+            pr_url="https://github.com/x/Demo/pull/1",
             pr_number=1,
             branch_name="b",
             files_changed=["src/index.js"],
