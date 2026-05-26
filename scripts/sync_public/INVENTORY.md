@@ -54,7 +54,7 @@ All `.github/workflows/*.yml` files use `_cron-shared.yml` to access GitHub secr
 
 Public already ships `projects/demo.yaml` … `projects/demo_five.yaml`. The real ones never go to public.
 
-- `projects/Demo.yaml` — DROP
+- `projects/demo.yaml` — DROP
 - `projects/demo_two.yaml` — DROP
 - `projects/demo_four.yaml` — DROP
 - `projects/demo_five.yaml` — DROP
@@ -109,7 +109,7 @@ src/minions/scheduled/crew_heartbeat.py           SHIP
 src/minions/scheduled/discovery.py                SHIP
 src/minions/scheduled/monthly_portfolio_review.py SHIP
 src/minions/scheduled/post_deploy_verify.py       SHIP
-src/minions/scheduled/pr_owner_sweep.py           SCRUB (grep refs to Demo/demo_three/demo_four in comments)
+src/minions/scheduled/pr_owner_sweep.py           SCRUB (grep refs to demo/demo_three/demo_four in comments)
 src/minions/scheduled/pr_review_loop.py           SHIP
 src/minions/scheduled/refine_approved.py          SHIP
 src/minions/scheduled/scrum.py                    SCRUB (grep refs)
@@ -136,10 +136,10 @@ All 32 new test files are provider-neutral and use fixtures, not real project re
 |---|---|
 | `README.md` | Replace project name list, repo URLs, command examples, "operator@example.com", "your-github-org" with public placeholders. Public version is already scrubbed — diff and bring forward feature docs but keep public's preamble + onboarding section. |
 | `config/portfolio.yaml` | Public version is already the demo. Bring forward any new top-level keys (e.g. new cadence_profiles), but keep public's `owner:`, `projects:`, `email_alias_template:`. |
-| `src/minions/__main__.py` | Strip "(e.g., Demo)" docstring examples → "(e.g., demo)". Replace "demo_five" → "demo" in example commands. |
+| `src/minions/__main__.py` | Strip "(e.g., demo)" docstring examples → "(e.g., demo)". Replace "demo_five" → "demo" in example commands. |
 | `src/minions/activity.py` | Module-docstring example mentions "demo_five" — replace with "demo". |
 | `src/minions/cost.py` | Same — replace example project in module docstring. |
-| `src/minions/observability.py` | Module docstring mentions `Demo` — replace with `demo`. |
+| `src/minions/observability.py` | Module docstring mentions `demo` — replace with `demo`. |
 | `src/minions/dashboard/app.py` | Line 182 has hardcoded `operator@example.com` caption. **Replace with `os.getenv("OPERATOR_EMAIL", "operator@example.com")` or pull from portfolio.yaml.** |
 | `src/minions/spokesperson/interview_relay.py` | Example refs. |
 | `src/minions/deployments/verifier.py` | Probable refs (in only-in-private bucket but flagged for symmetry). |
@@ -154,7 +154,7 @@ text_replacements:
     replace: "operator@example.com"
   - find: "your-github-org"
     replace: "your-github-org"
-  - find: "Demo"
+  - find: "demo"
     replace: "demo"          # case-insensitive
   - find: "demo_two"
     replace: "demo-two"

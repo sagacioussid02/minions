@@ -193,7 +193,7 @@ def test_summaries_attribute_cost_to_correct_bucket(empty_log: Path) -> None:
         manifests=manifests, portfolio=portfolio, cost_log_path=empty_log, now=now
     )
     son_mgr = next(s for s in summaries if s.project == "demo_five" and s.role == "manager")
-    Demo_mgr = next(s for s in summaries if s.project == "Demo" and s.role == "manager")
+    demo_mgr = next(s for s in summaries if s.project == "Demo" and s.role == "manager")
     other = next(s for s in summaries if s.project == "demo_three" and s.role == "manager")
 
     assert son_mgr.cost_total_usd == pytest.approx(0.08)
@@ -201,7 +201,7 @@ def test_summaries_attribute_cost_to_correct_bucket(empty_log: Path) -> None:
     assert son_mgr.last_decision_id == "dec-1"
     assert son_mgr.status == "active"
 
-    assert Demo_mgr.cost_total_usd == pytest.approx(0.10)
+    assert demo_mgr.cost_total_usd == pytest.approx(0.10)
 
     assert other.last_activity is None
     assert other.status == "stale"

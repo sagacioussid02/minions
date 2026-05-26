@@ -331,11 +331,11 @@ def test_assemble_inputs_aggregates_30_day_window(tmp_path: Path) -> None:
     assert "Demo" in by_project, "Demo manifest should be picked up"
     assert "demo_three" in by_project, "demo_three manifest should be picked up"
 
-    Demo = by_project["Demo"]
-    assert Demo.decisions_30d == 2  # the stale one is excluded
-    assert Demo.audit_findings_30d == 1
-    assert Demo.share_weight > 0
-    assert Demo.monthly_cap_usd > 0
+    demo = by_project["Demo"]
+    assert demo.decisions_30d == 2  # the stale one is excluded
+    assert demo.audit_findings_30d == 1
+    assert demo.share_weight > 0
+    assert demo.monthly_cap_usd > 0
 
     tw = by_project["demo_three"]
     assert tw.prs_merged_30d == 1  # only the one merged inside window

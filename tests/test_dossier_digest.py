@@ -19,7 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _manifest(tmp_path: Path, name: str = "p"):
-    src = REPO_ROOT / "projects" / "Demo.yaml"
+    src = REPO_ROOT / "projects" / "demo.yaml"
     data = yaml.safe_load(src.read_text())
     data["name"] = name
     out = tmp_path / f"{name}.yaml"

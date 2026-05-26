@@ -37,7 +37,7 @@ def _decision() -> Decision:
 
 
 def _manifest():
-    return load_manifest(REPO_ROOT / "projects" / "Demo.yaml")
+    return load_manifest(REPO_ROOT / "projects" / "demo.yaml")
 
 
 def _client(handler: Callable[[httpx.Request], httpx.Response]) -> GitHubClient:

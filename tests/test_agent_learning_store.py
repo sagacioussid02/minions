@@ -54,7 +54,7 @@ def test_list_relevant_filters_project_role_kind_and_includes_global(
     )
     store.save(
         _record(
-            agent_id="principal_engineer@Demo",
+            agent_id="principal_engineer@demo",
             project="Demo",
             fact="Demo uses a separate UI.",
         )
