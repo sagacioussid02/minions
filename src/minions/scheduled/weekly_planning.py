@@ -37,6 +37,22 @@ if TYPE_CHECKING:
     from minions.github.client import GitHubClient
 
 
+_WEEKDAY_NAMES = (
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+)
+
+
+def _weekday_name(idx: int) -> str:
+    """Map ``datetime.weekday()`` (Mon=0…Sun=6) to the lowercase day name."""
+    return _WEEKDAY_NAMES[idx]
+
+
 class PlanningOutcome(BaseModel):
     project: str
     status: Literal["submitted", "skipped", "error", "throttled", "dossier_very_stale"]
@@ -98,6 +114,18 @@ def run_weekly_planning(
         wanted = {p.lower() for p in projects}
         manifests = {
             name: manifest for name, manifest in manifests.items() if name.lower() in wanted
+        }
+    else:
+        # Stagger-by-day filter: when a manifest sets ``planning_day``, only
+        # run it on the matching UTC weekday. Explicit --project overrides
+        # this (manual sweeps run regardless of the day). Manifests without
+        # planning_day always run — preserves the legacy single-cron behavior
+        # for projects the operator hasn't migrated yet.
+        today = _weekday_name(started_dt.weekday())
+        manifests = {
+            name: m
+            for name, m in manifests.items()
+            if m.planning_day is None or m.planning_day == today
         }
 
     outcomes: list[PlanningOutcome] = []

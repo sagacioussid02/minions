@@ -68,6 +68,26 @@ class StructuredSprintPlan(BaseModel):
     def total_items(self) -> int:
         return sum(len(getattr(self, k)) for k in ("features", "bugs", "tech_debt", "ops", "docs"))
 
+    def validate_composition(self) -> list[str]:
+        """Return human-readable violations of the sprint-composition contract.
+
+        Contract (operator-set 2026-05-22): every sprint must include at
+        least one feature, one tech-debt item, one ops item, one doc item,
+        and 1–2 bugs. Empty list means the plan is well-composed.
+        """
+        violations: list[str] = []
+        if len(self.features) < 1:
+            violations.append("needs ≥1 feature (got 0)")
+        if len(self.tech_debt) < 1:
+            violations.append("needs ≥1 tech_debt item (got 0)")
+        if len(self.ops) < 1:
+            violations.append("needs ≥1 ops item (got 0)")
+        if len(self.docs) < 1:
+            violations.append("needs ≥1 docs item (got 0)")
+        if not (1 <= len(self.bugs) <= 2):
+            violations.append(f"needs 1–2 bugs (got {len(self.bugs)})")
+        return violations
+
     def render_markdown(self) -> str:
         """Render to the legacy ``diff_or_plan`` markdown shape.
 
