@@ -826,7 +826,16 @@ export async function listSprintBoard(
       er.payload->>'ci_conclusion' AS ci_conclusion,
       er.payload->>'review_status' AS explicit_review_status,
       er.payload->'reviewers' AS explicit_reviewers,
-      COALESCE((er.payload->>'followup_attempts')::int, 0) AS followup_attempts,
+      -- Per-PR iteration counter. Org repo renamed followup_attempts to
+      -- iteration_count in the pr-lifecycle-resilience change (Phase 3).
+      -- Reads tolerate both keys until every record has been re-saved on
+      -- the new schema.
+      COALESCE(
+        (er.payload->>'iteration_count')::int,
+        (er.payload->>'followup_attempts')::int,
+        0
+      ) AS iteration_count,
+      er.payload->>'last_failure_kind' AS last_failure_kind,
       NULLIF(er.payload->>'last_followup_at', '')::timestamptz AS last_followup_at,
       NULLIF(er.payload->>'qa_review_posted_at', '')::timestamptz AS qa_review_posted_at,
       COALESCE((er.payload->>'operator_comment_posted')::boolean, false) AS operator_comment_posted,
@@ -898,7 +907,8 @@ export async function listSprintBoard(
     ci_conclusion: string | null;
     explicit_review_status: string | null;
     explicit_reviewers: unknown;
-    followup_attempts: number;
+    iteration_count: number;
+    last_failure_kind: string | null;
     last_followup_at: Date | null;
     qa_review_posted_at: Date | null;
     operator_comment_posted: boolean;
@@ -965,7 +975,7 @@ export async function listSprintBoard(
         superseded_by_pr_url: r.superseded_by_pr_url,
         superseded_at: r.superseded_at,
         human_handoff_posted_at: r.human_handoff_posted_at,
-        followup_attempts: r.followup_attempts,
+        iteration_count: r.iteration_count,
         qa_review_posted_at: r.qa_review_posted_at,
         operator_comment_posted: r.operator_comment_posted,
         pr_state: r.pr_state,
@@ -999,7 +1009,8 @@ export async function listSprintBoard(
         review_status_label: review.label,
         crew_last_action: review.lastAction,
         reviewers: review.reviewers,
-        followup_attempts: r.followup_attempts,
+        iteration_count: r.iteration_count,
+        last_failure_kind: r.last_failure_kind,
         last_followup_at: r.last_followup_at ? r.last_followup_at.toISOString() : null,
         qa_review_posted_at: r.qa_review_posted_at ? r.qa_review_posted_at.toISOString() : null,
         operator_comment_posted: r.operator_comment_posted,
@@ -1222,7 +1233,7 @@ function sprintReviewState(input: {
   superseded_by_pr_url: string | null;
   superseded_at: Date | null;
   human_handoff_posted_at: Date | null;
-  followup_attempts: number;
+  iteration_count: number;
   qa_review_posted_at: Date | null;
   operator_comment_posted: boolean;
   pr_state: string | null;
@@ -1291,7 +1302,7 @@ function sprintReviewState(input: {
     const superseded =
       input.superseded_at !== null ||
       input.superseded_by_pr_url !== null ||
-      input.followup_attempts > 0;
+      input.iteration_count > 0;
     return {
       status: superseded ? "superseded" : "closed",
       label: superseded ? "Superseded" : "Closed",
@@ -1305,11 +1316,11 @@ function sprintReviewState(input: {
     };
   }
 
-  if (input.followup_attempts > 0 && input.ci_conclusion === "failure") {
+  if (input.iteration_count > 0 && input.ci_conclusion === "failure") {
     return {
       status: "fix_queued",
       label: "Fix queued",
-      lastAction: `PR follow-up queued ${input.followup_attempts} fix attempt${input.followup_attempts === 1 ? "" : "s"}.`,
+      lastAction: `PR follow-up queued ${input.iteration_count} fix attempt${input.iteration_count === 1 ? "" : "s"}.`,
       reviewers,
     };
   }
