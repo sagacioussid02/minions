@@ -219,8 +219,7 @@ def run_planning_crew(
     if composition_violations:
         logger.info(
             "sprint composition violations for %s: %s — retrying manager synthesis once",
-            project,
-            "; ".join(composition_violations),
+            project, "; ".join(composition_violations),
         )
         retried_text = _retry_manager_synthesis(
             project=project,
@@ -235,9 +234,9 @@ def run_planning_crew(
                 structured_plan = retried_plan
             else:
                 logger.warning(
-                    "sprint composition still invalid after retry for %s: %s — submitting anyway",
-                    project,
-                    "; ".join(retried_plan.validate_composition()),
+                    "sprint composition still invalid after retry for %s: %s — "
+                    "submitting anyway",
+                    project, "; ".join(retried_plan.validate_composition()),
                 )
                 structured_plan = retried_plan
     # Fill the legacy diff_or_plan from the structured plan so email + every
@@ -656,20 +655,22 @@ def _retry_manager_synthesis(
             expected_output="Single JSON object conforming to StructuredSprintPlan. No prose.",
         )
         crew = Crew(
-            agents=[mgr],
-            tasks=[corrective],
-            process=Process.sequential,
-            verbose=False,
+            agents=[mgr], tasks=[corrective],
+            process=Process.sequential, verbose=False,
         )
         set_attribution(project=project, role="planning")
         try:
-            with crew_run(crew="planning_retry", project=project, agents=["manager"]):
+            with crew_run(
+                crew="planning_retry", project=project, agents=["manager"]
+            ):
                 result = crew.kickoff()
         finally:
             clear_attribution()
         return str(result)
     except Exception:  # noqa: BLE001
-        logger.warning("manager-synthesis retry failed for %s", project, exc_info=True)
+        logger.warning(
+            "manager-synthesis retry failed for %s", project, exc_info=True
+        )
         return None
 
 
