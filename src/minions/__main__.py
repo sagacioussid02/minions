@@ -2665,6 +2665,7 @@ def cron_pr_review_loop(
     from contextlib import suppress
 
     from minions.crews.engineer_runs_store_factory import make_engineer_runs_store
+    from minions.questions.store_factory import make_question_store
     from minions.scheduled import run_pr_review_loop
 
     # When the Anthropic key is available, reviewers run LLM-driven and
@@ -2682,6 +2683,7 @@ def cron_pr_review_loop(
         open_github_client=_open_github_client,
         dry_run=dry_run,
         api_key=api_key,
+        questions_store=make_question_store(QUESTIONS_PATH),
     )
 
     rprint(

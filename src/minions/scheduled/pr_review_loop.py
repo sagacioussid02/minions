@@ -35,6 +35,7 @@ from minions.models.manifest import Manifest, load_active_manifests
 
 if TYPE_CHECKING:
     from minions.github.client import GitHubClient
+    from minions.questions.store_factory import QuestionStoreLike
 
 
 OutcomeStatus = Literal[
@@ -601,6 +602,101 @@ def _find_merged_linked_followup(
     return None
 
 
+MAX_REVIEW_ROUNDS_PER_PR = 2
+"""Sprint board PR 2 — cap on in-place review-response rounds. Round 0 is
+the initial review pass. Rounds 1 + 2 are engineer responses. At round 2
+unresolved, the loop escalates via a Question Record."""
+
+
+def _engineer_advanced_since_response(record: EngineerRunRecord) -> bool:
+    """True iff the owner has committed since the last creator_response was
+    posted (i.e. a new round of reviewer feedback is unresolved).
+
+    On a fresh ``changes_requested`` verdict where no response has been
+    posted yet, ``creator_response_posted_at`` is None — treat that as
+    "advanced" so the first round fires.
+    """
+    if record.creator_response_posted_at is None:
+        return True
+    if record.last_followup_at is None:
+        return False
+    return record.last_followup_at > record.creator_response_posted_at
+
+
+def _in_place_response_comment(record: EngineerRunRecord) -> str:
+    return (
+        "🤖 **Addressing review feedback in place**\n\n"
+        f"Crew reviewers requested changes (review round {record.review_round} of "
+        f"{MAX_REVIEW_ROUNDS_PER_PR}). The owner sweep will re-dispatch the "
+        "original engineer against this same branch shortly; no sibling PR is "
+        "filed.\n\n"
+        f"**Owner agent:** `{record.owner_agent_id or 'unassigned'}`"
+    )
+
+
+def _escalate_review_round(
+    *,
+    record: EngineerRunRecord,
+    questions_store: QuestionStoreLike | None,
+    github: GitHubClient,
+    dry_run: bool,
+) -> str:
+    """File ONE Question Record + post a handoff comment when the review-round
+    cap is exceeded. Modeled on ``pr_owner_sweep._escalate``.
+    """
+    from minions.models.question import QuestionRecord, QuestionStatus
+
+    feedback_lines = [
+        f"- {r.display_name} ({r.role}): {r.summary or '(no summary)'}"
+        for r in record.reviewers
+        if r.status == "changes_requested"
+    ] or ["- (no per-reviewer summaries available)"]
+
+    question = QuestionRecord(
+        project=record.project,
+        asker_role="pr_review_loop",
+        asker_agent_id=f"pr_review_loop@{record.project}",
+        target_role="operator",
+        question=(
+            f"PR {record.pr_url} — crew reviewers still requesting changes "
+            f"after {MAX_REVIEW_ROUNDS_PER_PR} engineer-response rounds. "
+            "Operator action required."
+        ),
+        context=(
+            f"Owner: {record.owner_agent_id or 'unassigned'}\n"
+            f"Branch: {record.branch_name}\n"
+            f"Review rounds used: {record.review_round}/{MAX_REVIEW_ROUNDS_PER_PR}\n\n"
+            "Blocking feedback:\n" + "\n".join(feedback_lines) + "\n\n"
+            "Suggested actions:\n"
+            "  - merge after manual fix\n"
+            "  - close the PR and let the next sprint replan\n"
+            "  - mark the feedback resolved and reset review_round to retry"
+        ),
+        related_decision_id=record.decision_id,
+        related_pr_url=record.pr_url,
+        status=QuestionStatus.ESCALATED,
+        escalated_at=datetime.now(tz=UTC),
+        escalation_reason="review_round cap exceeded",
+    )
+    if dry_run or questions_store is None:
+        return str(question.id)
+    with suppress(Exception):
+        questions_store.save(question)
+    with suppress(Exception):
+        github.comment_on_pull_request(
+            number=record.pr_number or 0,
+            body=(
+                "🤖 **Escalating to operator** — review-round cap exceeded\n\n"
+                f"This PR has gone through {MAX_REVIEW_ROUNDS_PER_PR} in-place "
+                "engineer responses and reviewers are still requesting changes. "
+                "The owner sweep will stay quiet on this PR until the operator "
+                "answers Question Record "
+                f"`{str(question.id)[:8]}`."
+            ),
+        )
+    return str(question.id)
+
+
 def run_pr_review_loop(
     *,
     projects_dir: Path,
@@ -610,6 +706,7 @@ def run_pr_review_loop(
     dry_run: bool = False,
     review_builder: ReviewBuilder | None = None,
     api_key: str | None = None,
+    questions_store: QuestionStoreLike | None = None,
 ) -> PRReviewLoopReport:
     """Assign and run internal crew reviewers for open minions PRs.
 
@@ -770,33 +867,44 @@ def run_pr_review_loop(
 
                 _advance_review_status(record)
 
-                fix_decision_id: str | None = None
+                fix_decision_id: str | None = None  # legacy field; always None post-PR-2
                 outcome_status: OutcomeStatus = "assigned" if assigned_now else "reviewed"
 
+                # PR 2 (Sprint board redesign): no more sibling fix Decisions.
+                # On changes_requested, the engineer's last commit being newer
+                # than the prior creator_response_posted_at means a fresh round
+                # of feedback is unresolved. Bump review_round; the owner sweep
+                # (which now classifies review_changes_requested) re-dispatches
+                # the engineer in-place. At MAX_REVIEW_ROUNDS_PER_PR, escalate
+                # to the operator via a Question Record.
                 if (
                     record.review_status == "changes_requested"
-                    and record.creator_response_posted_at is None
+                    and record.escalated_question_id is None
+                    and _engineer_advanced_since_response(record)
                 ):
-                    if record.review_round < 1:
-                        fix = None
-                        if not dry_run:
-                            fix = _queue_creator_fix_decision(store=store, record=record)
-                            fix_decision_id = str(fix.id)
+                    if record.review_round < MAX_REVIEW_ROUNDS_PER_PR:
                         record.review_round += 1
                         record.creator_response_posted_at = datetime.now(tz=UTC)
                         if not dry_run:
                             github.comment_on_pull_request(
                                 number=record.pr_number or 0,
-                                body=_creator_response_comment(
-                                    record,
-                                    fix_id=fix_decision_id,
-                                ),
+                                body=_in_place_response_comment(record),
                             )
                         outcome_status = "creator_responded"
                     else:
-                        record.merge_blocked_reason = (
-                            "crew requested changes after the single creator response iteration"
+                        question_id = _escalate_review_round(
+                            record=record,
+                            questions_store=questions_store,
+                            github=github,
+                            dry_run=dry_run,
                         )
+                        if not dry_run:
+                            record.escalated_question_id = question_id
+                        record.merge_blocked_reason = (
+                            f"review_round cap of {MAX_REVIEW_ROUNDS_PER_PR} exceeded; "
+                            "operator must intervene"
+                        )
+                        outcome_status = "handoff"
 
                 if (
                     record.review_status == "crew_approved"

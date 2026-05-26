@@ -495,6 +495,14 @@ function Card({ card, onTaskSelect }: { card: SprintCard; onTaskSelect: (task: T
           <div className="mt-0.5 text-xs font-medium text-[var(--text-primary)]" title={card.summary}>
             {truncate(card.summary, 90)}
           </div>
+          {card.structured_plan?.goal && (
+            <div
+              className="mt-1 line-clamp-2 rounded-md border-l-2 border-[var(--accent)]/60 bg-[var(--bg-surface)]/60 px-2 py-1 text-[11px] font-medium leading-snug text-[var(--text-primary)]"
+              title={card.structured_plan.goal}
+            >
+              🎯 {card.structured_plan.goal}
+            </div>
+          )}
           {card.sprint_number !== null && (
             <div className="mt-1 text-[10px] font-medium uppercase tracking-wider text-[var(--accent)]">
               Sprint {card.sprint_number}
@@ -503,18 +511,9 @@ function Card({ card, onTaskSelect }: { card: SprintCard; onTaskSelect: (task: T
           {card.structured_plan && (
             <StructuredPlanMini card={card} onTaskSelect={onTaskSelect} />
           )}
-          <div className="mt-1 flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-[var(--text-muted)]">
             <span>{ageLabel}</span>
-            {card.pr_url && (
-              <a
-                href={card.pr_url}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded border border-[var(--line)] px-1.5 py-0.5 font-mono hover:border-[var(--accent)]/40 hover:text-[var(--text-primary)]"
-              >
-                #{card.pr_number}
-              </a>
-            )}
+            <CardPRList card={card} />
           </div>
           {card.live_crew && (
             <div
@@ -563,7 +562,7 @@ function Card({ card, onTaskSelect }: { card: SprintCard; onTaskSelect: (task: T
               )}
             </div>
           )}
-          {(card.pr_url || card.followup_attempts > 0 || card.column === "review" || card.column === "in_progress") && (
+          {(card.pr_url || card.iteration_count > 0 || card.column === "review" || card.column === "in_progress") && (
             <ReviewTrail card={card} />
           )}
           {/* Action row — only renders when there is something to do */}
@@ -626,9 +625,17 @@ function ReviewTrail({ card }: { card: SprintCard }) {
             {card.crew_last_action ?? "Waiting for the PR to reach crew review."}
           </div>
         </div>
-        {card.followup_attempts > 0 && (
-          <span className="shrink-0 rounded bg-[var(--state-warn)]/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-[var(--state-warn)]">
-            fix {card.followup_attempts}
+        {card.iteration_count > 0 && (
+          <span
+            className="shrink-0 rounded bg-[var(--state-warn)]/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-[var(--state-warn)]"
+            title={card.last_failure_kind ?? undefined}
+          >
+            iter {card.iteration_count}
+            {card.last_failure_kind && (
+              <span className="ml-1 normal-case opacity-80">
+                · {formatFailureKind(card.last_failure_kind)}
+              </span>
+            )}
           </span>
         )}
       </div>
@@ -638,6 +645,41 @@ function ReviewTrail({ card }: { card: SprintCard }) {
         ))}
       </div>
     </div>
+  );
+}
+
+function CardPRList({ card }: { card: SprintCard }) {
+  // Collect every PR linked from this card — both the legacy
+  // decision-level PR and any per-task PRs (which is the norm now that
+  // refinement assigns one PR per task). Dedupe by pr_number so the
+  // legacy + per-task pointers don't double-render.
+  const seen = new Set<number>();
+  const items: Array<{ url: string; number: number }> = [];
+  if (card.pr_url && card.pr_number !== null) {
+    seen.add(card.pr_number);
+    items.push({ url: card.pr_url, number: card.pr_number });
+  }
+  for (const t of card.tasks) {
+    if (t.pr_url && t.pr_number !== null && !seen.has(t.pr_number)) {
+      seen.add(t.pr_number);
+      items.push({ url: t.pr_url, number: t.pr_number });
+    }
+  }
+  if (items.length === 0) return null;
+  return (
+    <>
+      {items.map((p) => (
+        <a
+          key={p.number}
+          href={p.url}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded border border-[var(--line)] px-1.5 py-0.5 font-mono hover:border-[var(--accent)]/40 hover:text-[var(--text-primary)]"
+        >
+          #{p.number}
+        </a>
+      ))}
+    </>
   );
 }
 
@@ -657,7 +699,19 @@ function StructuredPlanMini({
     ["Ops", "ops"],
     ["Docs", "docs"],
   ];
-  const taskByTitle = new Map(card.tasks.map((task) => [task.title.toLowerCase(), task]));
+  // Plan item title → best-match Task. Exact (case-insensitive) match wins;
+  // otherwise the first task whose title contains or is contained by the
+  // plan item title (handles refinement prefixes like "[Parent] step 1"
+  // and the operator-visible bug where many rows were un-clickable).
+  function findTask(planTitle: string): Task | undefined {
+    const needle = planTitle.toLowerCase().trim();
+    const exact = card.tasks.find((t) => t.title.toLowerCase().trim() === needle);
+    if (exact) return exact;
+    return card.tasks.find((t) => {
+      const hay = t.title.toLowerCase();
+      return hay.includes(needle) || needle.includes(hay);
+    });
+  }
   return (
     <div className="mt-2 rounded-md border border-[var(--line)] bg-[var(--bg-surface)]/70 p-2">
       <div className="line-clamp-2 text-[10px] leading-snug text-[var(--text-muted)]">
@@ -674,7 +728,7 @@ function StructuredPlanMini({
               </div>
               <ul className="mt-1 space-y-1">
                 {items.slice(0, 3).map((item) => {
-                  const task = taskByTitle.get(item.title.toLowerCase());
+                  const task = findTask(item.title);
                   const isUnassigned = task?.status === "unassigned";
                   const ownerLabel = task?.owner_display_name
                     ? task.owner_display_name
@@ -891,4 +945,17 @@ function formatAgeMinutes(minutes: number): string {
   if (hours < 24) return `${Math.round(hours)}h ago`;
   const days = hours / 24;
   return `${Math.round(days)}d ago`;
+}
+
+function formatFailureKind(kind: string): string {
+  switch (kind) {
+    case "ci_failure":
+      return "ci";
+    case "merge_conflict":
+      return "conflict";
+    case "review_changes_requested":
+      return "review";
+    default:
+      return kind;
+  }
 }

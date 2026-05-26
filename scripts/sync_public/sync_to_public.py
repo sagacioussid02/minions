@@ -442,11 +442,10 @@ def main(argv: list[str] | None = None) -> int:
     print(per_file_report(actions, show_copies=args.show_copies))
 
     if args.apply:
-        # Structural patches insert imports that may not match the project's
+        # Structural patches insert imports that may not match the target's
         # existing import-sort layout (e.g. dashboard/app.py grows an
-        # `import os` that ruff's I001 wants grouped differently). Run
-        # ruff --fix + ruff format on the target to settle layout so the
-        # target's CI is clean immediately after sync.
+        # `import os` that ruff's I001 flags). Run ruff --fix + ruff format
+        # on the target so its CI is clean immediately after sync.
         import subprocess
 
         targets = [str(args.target / r) for r in rules.include_roots if (args.target / r).exists()]

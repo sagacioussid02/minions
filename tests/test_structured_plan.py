@@ -160,3 +160,36 @@ def test_planitem_subtasks_round_trip_through_decision() -> None:
     feat = reloaded.structured_plan.features[0]
     assert len(feat.subtasks) == 2
     assert feat.subtasks[0].title == "step 1"
+
+
+def _well_composed_plan() -> StructuredSprintPlan:
+    return StructuredSprintPlan(
+        goal="g",
+        features=[PlanItem(title="f", estimated_effort="m")],
+        tech_debt=[PlanItem(title="t", estimated_effort="s")],
+        ops=[PlanItem(title="o", estimated_effort="s")],
+        docs=[PlanItem(title="d", estimated_effort="xs")],
+        bugs=[PlanItem(title="b", estimated_effort="s")],
+    )
+
+
+def test_validate_composition_passes_on_well_formed_plan() -> None:
+    assert _well_composed_plan().validate_composition() == []
+
+
+def test_validate_composition_flags_missing_categories() -> None:
+    plan = StructuredSprintPlan(goal="g")
+    violations = plan.validate_composition()
+    joined = " ".join(violations)
+    assert "feature" in joined
+    assert "tech_debt" in joined
+    assert "ops" in joined
+    assert "docs" in joined
+    assert "bugs" in joined
+
+
+def test_validate_composition_flags_too_many_bugs() -> None:
+    plan = _well_composed_plan()
+    plan.bugs = [PlanItem(title=f"b{i}", estimated_effort="s") for i in range(3)]
+    violations = plan.validate_composition()
+    assert any("bug" in v for v in violations)

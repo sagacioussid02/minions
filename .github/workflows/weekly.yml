@@ -7,7 +7,12 @@ name: Weekly planning
 
 on:
   schedule:
-    - cron: '0 9 * * 1'
+    # Fire daily Mon–Fri at 09:00 UTC. The actual gate is each manifest's
+    # `planning_day` field — projects without it fall through and run every
+    # day (legacy behavior); projects with it only run on the matching
+    # weekday. Net effect: at most one proposal per weekday instead of all
+    # five on Monday.
+    - cron: '0 9 * * 1-5'
   workflow_dispatch:
     inputs:
       dry-run:

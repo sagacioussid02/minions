@@ -33,6 +33,14 @@ permissions:
 
 jobs:
   run:
+    # Public-mirror guard: set repo variable `MINIONS_DISABLE_CRON=true`
+    # on the public demo mirror so scheduled runs no-op there (no real API
+    # keys configured; would just burn Actions minutes). Manual
+    # `workflow_dispatch` still runs (for demo walkthroughs). Forks/clones
+    # don't set the variable, so their crons run normally.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || vars.MINIONS_DISABLE_CRON != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

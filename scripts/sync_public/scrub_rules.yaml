@@ -18,11 +18,12 @@ text_replacements:
 
   # Project name mapping — real → demo.
   #
-  # CASE-SENSITIVE per variant so that filenames stay lowercase (demo.yaml
-  # → demo.yaml) while roster keys keep their original casing (Demo → Demo).
-  # Mixing case-insensitive matching with a literal replacement broke
-  # filename references — `projects/demo.yaml` was being rewritten to
-  # `projects/Demo.yaml`, which doesn't exist on public.
+  # CASE-SENSITIVE per variant so filenames stay lowercase
+  # (demo.yaml → demo.yaml) while roster keys preserve their casing
+  # (Demo → Demo). Case-insensitive matching with a literal "Demo"
+  # replacement breaks Linux CI: it rewrites `projects/demo.yaml` to
+  # `projects/Demo.yaml`, which doesn't exist on the case-sensitive
+  # filesystem.
   - find: "Demo"
     replace: "Demo"
   - find: "demo"
@@ -78,6 +79,8 @@ drop_paths:
   - "projects/_deferred"
   - ".git/AUTO_MERGE"
   - ".ruff_cache"
+  # Sync workflow is private-only — public is the target, not a source.
+  - ".github/workflows/sync-public.yml"
 
 # Paths that exist in public but not private — preserve them on sync.
 preserve_in_target:
