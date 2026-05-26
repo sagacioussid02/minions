@@ -36,7 +36,6 @@ from typing import Any
 
 import yaml
 
-
 # ---------------------------------------------------------------------------
 # Rule + plan modeling
 # ---------------------------------------------------------------------------
@@ -95,15 +94,20 @@ def load_rules(rules_path: Path) -> Rules:
         find = entry["find"]
         flags = re.IGNORECASE if entry.get("case_insensitive") else 0
         pattern = re.compile(re.escape(find), flags=flags)
-        text_rules.append(TextRule(
-            pattern=pattern, replacement=entry["replace"], raw_find=find,
-        ))
+        text_rules.append(
+            TextRule(
+                pattern=pattern,
+                replacement=entry["replace"],
+                raw_find=find,
+            )
+        )
 
     patches: dict[str, list[StructuralPatch]] = {}
     for path, entries in (raw.get("structural_patches") or {}).items():
         patches[path] = [
             StructuralPatch(
-                find=e["find"], replace=e["replace"],
+                find=e["find"],
+                replace=e["replace"],
                 requires_import=e.get("requires_import"),
             )
             for e in entries
@@ -125,8 +129,9 @@ def load_rules(rules_path: Path) -> Rules:
 # ---------------------------------------------------------------------------
 
 
-_PYCACHE_PARTS = frozenset({"__pycache__", ".pytest_cache", ".mypy_cache",
-                            ".ruff_cache", ".venv", "node_modules", ".next"})
+_PYCACHE_PARTS = frozenset(
+    {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".venv", "node_modules", ".next"}
+)
 
 
 def _is_build_artefact(rel: str) -> bool:
@@ -241,7 +246,8 @@ def _insert_import(text: str, module: str) -> str:
 
 
 def apply_structural_patches(
-    text: str, patches: list[StructuralPatch],
+    text: str,
+    patches: list[StructuralPatch],
 ) -> tuple[str, int]:
     n_total = 0
     for patch in patches:
@@ -261,8 +267,13 @@ def _read_text(p: Path) -> str | None:
 
 
 def execute_action(
-    src: Path, source_root: Path, target_root: Path,
-    action: FileAction, rules: Rules, *, apply: bool,
+    src: Path,
+    source_root: Path,
+    target_root: Path,
+    action: FileAction,
+    rules: Rules,
+    *,
+    apply: bool,
 ) -> None:
     if action.kind.startswith("skip"):
         return
@@ -348,7 +359,10 @@ def per_file_report(actions: list[FileAction], *, show_copies: bool) -> str:
 
 
 def diff_preview(
-    src_root: Path, dst_root: Path, action: FileAction, context: int = 2,
+    src_root: Path,
+    dst_root: Path,
+    action: FileAction,
+    context: int = 2,
 ) -> str:
     """Unified diff of the scrubbed output vs. the current target file."""
     src = src_root / action.rel_path
@@ -381,19 +395,27 @@ def diff_preview(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--source", type=Path, required=True,
-                        help="Source tree (minions-org checkout)")
-    parser.add_argument("--target", type=Path, required=True,
-                        help="Target tree (minions-public checkout)")
-    parser.add_argument("--rules", type=Path,
-                        default=Path(__file__).parent / "scrub_rules.yaml",
-                        help="Rules YAML; defaults to the file next to this script")
-    parser.add_argument("--apply", action="store_true",
-                        help="Mutate the target. Omit to dry-run.")
-    parser.add_argument("--show-copies", action="store_true",
-                        help="Include verbatim copy actions in per-file output")
-    parser.add_argument("--diff", action="store_true",
-                        help="Print unified diffs for scrub/patch actions")
+    parser.add_argument(
+        "--source", type=Path, required=True, help="Source tree (minions-org checkout)"
+    )
+    parser.add_argument(
+        "--target", type=Path, required=True, help="Target tree (minions-public checkout)"
+    )
+    parser.add_argument(
+        "--rules",
+        type=Path,
+        default=Path(__file__).parent / "scrub_rules.yaml",
+        help="Rules YAML; defaults to the file next to this script",
+    )
+    parser.add_argument("--apply", action="store_true", help="Mutate the target. Omit to dry-run.")
+    parser.add_argument(
+        "--show-copies",
+        action="store_true",
+        help="Include verbatim copy actions in per-file output",
+    )
+    parser.add_argument(
+        "--diff", action="store_true", help="Print unified diffs for scrub/patch actions"
+    )
     args = parser.parse_args(argv)
 
     if not args.source.is_dir():
@@ -408,11 +430,36 @@ def main(argv: list[str] | None = None) -> int:
     for src in sources:
         action = plan_file(src, args.source, rules)
         execute_action(
-            src, args.source, args.target, action, rules, apply=args.apply,
+            src,
+            args.source,
+            args.target,
+            action,
+            rules,
+            apply=args.apply,
         )
         actions.append(action)
 
     print(per_file_report(actions, show_copies=args.show_copies))
+
+    if args.apply:
+        # Structural patches insert imports that may not match the target's
+        # existing import-sort layout (e.g. dashboard/app.py grows an
+        # `import os` that ruff's I001 flags). Run ruff --fix + ruff format
+        # on the target so its CI is clean immediately after sync.
+        import subprocess
+
+        targets = [str(args.target / r) for r in rules.include_roots if (args.target / r).exists()]
+        if targets:
+            subprocess.run(
+                ["ruff", "check", "--fix", "-q", *targets],
+                check=False,
+                cwd=args.target,
+            )
+            subprocess.run(
+                ["ruff", "format", "-q", *targets],
+                check=False,
+                cwd=args.target,
+            )
 
     if args.diff:
         print("\n=== diffs (scrub/patch only) ===")

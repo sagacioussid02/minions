@@ -14,7 +14,6 @@ All data is read fresh from cost log + decision store on every render. The
 from __future__ import annotations
 
 import os
-
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -187,7 +186,9 @@ def _render_tree(agents: list[AgentSummary]) -> None:
                 other_shared.append(a)
 
     st.markdown("### 👑 Owner")
-    st.caption(f'{os.getenv("OPERATOR_EMAIL", "operator@example.com")} — sole human-in-the-loop approver')
+    st.caption(
+        f"{os.getenv('OPERATOR_EMAIL', 'operator@example.com')} — sole human-in-the-loop approver"
+    )
 
     # Sidebar-style toggle: collapse all by default, or expand. Default expanded
     # because the whole point of the tree view is to *see* the hierarchy.
