@@ -562,7 +562,7 @@ function Card({ card, onTaskSelect }: { card: SprintCard; onTaskSelect: (task: T
               )}
             </div>
           )}
-          {(card.pr_url || card.followup_attempts > 0 || card.column === "review" || card.column === "in_progress") && (
+          {(card.pr_url || card.iteration_count > 0 || card.column === "review" || card.column === "in_progress") && (
             <ReviewTrail card={card} />
           )}
           {/* Action row — only renders when there is something to do */}
@@ -625,9 +625,17 @@ function ReviewTrail({ card }: { card: SprintCard }) {
             {card.crew_last_action ?? "Waiting for the PR to reach crew review."}
           </div>
         </div>
-        {card.followup_attempts > 0 && (
-          <span className="shrink-0 rounded bg-[var(--state-warn)]/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-[var(--state-warn)]">
-            fix {card.followup_attempts}
+        {card.iteration_count > 0 && (
+          <span
+            className="shrink-0 rounded bg-[var(--state-warn)]/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-[var(--state-warn)]"
+            title={card.last_failure_kind ?? undefined}
+          >
+            iter {card.iteration_count}
+            {card.last_failure_kind && (
+              <span className="ml-1 normal-case opacity-80">
+                · {formatFailureKind(card.last_failure_kind)}
+              </span>
+            )}
           </span>
         )}
       </div>
@@ -937,4 +945,17 @@ function formatAgeMinutes(minutes: number): string {
   if (hours < 24) return `${Math.round(hours)}h ago`;
   const days = hours / 24;
   return `${Math.round(days)}d ago`;
+}
+
+function formatFailureKind(kind: string): string {
+  switch (kind) {
+    case "ci_failure":
+      return "ci";
+    case "merge_conflict":
+      return "conflict";
+    case "review_changes_requested":
+      return "review";
+    default:
+      return kind;
+  }
 }
