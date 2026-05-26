@@ -304,7 +304,11 @@ export const SprintCardSchema = z.object({
   review_status_label: z.string(),
   crew_last_action: z.string(),
   reviewers: z.array(SprintReviewerSchema),
-  followup_attempts: z.number().int().nonnegative(),
+  iteration_count: z.number().int().nonnegative(),
+  // Cached classification of the most recent owner-sweep retry trigger.
+  // One of "ci_failure" | "merge_conflict" | "review_changes_requested",
+  // or null when no retry has fired yet.
+  last_failure_kind: z.string().nullable(),
   last_followup_at: z.string().datetime().nullable(),
   qa_review_posted_at: z.string().datetime().nullable(),
   operator_comment_posted: z.boolean(),
