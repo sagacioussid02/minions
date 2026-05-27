@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { HeartbeatDot } from "@/components/HeartbeatDot";
 import { getMeeting } from "@/lib/queries";
-import { MeetingDetail } from "@/components/meetings/MeetingDetail";
+import { LiveMeeting } from "@/components/meetings/LiveMeeting";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +38,7 @@ export default async function MeetingPage({
         <HeartbeatDot />
       </header>
       <main className="flex-1 overflow-y-auto p-6">
-        <MeetingDetail meeting={meeting} />
+        <LiveMeeting initial={meeting} />
       </main>
     </div>
   );

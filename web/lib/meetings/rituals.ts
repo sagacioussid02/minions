@@ -191,3 +191,40 @@ export const FALLBACK_SEAT_POSITIONS: SeatPosition[] = [
   "west",
   "northwest",
 ];
+
+/**
+ * Coordinates around an ellipse for each compass seat position, expressed as
+ * (x, y) offsets from the center, scaled to the ellipse radii passed in.
+ *
+ * The eight compass points are evenly spaced around the ellipse. "center"
+ * lives at (0, 0) and is used for solo focused-work cards.
+ */
+export function seatCoords(
+  position: SeatPosition,
+  rx: number,
+  ry: number,
+): { x: number; y: number } {
+  // 8 compass points clockwise from north. Cardinals sit exactly on the
+  // ellipse axes; ordinals sit at 45° offsets (cos/sin of π/4 = ~0.707).
+  const D = 0.707; // diagonal scaling factor
+  switch (position) {
+    case "north":
+      return { x: 0, y: -ry };
+    case "northeast":
+      return { x: rx * D, y: -ry * D };
+    case "east":
+      return { x: rx, y: 0 };
+    case "southeast":
+      return { x: rx * D, y: ry * D };
+    case "south":
+      return { x: 0, y: ry };
+    case "southwest":
+      return { x: -rx * D, y: ry * D };
+    case "west":
+      return { x: -rx, y: 0 };
+    case "northwest":
+      return { x: -rx * D, y: -ry * D };
+    case "center":
+      return { x: 0, y: 0 };
+  }
+}

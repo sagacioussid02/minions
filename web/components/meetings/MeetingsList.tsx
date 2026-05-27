@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { MeetingSummary } from "@/lib/schemas";
+import { RoundTable } from "./RoundTable";
 
 /**
  * Bare-bones meetings list — PR 1 of living-org-spaces Surface A.
@@ -99,37 +100,43 @@ function MeetingCard({ meeting, live }: { meeting: MeetingSummary; live: boolean
         </span>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {meeting.seats.map((seat) => (
-          <span
-            key={`${meeting.run_id}-${seat.agent_role}`}
-            className={`rounded-full border px-2 py-0.5 text-[10px] ${
-              seat.is_speaking_now
-                ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]"
-                : "border-[var(--line)] bg-[var(--surface-muted)]/40 text-[var(--text-primary)]"
-            }`}
-            title={seat.agent_role}
-          >
-            {seat.agent_display_name ?? seat.agent_role}
-            {seat.is_speaking_now && <span className="ml-1">●</span>}
-          </span>
-        ))}
-      </div>
-
-      {meeting.latest_turn && (
-        <div className="mt-3 rounded border border-[var(--line)] bg-[var(--surface-muted)]/40 p-2.5">
-          <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
-            Latest turn ·{" "}
-            <span className="font-mono text-[var(--text-primary)]">
-              {meeting.latest_turn.agent_display_name ?? meeting.latest_turn.agent_role}
-            </span>{" "}
-            · {meeting.latest_turn.role_in_conversation}
-          </div>
-          <p className="mt-1 text-xs leading-snug text-[var(--text-primary)]">
-            {meeting.latest_turn.content_preview}
-          </p>
+      <div className="mt-3 flex flex-col items-center gap-2 sm:flex-row sm:items-start">
+        <div className="w-full max-w-[220px]">
+          <RoundTable seats={meeting.seats} multiAgent={meeting.multi_agent} size="sm" />
         </div>
-      )}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap gap-1.5">
+            {meeting.seats.map((seat) => (
+              <span
+                key={`${meeting.run_id}-${seat.agent_role}`}
+                className={`rounded-full border px-2 py-0.5 text-[10px] ${
+                  seat.is_speaking_now
+                    ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]"
+                    : "border-[var(--line)] bg-[var(--surface-muted)]/40 text-[var(--text-primary)]"
+                }`}
+                title={seat.agent_role}
+              >
+                {seat.agent_display_name ?? seat.agent_role}
+                {seat.is_speaking_now && <span className="ml-1">●</span>}
+              </span>
+            ))}
+          </div>
+          {meeting.latest_turn && (
+            <div className="mt-2 rounded border border-[var(--line)] bg-[var(--surface-muted)]/40 p-2.5">
+              <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+                Latest turn ·{" "}
+                <span className="font-mono text-[var(--text-primary)]">
+                  {meeting.latest_turn.agent_display_name ?? meeting.latest_turn.agent_role}
+                </span>{" "}
+                · {meeting.latest_turn.role_in_conversation}
+              </div>
+              <p className="mt-1 text-xs leading-snug text-[var(--text-primary)]">
+                {meeting.latest_turn.content_preview}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
     </Link>
   );
 }
