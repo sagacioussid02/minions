@@ -1970,9 +1970,19 @@ export async function listMeetings(opts?: {
     if (latest && !turnsForAgg.some((t) => t.sequence === latest.sequence)) {
       turnsForAgg.push(latest);
     }
+    // Status derivation: prefer recency over crew_finished presence.
+    // Some crews (notably the engineer crew on its dry-run path) write
+    // transcripts but never emit crew_finished to activity_log. Without
+    // this heuristic, every such run would falsely render as "live"
+    // forever — the 22-engineer-runs-showing-as-live incident on
+    // 2026-05-27. A run whose last activity is older than the
+    // RUNNING_WINDOW (10 min) is treated as completed even if no
+    // crew_finished event was recorded.
+    const lastEventMs = row.last_event_at.getTime();
+    const stale = Date.now() - lastEventMs >= SPEAKING_NOW_WINDOW_MS;
     const status: MeetingSummary["status"] = row.failed
       ? "failed"
-      : row.finished_ok
+      : row.finished_ok || stale
         ? "completed"
         : "in_progress";
     const summary = _aggregateMeeting({
@@ -1993,7 +2003,12 @@ export async function listMeetings(opts?: {
       latest_turn: latest,
       total_turns: row.turn_count,
     };
-  });
+  })
+  // Drop completed solo-crew runs from the default list — they are noise
+  // on the demo page. Multi-agent rituals always show. A solo crew that
+  // is genuinely live (in_progress) still shows so the operator sees
+  // real focused work as it happens.
+  .filter((m) => m.multi_agent || m.status === "in_progress");
 }
 
 /** Full meeting detail — every turn in conversation order. */
@@ -2044,16 +2059,18 @@ export async function getMeeting(runId: string): Promise<MeetingDetail | null> {
     decision_id: null,
   };
 
-  const status: MeetingSummary["status"] = lc.failed
-    ? "failed"
-    : lc.finished_ok
-      ? "completed"
-      : "in_progress";
-
   const startedAt = (lc.started_at ?? new Date(turns[0].created_at)).toISOString();
   const lastEventAt = (
     lc.last_event_at ?? new Date(turns[turns.length - 1].created_at)
   ).toISOString();
+
+  // See the recency-based status comment in listMeetings — same logic.
+  const stale = Date.now() - new Date(lastEventAt).getTime() >= SPEAKING_NOW_WINDOW_MS;
+  const status: MeetingSummary["status"] = lc.failed
+    ? "failed"
+    : lc.finished_ok || stale
+      ? "completed"
+      : "in_progress";
 
   const summary = _aggregateMeeting({
     run_id: runId,
