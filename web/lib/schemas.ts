@@ -415,6 +415,11 @@ export const SeatSchema = z.object({
   // True when this seat owns the most recent turn in the meeting (within the
   // live window). Used to render the pulsing-halo speaker indicator.
   is_speaking_now: z.boolean(),
+  // Most recent thing THIS seat said. Drives the chat-bubble that floats
+  // above each agent at the round-table. null when this seat hasn't taken
+  // a turn yet in the meeting.
+  last_turn_preview: z.string().nullable(),
+  last_turn_sequence: z.number().int().nullable(),
 });
 export type Seat = z.infer<typeof SeatSchema>;
 

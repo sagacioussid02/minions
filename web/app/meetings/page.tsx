@@ -9,7 +9,8 @@ export const metadata = {
 };
 
 export default async function MeetingsPage() {
-  const meetings = await listMeetings({ windowMinutes: 24 * 60 });
+  // 2-day window. Older runs are archived (not shown).
+  const meetings = await listMeetings({ windowMinutes: 48 * 60 });
 
   return (
     <div className="relative flex min-h-screen flex-col">

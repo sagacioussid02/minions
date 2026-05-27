@@ -965,7 +965,7 @@ function JargonLegend() {
     { term: "⚡ expedited", meaning: "Bypasses the slow approval lane (exec request or auto-fix)." },
   ];
   return (
-    <section className="mt-6 rounded-lg border border-[var(--border-muted)] bg-[var(--surface-muted)]/40 p-3">
+    <section className="mt-6 rounded-lg border border-[var(--line)] bg-[var(--bg-canvas)] p-3">
       <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
         Legend
       </div>

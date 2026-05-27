@@ -1699,8 +1699,14 @@ import {
   type SeatPosition,
 } from "./meetings/rituals";
 
-/** Default look-back window for "what meetings happened recently?" */
-const MEETINGS_WINDOW_MINUTES_DEFAULT = 24 * 60;
+/**
+ * Default look-back window for "what meetings happened recently?"
+ *
+ * Set to 48h per operator request 2026-05-27 — keep meetings on the page
+ * for two days, then archive (drop from the default list). To see older
+ * runs explicitly the caller can pass a longer windowMinutes.
+ */
+const MEETINGS_WINDOW_MINUTES_DEFAULT = 48 * 60;
 
 /**
  * Window inside which the most recent turn is treated as "speaking now" for
@@ -1728,13 +1734,26 @@ function _aggregateMeeting(args: {
   turns: MeetingTurn[];
 }): MeetingSummary {
   const ritual = ritualFor(args.crew);
-  const seenRoles = new Map<string, { display: string | null; lastTurnAt: string }>();
+  // Track each role's most recent turn so we can populate the chat-bubble
+  // that floats above the agent's seat in the round-table.
+  interface RoleMeta {
+    display: string | null;
+    lastTurnAt: string;
+    lastTurnPreview: string | null;
+    lastTurnSequence: number | null;
+  }
+  const seenRoles = new Map<string, RoleMeta>();
   for (const turn of args.turns) {
     const existing = seenRoles.get(turn.agent_role);
     if (!existing || turn.created_at > existing.lastTurnAt) {
       seenRoles.set(turn.agent_role, {
         display: turn.agent_display_name,
         lastTurnAt: turn.created_at,
+        // Use the existing preview from the turn (already truncated by
+        // _mapTurnRow). For the seat-tracking shim (roster rows without
+        // content), preview is empty string — render as null.
+        lastTurnPreview: turn.content_preview || turn.content_full || null,
+        lastTurnSequence: turn.sequence > 0 ? turn.sequence : null,
       });
     }
   }
@@ -1764,6 +1783,8 @@ function _aggregateMeeting(args: {
       agent_display_name: meta.display,
       seat_position: position,
       is_speaking_now: speakingNow && latestTurn?.agent_role === role,
+      last_turn_preview: meta.lastTurnPreview,
+      last_turn_sequence: meta.lastTurnSequence,
     });
   }
   // Stable order: ritual-mapped roles first (in ritual order), unknowns after.
@@ -1919,48 +1940,49 @@ export async function listMeetings(opts?: {
   `) as Array<{ run_id: string; payload: Record<string, unknown> }>;
   const latestByRun = new Map(latestTurns.map((t) => [t.run_id, _mapTurnRow(t.payload)]));
 
-  // Also pull the roster of distinct agents per run so the seat list is
-  // complete even if only the latest turn is loaded.
-  const seatRoster = (await s`
-    SELECT
-      ct.run_id,
-      ct.agent_role,
-      MAX(ct.payload->>'agent_display_name') AS agent_display_name,
-      MAX(ct.created_at) AS last_turn_at
-    FROM crew_transcripts ct
-    WHERE ct.run_id = ANY(${runIds})
-    GROUP BY ct.run_id, ct.agent_role
-  `) as Array<{
-    run_id: string;
-    agent_role: string;
-    agent_display_name: string | null;
-    last_turn_at: Date;
-  }>;
-  const rosterByRun = new Map<string, Array<{ role: string; display: string | null; lastAt: string }>>();
-  for (const row of seatRoster) {
+  // Pull the LATEST turn per (run_id, agent_role) so each seat in the
+  // round-table has a populated chat-bubble. Without this, only the
+  // single most-recent speaker has bubble content; every other seat
+  // shows up with `last_turn_preview = null`.
+  const seatLastTurns = (await s`
+    SELECT DISTINCT ON (run_id, agent_role)
+      run_id,
+      agent_role,
+      payload
+    FROM crew_transcripts
+    WHERE run_id = ANY(${runIds})
+    ORDER BY run_id, agent_role, sequence DESC
+  `) as Array<{ run_id: string; agent_role: string; payload: Record<string, unknown> }>;
+  const rosterByRun = new Map<string, MeetingTurn[]>();
+  for (const row of seatLastTurns) {
     const arr = rosterByRun.get(row.run_id) ?? [];
-    arr.push({ role: row.agent_role, display: row.agent_display_name, lastAt: row.last_turn_at.toISOString() });
+    arr.push(_mapTurnRow(row.payload));
     rosterByRun.set(row.run_id, arr);
   }
 
   return rows.map((row) => {
     const latest = latestByRun.get(row.run_id) ?? null;
-    const roster = rosterByRun.get(row.run_id) ?? [];
-    // Build minimal turn list (just the latest) so _aggregateMeeting can
-    // compute seats + speaker halo without needing the full transcript.
-    const turnsForAgg: MeetingTurn[] = roster.map((r) => ({
-      sequence: 0,
-      agent_role: r.role,
-      agent_display_name: r.display,
-      role_in_conversation: "other",
-      content_preview: "",
-      content_full: "",
-      created_at: r.lastAt,
-    }));
-    if (latest) turnsForAgg.push(latest);
+    const seatTurns = rosterByRun.get(row.run_id) ?? [];
+    // Compose the turn list the aggregator sees: every seat's last turn
+    // (so each seat gets a populated bubble) PLUS the global latest turn
+    // (so the speaker-halo math has a deterministic "most recent").
+    const turnsForAgg: MeetingTurn[] = [...seatTurns];
+    if (latest && !turnsForAgg.some((t) => t.sequence === latest.sequence)) {
+      turnsForAgg.push(latest);
+    }
+    // Status derivation: prefer recency over crew_finished presence.
+    // Some crews (notably the engineer crew on its dry-run path) write
+    // transcripts but never emit crew_finished to activity_log. Without
+    // this heuristic, every such run would falsely render as "live"
+    // forever — the 22-engineer-runs-showing-as-live incident on
+    // 2026-05-27. A run whose last activity is older than the
+    // RUNNING_WINDOW (10 min) is treated as completed even if no
+    // crew_finished event was recorded.
+    const lastEventMs = row.last_event_at.getTime();
+    const stale = Date.now() - lastEventMs >= SPEAKING_NOW_WINDOW_MS;
     const status: MeetingSummary["status"] = row.failed
       ? "failed"
-      : row.finished_ok
+      : row.finished_ok || stale
         ? "completed"
         : "in_progress";
     const summary = _aggregateMeeting({
@@ -1981,7 +2003,12 @@ export async function listMeetings(opts?: {
       latest_turn: latest,
       total_turns: row.turn_count,
     };
-  });
+  })
+  // Drop completed solo-crew runs from the default list — they are noise
+  // on the demo page. Multi-agent rituals always show. A solo crew that
+  // is genuinely live (in_progress) still shows so the operator sees
+  // real focused work as it happens.
+  .filter((m) => m.multi_agent || m.status === "in_progress");
 }
 
 /** Full meeting detail — every turn in conversation order. */
@@ -2032,16 +2059,18 @@ export async function getMeeting(runId: string): Promise<MeetingDetail | null> {
     decision_id: null,
   };
 
-  const status: MeetingSummary["status"] = lc.failed
-    ? "failed"
-    : lc.finished_ok
-      ? "completed"
-      : "in_progress";
-
   const startedAt = (lc.started_at ?? new Date(turns[0].created_at)).toISOString();
   const lastEventAt = (
     lc.last_event_at ?? new Date(turns[turns.length - 1].created_at)
   ).toISOString();
+
+  // See the recency-based status comment in listMeetings — same logic.
+  const stale = Date.now() - new Date(lastEventAt).getTime() >= SPEAKING_NOW_WINDOW_MS;
+  const status: MeetingSummary["status"] = lc.failed
+    ? "failed"
+    : lc.finished_ok || stale
+      ? "completed"
+      : "in_progress";
 
   const summary = _aggregateMeeting({
     run_id: runId,
