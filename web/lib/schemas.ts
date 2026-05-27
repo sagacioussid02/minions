@@ -390,6 +390,81 @@ export const CrewTranscriptMessageSchema = z.object({
 });
 export type CrewTranscriptMessage = z.infer<typeof CrewTranscriptMessageSchema>;
 
+// ---------- Meeting room (living-org-spaces Surface A) ----------
+
+export const MeetingStatusSchema = z.enum(["in_progress", "completed", "failed"]);
+export type MeetingStatus = z.infer<typeof MeetingStatusSchema>;
+
+export const SeatPositionSchema = z.enum([
+  "north",
+  "northeast",
+  "east",
+  "southeast",
+  "south",
+  "southwest",
+  "west",
+  "northwest",
+  "center",
+]);
+export type SeatPosition = z.infer<typeof SeatPositionSchema>;
+
+export const SeatSchema = z.object({
+  agent_role: z.string(),
+  agent_display_name: z.string().nullable(),
+  seat_position: SeatPositionSchema,
+  // True when this seat owns the most recent turn in the meeting (within the
+  // live window). Used to render the pulsing-halo speaker indicator.
+  is_speaking_now: z.boolean(),
+});
+export type Seat = z.infer<typeof SeatSchema>;
+
+export const MeetingTurnSchema = z.object({
+  sequence: z.number().int().nonnegative(),
+  agent_role: z.string(),
+  agent_display_name: z.string().nullable(),
+  role_in_conversation: z.enum([
+    "pitch",
+    "rebuttal",
+    "synthesis",
+    "review",
+    "task_output",
+    "other",
+  ]),
+  content_preview: z.string(), // truncated to ~3 lines for the summary panel
+  content_full: z.string(), // full text for the transcript drawer
+  created_at: z.string(),
+});
+export type MeetingTurn = z.infer<typeof MeetingTurnSchema>;
+
+/** One row on the /meetings list page — represents one crew run. */
+export const MeetingSummarySchema = z.object({
+  run_id: z.string(),
+  crew: z.string(),
+  ritual_label: z.string(), // operator-facing label from MEETING_RITUALS
+  ritual_agenda: z.string(),
+  multi_agent: z.boolean(), // true → round-table; false → solo focused-work card
+  project: z.string().nullable(),
+  decision_id: z.string().nullable(),
+  started_at: z.string(),
+  last_event_at: z.string(),
+  status: MeetingStatusSchema,
+  seats: z.array(SeatSchema),
+  latest_turn: MeetingTurnSchema.nullable(),
+  total_turns: z.number().int().nonnegative(),
+});
+export type MeetingSummary = z.infer<typeof MeetingSummarySchema>;
+
+/** Full meeting detail returned by `/api/meetings/[run_id]`. */
+export const MeetingDetailSchema = MeetingSummarySchema.extend({
+  turns: z.array(MeetingTurnSchema),
+});
+export type MeetingDetail = z.infer<typeof MeetingDetailSchema>;
+
+export const MeetingListSchema = z.object({
+  meetings: z.array(MeetingSummarySchema),
+});
+export type MeetingList = z.infer<typeof MeetingListSchema>;
+
 // ---------- Spokesperson interviews ----------
 
 export const InterviewCitationSchema = z.object({
