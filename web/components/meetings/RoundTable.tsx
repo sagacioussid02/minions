@@ -46,7 +46,8 @@ export function RoundTable({
             cy={cy}
             rx={rx}
             ry={ry}
-            className="fill-[var(--surface-muted)]/30 stroke-[var(--line)]"
+            fill="var(--bg-elevated)"
+            stroke="var(--line)"
             strokeWidth={size === "lg" ? 1.5 : 1}
             strokeDasharray="4 4"
           />
@@ -119,7 +120,8 @@ function SeatNode({
           cx={x}
           cy={y}
           r={r * 1.6}
-          className="speaker-halo fill-[var(--accent)]"
+          fill="var(--accent)"
+          className="speaker-halo"
         />
       )}
       {/* Seat circle */}
@@ -127,11 +129,8 @@ function SeatNode({
         cx={x}
         cy={y}
         r={r}
-        className={
-          speaking
-            ? "fill-[var(--accent)] stroke-[var(--accent)]"
-            : "fill-[var(--surface-muted)] stroke-[var(--line)]"
-        }
+        fill={speaking ? "var(--accent)" : "var(--bg-surface)"}
+        stroke={speaking ? "var(--accent)" : "var(--line)"}
         strokeWidth={1.5}
       />
       {/* Initial inside the seat */}
@@ -140,11 +139,8 @@ function SeatNode({
         y={y}
         textAnchor="middle"
         dominantBaseline="central"
-        className={
-          speaking
-            ? "fill-[var(--bg)] font-semibold"
-            : "fill-[var(--text-primary)] font-medium"
-        }
+        fill={speaking ? "var(--bg-elevated)" : "var(--text-primary)"}
+        fontWeight={speaking ? 600 : 500}
         fontSize={fontSize * 0.9}
       >
         {initialFor(display)}
@@ -156,7 +152,8 @@ function SeatNode({
             x={x}
             y={labelY}
             textAnchor="middle"
-            className="fill-[var(--text-primary)] font-medium"
+            fill="var(--text-primary)"
+            fontWeight={500}
             fontSize={fontSize}
           >
             {truncate(display, 14)}
@@ -165,7 +162,7 @@ function SeatNode({
             x={x}
             y={subY}
             textAnchor="middle"
-            className="fill-[var(--text-muted)]"
+            fill="var(--text-muted)"
             fontSize={fontSize * 0.78}
           >
             {truncate(prettyRole(seat.agent_role), 16)}

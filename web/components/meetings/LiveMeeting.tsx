@@ -75,7 +75,7 @@ export function LiveMeeting({ initial }: { initial: MeetingDetail }) {
         lastHeartbeatAt={state.lastHeartbeatAt}
       />
 
-      <section className="rounded-xl border border-[var(--line)] bg-[var(--surface-muted)]/20 p-6">
+      <section className="rounded-xl border border-[var(--line)] bg-[var(--bg-surface)] p-6">
         <RoundTable
           seats={state.meeting.seats}
           multiAgent={state.meeting.multi_agent}
@@ -97,7 +97,7 @@ export function LiveMeeting({ initial }: { initial: MeetingDetail }) {
           {state.meeting.turns.map((turn) => (
             <li
               key={turn.sequence}
-              className="rounded-lg border border-[var(--line)] bg-[var(--surface-muted)]/30 p-3"
+              className="rounded-lg border border-[var(--line)] bg-[var(--bg-canvas)] p-3"
             >
               <div className="flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
                 <span className="font-mono text-[var(--text-primary)]">
@@ -135,7 +135,7 @@ function MeetingHeader({
       ? "bg-[var(--state-success)]/15 text-[var(--state-success)]"
       : meeting.status === "failed"
         ? "bg-[var(--state-danger)]/15 text-[var(--state-danger)]"
-        : "bg-[var(--surface-muted)]/60 text-[var(--text-muted)]";
+        : "bg-[var(--bg-canvas)] text-[var(--text-muted)]";
   return (
     <header>
       <div className="flex items-center gap-2">
@@ -143,7 +143,7 @@ function MeetingHeader({
           {meeting.ritual_label}
         </h1>
         {meeting.project && (
-          <span className="rounded bg-[var(--surface-muted)]/60 px-1.5 py-0.5 font-mono text-[11px] text-[var(--text-muted)]">
+          <span className="rounded bg-[var(--bg-canvas)] px-1.5 py-0.5 font-mono text-[11px] text-[var(--text-muted)]">
             {meeting.project}
           </span>
         )}

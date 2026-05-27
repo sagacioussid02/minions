@@ -15,7 +15,7 @@ export function MeetingsList({ meetings }: { meetings: MeetingSummary[] }) {
     return (
       <div className="rounded-lg border border-[var(--line)] p-8 text-center text-sm text-[var(--text-muted)]">
         No meetings in the last 24h. Run{" "}
-        <code className="rounded bg-[var(--surface-muted)]/40 px-1 py-0.5">
+        <code className="rounded bg-[var(--bg-canvas)] px-1 py-0.5">
           minions plan &lt;project&gt; --no-dry-run
         </code>{" "}
         to kick off a planning crew.
@@ -63,7 +63,7 @@ function MeetingCard({ meeting, live }: { meeting: MeetingSummary; live: boolean
   return (
     <Link
       href={`/meetings/${meeting.run_id}`}
-      className={`block rounded-lg border ${accent} bg-[var(--surface-muted)]/30 p-4 transition hover:border-[var(--accent)]/60 hover:bg-[var(--surface-muted)]/50`}
+      className={`block rounded-lg border ${accent} bg-[var(--bg-surface)] p-4 transition hover:border-[var(--accent)]/60 hover:bg-[var(--bg-elevated)]`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -72,7 +72,7 @@ function MeetingCard({ meeting, live }: { meeting: MeetingSummary; live: boolean
               {meeting.ritual_label}
             </span>
             {meeting.project && (
-              <span className="rounded bg-[var(--surface-muted)]/60 px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-muted)]">
+              <span className="rounded bg-[var(--bg-canvas)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-muted)]">
                 {meeting.project}
               </span>
             )}
@@ -82,13 +82,13 @@ function MeetingCard({ meeting, live }: { meeting: MeetingSummary; live: boolean
                   ? "bg-[var(--state-success)]/15 text-[var(--state-success)]"
                   : meeting.status === "failed"
                     ? "bg-[var(--state-danger)]/15 text-[var(--state-danger)]"
-                    : "bg-[var(--surface-muted)]/60 text-[var(--text-muted)]"
+                    : "bg-[var(--bg-canvas)] text-[var(--text-muted)]"
               }`}
             >
               {meeting.status === "in_progress" ? "live" : meeting.status}
             </span>
             {!meeting.multi_agent && (
-              <span className="rounded bg-[var(--surface-muted)]/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+              <span className="rounded bg-[var(--bg-canvas)] px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
                 solo
               </span>
             )}
@@ -112,7 +112,7 @@ function MeetingCard({ meeting, live }: { meeting: MeetingSummary; live: boolean
                 className={`rounded-full border px-2 py-0.5 text-[10px] ${
                   seat.is_speaking_now
                     ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]"
-                    : "border-[var(--line)] bg-[var(--surface-muted)]/40 text-[var(--text-primary)]"
+                    : "border-[var(--line)] bg-[var(--bg-canvas)] text-[var(--text-primary)]"
                 }`}
                 title={seat.agent_role}
               >
@@ -122,7 +122,7 @@ function MeetingCard({ meeting, live }: { meeting: MeetingSummary; live: boolean
             ))}
           </div>
           {meeting.latest_turn && (
-            <div className="mt-2 rounded border border-[var(--line)] bg-[var(--surface-muted)]/40 p-2.5">
+            <div className="mt-2 rounded border border-[var(--line)] bg-[var(--bg-canvas)] p-2.5">
               <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
                 Latest turn ·{" "}
                 <span className="font-mono text-[var(--text-primary)]">
