@@ -1,0 +1,157 @@
+/**
+ * Chat context bundler — TS twin of ``minions.agent_chat.context``.
+ *
+ * Composes the persona + dossier + learning + transcripts that drive a single
+ * agent's reply, with a hard UTF-8 byte budget. The Python side is canonical;
+ * this file mirrors its rules so traces from either runtime look the same.
+ */
+
+import {
+  latestMergedDossierMarkdown,
+  listLearningForAgent,
+  listRecentTranscripts,
+  lookupDisplayName,
+  type LearningSnippet,
+  type TranscriptSnippet,
+} from "./repo";
+import { fallbackDisplayName, type ParsedAgentId } from "./roster";
+
+export const MAX_PROMPT_BYTES = 8 * 1024;
+export const MAX_DOSSIER_BYTES = 2 * 1024;
+export const MAX_LEARNING_RECORDS = 15;
+export const MAX_TRANSCRIPT_SNIPPETS = 5;
+const TRANSCRIPT_SNIPPET_CHARS = 400;
+
+// Mirrors src/minions/agents/safety.py — keep verbatim. If the Python preamble
+// changes, update here too; the operator-facing rules must reach the model
+// regardless of which runtime placed the call.
+const SAFETY_PREAMBLE = `# Hard Rules (non-negotiable)
+
+1. You MUST NOT read .env files or any secret material. The filesystem will
+   deny such reads — do not try to circumvent it. Reference secrets by name
+   only (e.g., \${ANTHROPIC_API_KEY}); never inline a secret value.
+
+2. You MUST NOT push commits to the \`main\` or \`master\` branch. Always create
+   a branch named \`minions/<role>/<short-summary>\`, commit there, and open a
+   PR targeting main. Branch protection enforces this server-side; do not
+   request a bypass.
+
+3. Every change you produce goes through code review. A peer agent reviews
+   first. Only after peer approval and green CI does the operator review.
+   Do not merge your own work.
+
+4. Every material decision (feature, bug fix, dependency upgrade, infra
+   change, security patch, license/cert renewal, cost change, procurement,
+   team-composition change) is proposed via a Decision Record. The operator
+   approves before execution. The agent proposes; the operator disposes.
+
+5. You MUST NOT accept Terms of Service on the operator's behalf unless the
+   operator has explicitly authorized TOS acceptance for that specific
+   vendor in writing (recorded in the audit log).
+
+If a tool returns a permission denied error, accept it as final. Do not retry
+with a different path or escalation. Surface the attempt as a security alert
+in your response.`;
+
+export type ChatContext = {
+  agentId: string;
+  role: string;
+  displayName: string;
+  project: string | null;
+  persona: string;
+  dossierExcerpt: string;
+  learning: LearningSnippet[];
+  transcriptSnippets: TranscriptSnippet[];
+  coldStart: boolean;
+  totalBytes: number;
+};
+
+export async function buildAgentContext(parsed: ParsedAgentId): Promise<ChatContext> {
+  const { agentId, role, project } = parsed;
+
+  const [displayName, dossierMd, learning, transcripts] = await Promise.all([
+    lookupDisplayName({ project, role }).then(
+      (name) => name ?? fallbackDisplayName(role),
+    ),
+    project ? latestMergedDossierMarkdown(project) : Promise.resolve(null),
+    listLearningForAgent(agentId, MAX_LEARNING_RECORDS),
+    listRecentTranscripts(project, MAX_TRANSCRIPT_SNIPPETS),
+  ]);
+
+  const dossierExcerpt = dossierMd ? truncateUtf8(dossierMd, MAX_DOSSIER_BYTES) : "";
+  const persona = renderPersona({ role, displayName, project });
+  const coldStart = learning.length === 0 && transcripts.length === 0;
+
+  const ctx: ChatContext = {
+    agentId,
+    role,
+    displayName,
+    project,
+    persona,
+    dossierExcerpt,
+    learning,
+    transcriptSnippets: transcripts,
+    coldStart,
+    totalBytes: 0,
+  };
+  enforceBudget(ctx);
+  return ctx;
+}
+
+function renderPersona({
+  role,
+  displayName,
+  project,
+}: {
+  role: string;
+  displayName: string;
+  project: string | null;
+}): string {
+  const projectLine = project ? `You are working in project '${project}'.\n` : "";
+  return (
+    `Your operator-facing name is ${displayName}. Speak in first person.\n\n` +
+    `${projectLine}` +
+    `You are an agent with role '${role}' in the minions organization.\n\n` +
+    SAFETY_PREAMBLE
+  );
+}
+
+function truncateUtf8(text: string, maxBytes: number): string {
+  const encoded = new TextEncoder().encode(text);
+  if (encoded.length <= maxBytes) return text;
+  const slice = encoded.slice(0, maxBytes);
+  return new TextDecoder("utf-8", { fatal: false }).decode(slice);
+}
+
+function snippetText(t: TranscriptSnippet): string {
+  return `[${t.crew}/${t.agent_role}] ${t.content.slice(0, TRANSCRIPT_SNIPPET_CHARS)}`;
+}
+
+function bundleBytes(ctx: ChatContext): number {
+  const encoder = new TextEncoder();
+  let total = 0;
+  total += encoder.encode(ctx.persona).length;
+  total += encoder.encode(ctx.dossierExcerpt).length;
+  for (const r of ctx.learning) total += encoder.encode(r.fact).length;
+  for (const t of ctx.transcriptSnippets) total += encoder.encode(snippetText(t)).length;
+  return total;
+}
+
+function enforceBudget(ctx: ChatContext): void {
+  // Pass 1: shrink the dossier.
+  while (bundleBytes(ctx) > MAX_PROMPT_BYTES && ctx.dossierExcerpt) {
+    const current = new TextEncoder().encode(ctx.dossierExcerpt).length;
+    const newLen = Math.max(0, Math.floor(current / 2));
+    ctx.dossierExcerpt = newLen === 0 ? "" : truncateUtf8(ctx.dossierExcerpt, newLen);
+    if (newLen === 0) break;
+  }
+  // Pass 2: drop learning records from the tail.
+  while (bundleBytes(ctx) > MAX_PROMPT_BYTES && ctx.learning.length > 0) {
+    ctx.learning.pop();
+  }
+  // Pass 3: drop transcript snippets.
+  while (bundleBytes(ctx) > MAX_PROMPT_BYTES && ctx.transcriptSnippets.length > 0) {
+    ctx.transcriptSnippets.pop();
+  }
+  ctx.totalBytes = bundleBytes(ctx);
+}
