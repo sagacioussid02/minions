@@ -21,6 +21,12 @@ export default async function SprintPage() {
           </div>
           <div className="flex items-center gap-4">
             <Link
+              href="/meetings"
+              className="rounded border border-[var(--line)] px-2 py-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)] hover:border-[var(--accent)]/40 hover:text-[var(--text-primary)]"
+            >
+              meetings
+            </Link>
+            <Link
               href="/stage"
               className="rounded border border-[var(--line)] px-2 py-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)] hover:border-[var(--accent)]/40 hover:text-[var(--text-primary)]"
             >
