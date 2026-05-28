@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { type AgentState } from "@/lib/schemas";
+import { AgentChatPanel } from "@/components/agent-chat/AgentChatPanel";
+import { AgentLabel } from "@/components/AgentLabel";
 
 async function fetchAgents(): Promise<AgentState[]> {
   const r = await fetch("/api/agents", { cache: "no-store" });
@@ -29,6 +31,7 @@ export function RosterGrid({ initial }: { initial: AgentState[] }) {
   const [search, setSearch] = useState("");
   const [tierFilter, setTierFilter] = useState<string>("all");
   const [projectFilter, setProjectFilter] = useState<string>("all");
+  const [chatTarget, setChatTarget] = useState<AgentState | null>(null);
 
   const projects = useMemo(
     () =>
@@ -116,14 +119,7 @@ export function RosterGrid({ initial }: { initial: AgentState[] }) {
             className="group rounded-lg border border-[var(--line)] bg-[var(--surface-1)] p-3 transition hover:border-[var(--accent)]/40 hover:bg-[var(--surface-2)]"
           >
             <div className="mb-2 flex items-start justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-mono text-sm font-semibold text-[var(--text-primary)]">
-                  {a.display_name ?? a.role}
-                </div>
-                <div className="truncate text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
-                  {a.role.replaceAll("_", " ")}
-                </div>
-              </div>
+              <AgentLabel displayName={a.display_name} role={a.role} />
               <span
                 className={`shrink-0 rounded border px-1.5 py-0.5 text-[9px] uppercase tracking-wider ${TIER_BADGE[a.role_tier] ?? "border-[var(--line)] text-[var(--text-muted)]"}`}
               >
@@ -143,32 +139,50 @@ export function RosterGrid({ initial }: { initial: AgentState[] }) {
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2 text-[10px]">
-              {a.in_flight ? (
-                <span className="flex items-center gap-1 text-emerald-300">
-                  <span className="relative inline-flex size-2">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/50" />
-                    <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
+            <div className="flex items-center justify-between gap-2 text-[10px]">
+              <div className="flex items-center gap-2">
+                {a.in_flight ? (
+                  <span className="flex items-center gap-1 text-emerald-300">
+                    <span className="relative inline-flex size-2">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/50" />
+                      <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
+                    </span>
+                    in-flight
                   </span>
-                  in-flight
-                </span>
-              ) : a.errored ? (
-                <span className="text-rose-300">errored</span>
-              ) : (
-                <span className="text-[var(--text-muted)]">idle</span>
-              )}
-              {a.live_run && (
-                <span className="truncate text-[var(--text-muted)]">
-                  · {a.live_run.crew}
-                  {a.live_run.decision_summary
-                    ? `: "${a.live_run.decision_summary.slice(0, 40)}"`
-                    : ""}
-                </span>
-              )}
+                ) : a.errored ? (
+                  <span className="text-rose-300">errored</span>
+                ) : (
+                  <span className="text-[var(--text-muted)]">idle</span>
+                )}
+                {a.live_run && (
+                  <span className="truncate text-[var(--text-muted)]">
+                    · {a.live_run.crew}
+                    {a.live_run.decision_summary
+                      ? `: "${a.live_run.decision_summary.slice(0, 40)}"`
+                      : ""}
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setChatTarget(a);
+                }}
+                className="shrink-0 rounded border border-[var(--accent)]/40 bg-[var(--surface-2)] px-2 py-0.5 text-[10px] text-[var(--accent)] opacity-0 transition group-hover:opacity-100 hover:bg-[var(--accent)]/10 focus:opacity-100"
+                aria-label={`Talk to ${a.display_name ?? a.role}`}
+              >
+                talk
+              </button>
             </div>
           </Link>
         ))}
       </div>
+
+      {chatTarget && (
+        <AgentChatPanel agent={chatTarget} onClose={() => setChatTarget(null)} />
+      )}
 
       {filtered.length === 0 && (
         <div className="rounded border border-dashed border-[var(--line)] p-6 text-center text-xs text-[var(--text-muted)]">

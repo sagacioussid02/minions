@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { type AgentMemory, type AgentState } from "@/lib/schemas";
-import { agentSeedFor, iconFor, prettyRole } from "@/lib/roles";
+import { agentSeedFor, iconFor, prettyRole, roleShortLabel } from "@/lib/roles";
 import { colorFor, registerProjects } from "@/lib/project-color";
 import { vitalityFromAge } from "@/lib/recency";
 import { Avatar } from "@/components/Avatar";
@@ -453,7 +453,10 @@ function BenchCard({
         />
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-[var(--text-primary)]">
-            {prettyRole(agent.role)}
+            {agent.display_name?.trim() || roleShortLabel(agent.role)}
+          </div>
+          <div className="truncate text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+            {roleShortLabel(agent.role)}
           </div>
           <div className="text-xs text-[var(--text-muted)]">
             {agent.seats > 1 ? `${agent.seats} seats · ` : ""}{state}
@@ -745,8 +748,8 @@ function AgentCard({
             </span>
             <span className="truncate text-base font-semibold">{displayName}</span>
           </div>
-          <div className="truncate text-xs text-[var(--text-muted)]">
-            {prettyRole(agent.role)}
+          <div className="truncate text-xs uppercase tracking-wider text-[var(--text-muted)]">
+            {roleShortLabel(agent.role)}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -880,7 +883,7 @@ function AgentInspector({
             <div>
               <div className="text-lg font-semibold">{displayName}</div>
               <div className="text-sm text-[var(--text-muted)]">
-                {prettyRole(agent.role)} {agent.project ? `@ ${agent.project}` : "@ Shared"}
+                {roleShortLabel(agent.role)} {agent.project ? `@ ${agent.project}` : "@ Shared"}
               </div>
               <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
                 <span className="rounded-full bg-sky-100 px-2 py-1 font-medium text-sky-700">

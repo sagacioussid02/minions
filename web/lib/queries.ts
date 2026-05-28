@@ -1689,3 +1689,399 @@ export async function listTranscriptsForProject(
   `) as Array<{ payload: Record<string, unknown> }>;
   return rows.map(({ payload }) => _mapTranscriptRow(payload));
 }
+
+// ---------- Meeting room (living-org-spaces Surface A) ----------
+
+import type { MeetingDetail, MeetingSummary, MeetingTurn, Seat } from "./schemas";
+import {
+  FALLBACK_SEAT_POSITIONS,
+  ritualFor,
+  type SeatPosition,
+} from "./meetings/rituals";
+
+/**
+ * Default look-back window for "what meetings happened recently?"
+ *
+ * Set to 48h per operator request 2026-05-27 — keep meetings on the page
+ * for two days, then archive (drop from the default list). To see older
+ * runs explicitly the caller can pass a longer windowMinutes.
+ */
+const MEETINGS_WINDOW_MINUTES_DEFAULT = 48 * 60;
+
+/**
+ * Window inside which the most recent turn is treated as "speaking now" for
+ * the round-table halo indicator. Matches the Python-side
+ * RUNNING_WINDOW_SECONDS / 60 in activity.py so the front-end speaker pulse
+ * and back-end "live crew" detection don't disagree.
+ */
+const SPEAKING_NOW_WINDOW_MS = 10 * 60 * 1000;
+
+/** Char budget for the truncated `content_preview` in the summary panel. */
+const PREVIEW_CHARS = 280;
+
+/**
+ * Aggregate a list of crew_transcript payloads (one per turn) into the
+ * round-table view: seats, latest turn, status, etc. Pure helper — does no IO.
+ */
+function _aggregateMeeting(args: {
+  run_id: string;
+  crew: string;
+  project: string | null;
+  decision_id: string | null;
+  started_at: string;
+  last_event_at: string;
+  status: MeetingSummary["status"];
+  turns: MeetingTurn[];
+}): MeetingSummary {
+  const ritual = ritualFor(args.crew);
+  // Track each role's most recent turn so we can populate the chat-bubble
+  // that floats above the agent's seat in the round-table.
+  interface RoleMeta {
+    display: string | null;
+    lastTurnAt: string;
+    lastTurnPreview: string | null;
+    lastTurnSequence: number | null;
+  }
+  const seenRoles = new Map<string, RoleMeta>();
+  for (const turn of args.turns) {
+    const existing = seenRoles.get(turn.agent_role);
+    if (!existing || turn.created_at > existing.lastTurnAt) {
+      seenRoles.set(turn.agent_role, {
+        display: turn.agent_display_name,
+        lastTurnAt: turn.created_at,
+        // Use the existing preview from the turn (already truncated by
+        // _mapTurnRow). For the seat-tracking shim (roster rows without
+        // content), preview is empty string — render as null.
+        lastTurnPreview: turn.content_preview || turn.content_full || null,
+        lastTurnSequence: turn.sequence > 0 ? turn.sequence : null,
+      });
+    }
+  }
+
+  // Build seats — start from the ritual's mapped roles, then fall back to
+  // FALLBACK_SEAT_POSITIONS for any agent_roles that turned up in the
+  // transcripts but weren't in the ritual's seat_layout.
+  const seats: Seat[] = [];
+  const usedPositions = new Set<SeatPosition>();
+  const latestTurn = args.turns.length > 0 ? args.turns[args.turns.length - 1] : null;
+  const speakingNow =
+    latestTurn != null &&
+    Date.now() - new Date(latestTurn.created_at).getTime() < SPEAKING_NOW_WINDOW_MS;
+
+  for (const [role, meta] of seenRoles) {
+    const mappedPos = ritual.seat_layout[role];
+    let position: SeatPosition;
+    if (mappedPos && !usedPositions.has(mappedPos)) {
+      position = mappedPos;
+    } else {
+      const fallback = FALLBACK_SEAT_POSITIONS.find((p) => !usedPositions.has(p));
+      position = fallback ?? "center";
+    }
+    usedPositions.add(position);
+    seats.push({
+      agent_role: role,
+      agent_display_name: meta.display,
+      seat_position: position,
+      is_speaking_now: speakingNow && latestTurn?.agent_role === role,
+      last_turn_preview: meta.lastTurnPreview,
+      last_turn_sequence: meta.lastTurnSequence,
+    });
+  }
+  // Stable order: ritual-mapped roles first (in ritual order), unknowns after.
+  const ritualOrder = Object.keys(ritual.seat_layout);
+  seats.sort((a, b) => {
+    const ai = ritualOrder.indexOf(a.agent_role);
+    const bi = ritualOrder.indexOf(b.agent_role);
+    if (ai === -1 && bi === -1) return a.agent_role.localeCompare(b.agent_role);
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
+
+  return {
+    run_id: args.run_id,
+    crew: args.crew,
+    ritual_label: ritual.label,
+    ritual_agenda: ritual.agenda,
+    multi_agent: ritual.multi_agent,
+    project: args.project,
+    decision_id: args.decision_id,
+    started_at: args.started_at,
+    last_event_at: args.last_event_at,
+    status: args.status,
+    seats,
+    latest_turn: latestTurn,
+    total_turns: args.turns.length,
+  };
+}
+
+/** Truncate to PREVIEW_CHARS on a clean word boundary; keep newlines visible. */
+function _preview(content: string): string {
+  const compact = content.trim();
+  if (compact.length <= PREVIEW_CHARS) return compact;
+  const cut = compact.slice(0, PREVIEW_CHARS);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > PREVIEW_CHARS * 0.6 ? cut.slice(0, lastSpace) : cut) + "…";
+}
+
+function _mapTurnRow(payload: Record<string, unknown>): MeetingTurn {
+  const full = String(payload.content ?? "");
+  return {
+    sequence:
+      typeof payload.sequence === "number"
+        ? payload.sequence
+        : Number(payload.sequence ?? 0),
+    agent_role: String(payload.agent_role ?? ""),
+    agent_display_name:
+      payload.agent_display_name == null ? null : String(payload.agent_display_name),
+    role_in_conversation: (String(payload.role_in_conversation ?? "other") as
+      | "pitch"
+      | "rebuttal"
+      | "synthesis"
+      | "review"
+      | "task_output"
+      | "other"),
+    content_preview: _preview(full),
+    content_full: full,
+    created_at: String(payload.created_at ?? new Date().toISOString()),
+  };
+}
+
+/**
+ * List recent meetings — one summary per crew run in the last `windowMinutes`.
+ *
+ * In-progress runs (those with a `crew_started` activity_log event but no
+ * `crew_finished` / `crew_failed` within the window) are surfaced first,
+ * followed by completed runs in reverse-chronological order.
+ */
+export async function listMeetings(opts?: {
+  windowMinutes?: number;
+  project?: string;
+}): Promise<MeetingSummary[]> {
+  const windowMinutes = opts?.windowMinutes ?? MEETINGS_WINDOW_MINUTES_DEFAULT;
+  const project = opts?.project ?? null;
+  const s = sql();
+  const hasTable = (await s`
+    SELECT to_regclass('public.crew_transcripts') IS NOT NULL AS ok
+  `) as Array<{ ok: boolean }>;
+  if (!hasTable[0]?.ok) return [];
+
+  // One row per (run_id, crew, project) with the turns aggregated as JSON.
+  // We also pull the matching crew_started / crew_finished events from
+  // activity_log to derive status + canonical started_at.
+  const rows = (await s`
+    WITH run_window AS (
+      SELECT
+        ct.run_id,
+        MIN(ct.crew) AS crew,
+        MIN(ct.project) AS project,
+        MIN(ct.created_at) AS first_turn_at,
+        MAX(ct.created_at) AS last_turn_at,
+        COUNT(*) AS turn_count
+      FROM crew_transcripts ct
+      WHERE ct.created_at > NOW() - (${windowMinutes}::int || ' minutes')::interval
+        AND (${project}::text IS NULL OR ct.project = ${project}::text)
+      GROUP BY ct.run_id
+    ),
+    run_lifecycle AS (
+      SELECT
+        run_id,
+        MIN(ts) FILTER (WHERE event = 'crew_started') AS started_at,
+        MAX(ts) FILTER (WHERE event IN ('crew_started','agent_spoke','crew_finished','crew_failed')) AS last_event_at,
+        BOOL_OR(event = 'crew_finished') AS finished_ok,
+        BOOL_OR(event = 'crew_failed') AS failed,
+        MAX(decision_id) AS decision_id
+      FROM activity_log
+      WHERE ts > NOW() - (${windowMinutes}::int || ' minutes')::interval
+        AND run_id IS NOT NULL
+      GROUP BY run_id
+    )
+    SELECT
+      rw.run_id,
+      rw.crew,
+      rw.project,
+      COALESCE(rl.started_at, rw.first_turn_at) AS started_at,
+      COALESCE(rl.last_event_at, rw.last_turn_at) AS last_event_at,
+      rl.finished_ok,
+      rl.failed,
+      rl.decision_id,
+      rw.turn_count
+    FROM run_window rw
+    LEFT JOIN run_lifecycle rl ON rl.run_id = rw.run_id
+    ORDER BY
+      CASE
+        WHEN COALESCE(rl.finished_ok, false) OR COALESCE(rl.failed, false) THEN 1
+        ELSE 0
+      END,
+      COALESCE(rl.last_event_at, rw.last_turn_at) DESC
+    LIMIT 50
+  `) as Array<{
+    run_id: string;
+    crew: string;
+    project: string | null;
+    started_at: Date;
+    last_event_at: Date;
+    finished_ok: boolean | null;
+    failed: boolean | null;
+    decision_id: string | null;
+    turn_count: number;
+  }>;
+  if (rows.length === 0) return [];
+
+  // Fetch the most recent turn per run for the latest-turn panel + the
+  // speaker halo. Pulling all turns for the list view would be wasteful;
+  // the detail endpoint is the place for that.
+  const runIds = rows.map((r) => r.run_id);
+  const latestTurns = (await s`
+    SELECT DISTINCT ON (run_id) run_id, payload
+    FROM crew_transcripts
+    WHERE run_id = ANY(${runIds})
+    ORDER BY run_id, sequence DESC
+  `) as Array<{ run_id: string; payload: Record<string, unknown> }>;
+  const latestByRun = new Map(latestTurns.map((t) => [t.run_id, _mapTurnRow(t.payload)]));
+
+  // Pull the LATEST turn per (run_id, agent_role) so each seat in the
+  // round-table has a populated chat-bubble. Without this, only the
+  // single most-recent speaker has bubble content; every other seat
+  // shows up with `last_turn_preview = null`.
+  const seatLastTurns = (await s`
+    SELECT DISTINCT ON (run_id, agent_role)
+      run_id,
+      agent_role,
+      payload
+    FROM crew_transcripts
+    WHERE run_id = ANY(${runIds})
+    ORDER BY run_id, agent_role, sequence DESC
+  `) as Array<{ run_id: string; agent_role: string; payload: Record<string, unknown> }>;
+  const rosterByRun = new Map<string, MeetingTurn[]>();
+  for (const row of seatLastTurns) {
+    const arr = rosterByRun.get(row.run_id) ?? [];
+    arr.push(_mapTurnRow(row.payload));
+    rosterByRun.set(row.run_id, arr);
+  }
+
+  return rows.map((row) => {
+    const latest = latestByRun.get(row.run_id) ?? null;
+    const seatTurns = rosterByRun.get(row.run_id) ?? [];
+    // Compose the turn list the aggregator sees: every seat's last turn
+    // (so each seat gets a populated bubble) PLUS the global latest turn
+    // (so the speaker-halo math has a deterministic "most recent").
+    const turnsForAgg: MeetingTurn[] = [...seatTurns];
+    if (latest && !turnsForAgg.some((t) => t.sequence === latest.sequence)) {
+      turnsForAgg.push(latest);
+    }
+    // Status derivation: prefer recency over crew_finished presence.
+    // Some crews (notably the engineer crew on its dry-run path) write
+    // transcripts but never emit crew_finished to activity_log. Without
+    // this heuristic, every such run would falsely render as "live"
+    // forever — the 22-engineer-runs-showing-as-live incident on
+    // 2026-05-27. A run whose last activity is older than the
+    // RUNNING_WINDOW (10 min) is treated as completed even if no
+    // crew_finished event was recorded.
+    const lastEventMs = row.last_event_at.getTime();
+    const stale = Date.now() - lastEventMs >= SPEAKING_NOW_WINDOW_MS;
+    const status: MeetingSummary["status"] = row.failed
+      ? "failed"
+      : row.finished_ok || stale
+        ? "completed"
+        : "in_progress";
+    const summary = _aggregateMeeting({
+      run_id: row.run_id,
+      crew: row.crew,
+      project: row.project,
+      decision_id: row.decision_id,
+      started_at: row.started_at.toISOString(),
+      last_event_at: row.last_event_at.toISOString(),
+      status,
+      turns: turnsForAgg,
+    });
+    // Override latest_turn + total_turns from the authoritative DB counts —
+    // _aggregateMeeting otherwise counts `turnsForAgg` which is just the
+    // latest + roster-tracking shim.
+    return {
+      ...summary,
+      latest_turn: latest,
+      total_turns: row.turn_count,
+    };
+  })
+  // Drop completed solo-crew runs from the default list — they are noise
+  // on the demo page. Multi-agent rituals always show. A solo crew that
+  // is genuinely live (in_progress) still shows so the operator sees
+  // real focused work as it happens.
+  .filter((m) => m.multi_agent || m.status === "in_progress");
+}
+
+/** Full meeting detail — every turn in conversation order. */
+export async function getMeeting(runId: string): Promise<MeetingDetail | null> {
+  const s = sql();
+  const hasTable = (await s`
+    SELECT to_regclass('public.crew_transcripts') IS NOT NULL AS ok
+  `) as Array<{ ok: boolean }>;
+  if (!hasTable[0]?.ok) return null;
+
+  const turnRows = (await s`
+    SELECT payload
+    FROM crew_transcripts
+    WHERE run_id = ${runId}
+    ORDER BY sequence ASC
+  `) as Array<{ payload: Record<string, unknown> }>;
+  if (turnRows.length === 0) return null;
+
+  const turns = turnRows.map(({ payload }) => _mapTurnRow(payload));
+
+  // Crew + project come from the first turn (all rows for a run_id share these).
+  const firstPayload = turnRows[0].payload;
+  const crew = String(firstPayload.crew ?? "");
+  const project = firstPayload.project == null ? null : String(firstPayload.project);
+
+  // Lifecycle from activity_log.
+  const lifecycle = (await s`
+    SELECT
+      MIN(ts) FILTER (WHERE event = 'crew_started') AS started_at,
+      MAX(ts) FILTER (WHERE event IN ('crew_started','agent_spoke','crew_finished','crew_failed')) AS last_event_at,
+      BOOL_OR(event = 'crew_finished') AS finished_ok,
+      BOOL_OR(event = 'crew_failed') AS failed,
+      MAX(decision_id) AS decision_id
+    FROM activity_log
+    WHERE run_id = ${runId}
+  `) as Array<{
+    started_at: Date | null;
+    last_event_at: Date | null;
+    finished_ok: boolean | null;
+    failed: boolean | null;
+    decision_id: string | null;
+  }>;
+  const lc = lifecycle[0] ?? {
+    started_at: null,
+    last_event_at: null,
+    finished_ok: null,
+    failed: null,
+    decision_id: null,
+  };
+
+  const startedAt = (lc.started_at ?? new Date(turns[0].created_at)).toISOString();
+  const lastEventAt = (
+    lc.last_event_at ?? new Date(turns[turns.length - 1].created_at)
+  ).toISOString();
+
+  // See the recency-based status comment in listMeetings — same logic.
+  const stale = Date.now() - new Date(lastEventAt).getTime() >= SPEAKING_NOW_WINDOW_MS;
+  const status: MeetingSummary["status"] = lc.failed
+    ? "failed"
+    : lc.finished_ok || stale
+      ? "completed"
+      : "in_progress";
+
+  const summary = _aggregateMeeting({
+    run_id: runId,
+    crew,
+    project,
+    decision_id: lc.decision_id,
+    started_at: startedAt,
+    last_event_at: lastEventAt,
+    status,
+    turns,
+  });
+
+  return { ...summary, turns };
+}

@@ -9,6 +9,42 @@ export const metadata = {
   title: "Minions stage — who's working on what",
 };
 
+/**
+ * Banner shown above the legacy Stage view announcing the retirement.
+ * Resolution Q6 of the living-org-spaces proposal: keep Stage accessible
+ * for one release with a redirect banner pointing to the new surfaces,
+ * then delete the route + components in the release after.
+ */
+function StageRetirementBanner() {
+  return (
+    <div className="border-b border-[var(--accent)]/30 bg-[var(--accent)]/10 px-4 py-3">
+      <div className="mx-auto flex max-w-5xl flex-col gap-1 text-sm">
+        <div className="font-medium text-[var(--text-primary)]">
+          This view is being retired.
+        </div>
+        <div className="text-xs text-[var(--text-muted)]">
+          To see what crews are working on right now (with full round-table
+          visualization), open{" "}
+          <Link
+            href="/meetings"
+            className="font-mono text-[var(--accent)] hover:underline"
+          >
+            /meetings
+          </Link>
+          . To browse the roster or talk to a specific agent, open{" "}
+          <Link
+            href="/roster"
+            className="font-mono text-[var(--accent)] hover:underline"
+          >
+            /roster
+          </Link>
+          .
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default async function StagePage() {
   const [agents, events] = await Promise.all([
     listActiveAgents(),
@@ -48,6 +84,7 @@ export default async function StagePage() {
             <HeartbeatDot />
           </div>
         </header>
+        <StageRetirementBanner />
         <Stage initialEvents={events} agents={agents} />
       </main>
     </div>

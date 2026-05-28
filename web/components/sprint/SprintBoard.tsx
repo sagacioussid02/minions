@@ -17,8 +17,11 @@ import { prettyRole } from "@/lib/roles";
 import { colorFor, registerProjects } from "@/lib/project-color";
 import { CRON_SCHEDULES, describeNextRun } from "@/lib/cron-schedule";
 
+// Backlog is intentionally absent from the rendered order — the column
+// still exists in the schema for compatibility, but it's unused in
+// today's flow and hiding it removes a permanently empty lane from the
+// operator's view.
 const COLUMN_ORDER: SprintColumn[] = [
-  "backlog",
   "awaiting_you",
   "approved",
   "in_progress",
@@ -159,7 +162,7 @@ export function SprintBoard({ initial }: { initial: Board }) {
         onShowClosedChange={setShowClosed}
       />
       <SprintHeaderStrip cards={filteredCards} />
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 xl:grid-cols-5">
         {COLUMN_ORDER.map((col) => (
           <Column
             key={col}
@@ -169,6 +172,7 @@ export function SprintBoard({ initial }: { initial: Board }) {
           />
         ))}
       </div>
+      <JargonLegend />
       {selectedTask && (
         <TaskDrawer
           task={selectedTask}
@@ -945,6 +949,36 @@ function formatAgeMinutes(minutes: number): string {
   if (hours < 24) return `${Math.round(hours)}h ago`;
   const days = hours / 24;
   return `${Math.round(days)}d ago`;
+}
+
+function JargonLegend() {
+  // Short glossary for the chips and labels scattered through the board.
+  // Kept inline (not a tooltip-per-chip) so investors / new operators can
+  // scan the whole vocabulary at a glance.
+  const items: Array<{ term: string; meaning: string }> = [
+    { term: "low / medium / high", meaning: "Risk level of the change. Drives reviewer set + auto-merge eligibility." },
+    { term: "p1 / p2 / p3", meaning: "Priority. p1 = exec/board ask, p2 = principal/PM ask, p3 = default." },
+    { term: "DA", meaning: "Devil's Advocate ran on this plan and surfaced a critique." },
+    { term: "SEC", meaning: "Security Champion review attached (auto for risk ≥ medium)." },
+    { term: "Changes requested", meaning: "A crew reviewer asked for fixes; owner agent is iterating in-place." },
+    { term: "iter N · ci|conflict|review", meaning: "Owner agent has re-dispatched N times. Tag explains why (CI fail / merge conflict / reviewer fix)." },
+    { term: "⚡ expedited", meaning: "Bypasses the slow approval lane (exec request or auto-fix)." },
+  ];
+  return (
+    <section className="mt-6 rounded-lg border border-[var(--line)] bg-[var(--bg-canvas)] p-3">
+      <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+        Legend
+      </div>
+      <dl className="grid grid-cols-1 gap-x-6 gap-y-1.5 text-[11px] sm:grid-cols-2 lg:grid-cols-3">
+        {items.map((item) => (
+          <div key={item.term} className="flex gap-2">
+            <dt className="shrink-0 font-mono text-[var(--text-primary)]">{item.term}</dt>
+            <dd className="text-[var(--text-muted)]">— {item.meaning}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
 }
 
 function formatFailureKind(kind: string): string {
