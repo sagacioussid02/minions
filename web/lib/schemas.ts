@@ -99,11 +99,23 @@ export type ActivityEvent = z.infer<typeof ActivityEventSchema>;
 
 // ---------- Cost ----------
 
+export const CostBreakdownRowSchema = z.object({
+  project: z.string().nullable(),
+  role: z.string(),
+  display_name: z.string().nullable(),
+  cost_usd: z.number(),
+  calls: z.number().int(),
+});
+export type CostBreakdownRow = z.infer<typeof CostBreakdownRowSchema>;
+
 export const CostSummarySchema = z.object({
   today_usd: z.number(),
   week_to_date_usd: z.number(),
   week_cap_usd: z.number(),
   fraction_of_week_cap: z.number(),
+  // Per-agent (project + role) spend this week, highest first. Empty when
+  // nothing logged yet.
+  breakdown: z.array(CostBreakdownRowSchema).default([]),
 });
 export type CostSummary = z.infer<typeof CostSummarySchema>;
 

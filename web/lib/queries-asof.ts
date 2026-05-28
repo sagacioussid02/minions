@@ -263,5 +263,6 @@ export async function costSummaryAt(asOf: Date): Promise<CostSummary> {
     week_to_date_usd: row.week_to_date_usd,
     week_cap_usd: WEEKLY_CAP_USD,
     fraction_of_week_cap: WEEKLY_CAP_USD ? row.week_to_date_usd / WEEKLY_CAP_USD : 0,
+    breakdown: [],
   };
 }
