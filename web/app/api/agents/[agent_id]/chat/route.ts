@@ -13,6 +13,11 @@ import { z } from "zod";
 import { buildAgentContext } from "@/lib/agent-chat/context";
 import { respond } from "@/lib/agent-chat/chat";
 import {
+  agentChatSpendTodayUsd,
+  dailyBudgetCap,
+  recordChatCost,
+} from "@/lib/agent-chat/cost";
+import {
   appendMessage,
   createThread,
   getThread,
@@ -57,6 +62,21 @@ export async function POST(req: NextRequest, ctx: RouteParams): Promise<Response
     return NextResponse.json(
       { error: "ANTHROPIC_API_KEY is not configured on this deployment" },
       { status: 503 },
+    );
+  }
+
+  // Per-day budget cap (X1). Default $1/day across all agents; override
+  // via MINIONS_AGENT_CHAT_DAILY_BUDGET_USD on the deployment.
+  const cap = dailyBudgetCap();
+  const spentToday = await agentChatSpendTodayUsd();
+  if (spentToday >= cap) {
+    return NextResponse.json(
+      {
+        error: `agent chat is over the daily spend cap ($${spentToday.toFixed(4)} of $${cap.toFixed(2)}). Resets at midnight UTC; raise MINIONS_AGENT_CHAT_DAILY_BUDGET_USD to extend.`,
+        spent_today_usd: spentToday,
+        cap_usd: cap,
+      },
+      { status: 429 },
     );
   }
 
@@ -107,6 +127,17 @@ export async function POST(req: NextRequest, ctx: RouteParams): Promise<Response
       model: reply.model,
       promptTokens: reply.promptTokens,
       responseTokens: reply.responseTokens,
+    });
+
+    // Best-effort cost record. Failure here must not break the reply.
+    await recordChatCost({
+      agentId: agent_id,
+      threadId: thread.id,
+      project: parsed.project,
+      role: parsed.role,
+      model: reply.model,
+      inputTokens: reply.promptTokens,
+      outputTokens: reply.responseTokens,
     });
 
     const payload = ChatPostResponseSchema.parse({
