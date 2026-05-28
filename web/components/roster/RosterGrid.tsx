@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { type AgentState } from "@/lib/schemas";
 import { AgentChatPanel } from "@/components/agent-chat/AgentChatPanel";
+import { AgentLabel } from "@/components/AgentLabel";
 
 async function fetchAgents(): Promise<AgentState[]> {
   const r = await fetch("/api/agents", { cache: "no-store" });
@@ -118,14 +119,7 @@ export function RosterGrid({ initial }: { initial: AgentState[] }) {
             className="group rounded-lg border border-[var(--line)] bg-[var(--surface-1)] p-3 transition hover:border-[var(--accent)]/40 hover:bg-[var(--surface-2)]"
           >
             <div className="mb-2 flex items-start justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-mono text-sm font-semibold text-[var(--text-primary)]">
-                  {a.display_name ?? a.role}
-                </div>
-                <div className="truncate text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
-                  {a.role.replaceAll("_", " ")}
-                </div>
-              </div>
+              <AgentLabel displayName={a.display_name} role={a.role} />
               <span
                 className={`shrink-0 rounded border px-1.5 py-0.5 text-[9px] uppercase tracking-wider ${TIER_BADGE[a.role_tier] ?? "border-[var(--line)] text-[var(--text-muted)]"}`}
               >

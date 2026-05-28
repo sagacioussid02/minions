@@ -4,6 +4,7 @@ import { Avatar } from "@/components/Avatar";
 import type { Seat } from "@/lib/schemas";
 import { seatCoords, type SeatPosition } from "@/lib/meetings/rituals";
 import { humanize } from "@/lib/meetings/format";
+import { roleShortLabel } from "@/lib/roles";
 
 /**
  * Top-down round-table visualization for living-org-spaces Surface A.
@@ -140,8 +141,11 @@ function SeatNode({
   avatarSize: number;
   compact: boolean;
 }) {
-  const display = seat.agent_display_name ?? seat.agent_role;
-  const seed = display;
+  const hasName = Boolean(seat.agent_display_name?.trim());
+  const display = seat.agent_display_name?.trim() || roleShortLabel(seat.agent_role);
+  // Seed the avatar on the stable role id so it doesn't change when a
+  // display name resolves later.
+  const seed = seat.agent_role;
   const ringColor = seat.is_speaking_now ? "var(--accent)" : undefined;
   return (
     <div
@@ -173,12 +177,14 @@ function SeatNode({
           >
             {truncate(display, 18)}
           </div>
-          <div
-            className="text-center text-[9px] uppercase tracking-wider text-[var(--text-muted)]"
-            style={{ maxWidth: avatarSize + 50 }}
-          >
-            {truncate(prettyRole(seat.agent_role), 20)}
-          </div>
+          {hasName && (
+            <div
+              className="text-center text-[9px] uppercase tracking-wider text-[var(--text-muted)]"
+              style={{ maxWidth: avatarSize + 50 }}
+            >
+              {truncate(roleShortLabel(seat.agent_role), 20)}
+            </div>
+          )}
         </>
       )}
     </div>
@@ -282,13 +288,6 @@ function bubblePlacement(position: SeatPosition): BubblePlacement {
     case "center":
       return { dx: 0, dy: -1, transform: "translate(-50%, -100%)", pointer: "down" };
   }
-}
-
-function prettyRole(role: string): string {
-  return role
-    .split("_")
-    .map((p) => (p.length > 0 ? p[0].toUpperCase() + p.slice(1) : p))
-    .join(" ");
 }
 
 function truncate(s: string, max: number): string {

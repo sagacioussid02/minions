@@ -65,6 +65,57 @@ export function prettyRole(role: string): string {
     .join(" ");
 }
 
+// Short, human role labels for chips shown under an agent's name. Anything
+// not listed falls back to prettyRole(). Keep these tight — they sit as a
+// secondary line beneath the name.
+const ROLE_SHORT_LABEL: Record<string, string> = {
+  ceo: "CEO",
+  cto: "CTO",
+  managing_director: "MD",
+  org_owner: "Org Owner",
+  product_owner: "Product Owner",
+  manager: "Manager",
+  principal_engineer: "Principal Engg",
+  tech_team_lead: "Tech Lead",
+  senior_engineer: "Senior Engg",
+  engineer: "Engineer",
+  intern: "Intern",
+  chief_auditor: "Chief Auditor",
+  process_auditor: "Process Auditor",
+  code_auditor: "Code Auditor",
+  cost_auditor: "Cost Auditor",
+  devils_advocate: "Devil's Advocate",
+  qa_engineer: "QA Engg",
+  security_champion: "Security",
+  test_architect: "Test Architect",
+  cloud_devops: "Cloud DevOps",
+  devsecops: "DevSecOps",
+  team_architect: "Architect",
+  senior_devops: "Senior DevOps",
+  performance_engineer: "Perf Engg",
+  data_engineer: "Data Engg",
+  documentation_engineer: "Docs Engg",
+};
+
+export function roleShortLabel(role: string): string {
+  return ROLE_SHORT_LABEL[role.toLowerCase()] ?? prettyRole(role);
+}
+
+/**
+ * One-line agent label, name-first: ``"Vera — Senior Engg"``. Falls back to
+ * the short role alone when no display name is known. Used wherever an agent
+ * is referenced inline (lists, single-line contexts).
+ */
+export function agentLabel(
+  displayName: string | null | undefined,
+  role: string,
+): string {
+  const short = roleShortLabel(role);
+  const name = (displayName ?? "").trim();
+  if (!name) return short;
+  return `${name} — ${short}`;
+}
+
 export function agentSeedFor(role: string | null, project: string | null): string {
   return `${role ?? "system"}@${project ?? "shared"}`;
 }

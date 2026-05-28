@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import type { MeetingDetail, MeetingTurn, Seat } from "@/lib/schemas";
 import { humanize } from "@/lib/meetings/format";
 import { Prose } from "@/lib/meetings/prose";
+import { agentLabel } from "@/lib/roles";
 import { RoundTable } from "./RoundTable";
 
 /**
@@ -319,8 +320,8 @@ function TranscriptItem({ turn, isNew }: { turn: MeetingTurn; isNew: boolean }) 
       }`}
     >
       <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
-        <span className="font-mono text-[var(--text-primary)]">
-          {turn.agent_display_name ?? turn.agent_role}
+        <span className="font-medium text-[var(--text-primary)]">
+          {agentLabel(turn.agent_display_name, turn.agent_role)}
         </span>
         <span>·</span>
         <span className="uppercase tracking-wider">{turn.role_in_conversation}</span>
