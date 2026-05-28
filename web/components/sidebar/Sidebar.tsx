@@ -9,7 +9,7 @@ import {
   type HeadlineCounters,
   type Question,
 } from "@/lib/schemas";
-import { prettyRole } from "@/lib/roles";
+import { agentLabel, prettyRole } from "@/lib/roles";
 
 type CostResp = CostSummary;
 type HeadlineResp = HeadlineCounters;
@@ -123,7 +123,7 @@ function CostGauge({ summary }: { summary: CostSummary }) {
           No cost data recorded yet.
         </div>
         <div className="mt-1 text-xs text-[var(--text-muted)]">
-          Cap ${summary.week_cap_usd.toFixed(0)}/wk · cost callbacks not firing for CrewAI runs (tracked).
+          Cap ${summary.week_cap_usd.toFixed(0)}/wk · spend appears here after the next crew run.
         </div>
       </div>
     );
@@ -137,6 +137,7 @@ function CostGauge({ summary }: { summary: CostSummary }) {
         : "var(--state-success)";
   const dash = 2 * Math.PI * 36;
   const offset = dash * (1 - frac);
+  const breakdown = summary.breakdown ?? [];
   return (
     <div className="rounded-xl border border-[var(--line)] bg-[var(--bg-elevated)] p-4">
       <div className="mb-3 text-sm uppercase tracking-wider text-[var(--text-muted)]">
@@ -178,6 +179,55 @@ function CostGauge({ summary }: { summary: CostSummary }) {
           </div>
         </div>
       </div>
+      {breakdown.length > 0 && <CostBreakdown rows={breakdown} />}
+    </div>
+  );
+}
+
+function CostBreakdown({ rows }: { rows: CostSummary["breakdown"] }) {
+  const [open, setOpen] = useState(false);
+  const total = rows.reduce((acc, r) => acc + r.cost_usd, 0) || 1;
+  return (
+    <div className="mt-3 border-t border-[var(--line)] pt-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between text-xs text-[var(--text-muted)] transition hover:text-[var(--text-primary)]"
+        aria-expanded={open}
+      >
+        <span>by agent ({rows.length})</span>
+        <span className="tabular-nums">{open ? "−" : "+"}</span>
+      </button>
+      {open && (
+        <ul className="mt-2 space-y-1.5">
+          {rows.map((r) => {
+            const pct = Math.round((r.cost_usd / total) * 100);
+            return (
+              <li key={`${r.project ?? "portfolio"}-${r.role}`} className="text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-[var(--text-primary)]">
+                    {agentLabel(r.display_name, r.role)}
+                  </span>
+                  <span className="shrink-0 tabular-nums text-[var(--text-muted)]">
+                    ${r.cost_usd.toFixed(2)}
+                  </span>
+                </div>
+                <div className="mt-0.5 flex items-center gap-1.5">
+                  <div className="h-1 flex-1 overflow-hidden rounded-full bg-[var(--line)]">
+                    <div
+                      className="h-full rounded-full bg-[var(--accent)]"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span className="shrink-0 text-[9px] text-[var(--text-muted)]">
+                    {r.project ?? "portfolio"} · {r.calls} calls
+                  </span>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

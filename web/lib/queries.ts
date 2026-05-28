@@ -589,6 +589,40 @@ export async function costSummary(): Promise<CostSummary> {
   `) as Array<{ today_usd: number; week_to_date_usd: number }>;
 
   const row = rows[0] ?? { today_usd: 0, week_to_date_usd: 0 };
+
+  // Per-agent (project + role) breakdown for the week, highest spend first.
+  // Display name comes from the same decisions-derived source listActiveAgents
+  // uses, so the panel labels match the roster.
+  const breakdownRows = (await s`
+    WITH wk AS (
+      SELECT project, role, SUM(cost_usd)::float8 AS cost_usd, COUNT(*)::int AS calls
+      FROM cost_log
+      WHERE ts >= DATE_TRUNC('week', NOW()) AND role IS NOT NULL
+      GROUP BY project, role
+    ),
+    names AS (
+      SELECT DISTINCT ON (project, payload->>'proposer_role')
+        project,
+        payload->>'proposer_role' AS role,
+        payload->>'proposer_display_name' AS display_name
+      FROM decisions
+      WHERE payload ? 'proposer_display_name'
+        AND payload->>'proposer_display_name' <> ''
+      ORDER BY project, payload->>'proposer_role', created_at DESC
+    )
+    SELECT wk.project, wk.role, n.display_name, wk.cost_usd, wk.calls
+    FROM wk
+    LEFT JOIN names n ON n.project IS NOT DISTINCT FROM wk.project AND n.role = wk.role
+    ORDER BY wk.cost_usd DESC
+    LIMIT 50
+  `) as Array<{
+    project: string | null;
+    role: string;
+    display_name: string | null;
+    cost_usd: number;
+    calls: number;
+  }>;
+
   return {
     today_usd: row.today_usd,
     week_to_date_usd: row.week_to_date_usd,
@@ -596,6 +630,13 @@ export async function costSummary(): Promise<CostSummary> {
     fraction_of_week_cap: WEEKLY_CAP_USD
       ? row.week_to_date_usd / WEEKLY_CAP_USD
       : 0,
+    breakdown: breakdownRows.map((b) => ({
+      project: b.project,
+      role: b.role,
+      display_name: b.display_name,
+      cost_usd: b.cost_usd,
+      calls: b.calls,
+    })),
   };
 }
 
