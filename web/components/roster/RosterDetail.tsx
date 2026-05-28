@@ -1,6 +1,7 @@
 "use client";
 
 import { type AgentState, type Task } from "@/lib/schemas";
+import { roleShortLabel } from "@/lib/roles";
 
 const TIER_BADGE: Record<string, string> = {
   executive: "border-amber-400/40 text-amber-200",
@@ -38,11 +39,11 @@ export function RosterDetail({
       <section className="rounded-lg border border-[var(--line)] bg-[var(--surface-1)] p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="font-mono text-2xl text-[var(--text-primary)]">
-              {agent.display_name ?? agent.role}
+            <div className="text-2xl font-semibold text-[var(--text-primary)]">
+              {agent.display_name?.trim() || roleShortLabel(agent.role)}
             </div>
             <div className="mt-1 text-xs uppercase tracking-wider text-[var(--text-muted)]">
-              {agent.role.replaceAll("_", " ")} ·{" "}
+              {roleShortLabel(agent.role)} ·{" "}
               {agent.project ?? "portfolio"}
             </div>
             <div className="mt-2 font-mono text-[10px] text-[var(--text-muted)]">

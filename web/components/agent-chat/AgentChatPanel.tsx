@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Avatar } from "@/components/Avatar";
 import type { AgentState } from "@/lib/schemas";
+import { roleShortLabel } from "@/lib/roles";
 
 const TIER_RING: Record<string, string> = {
   executive: "var(--color-role-executive, #fbbf24)",
@@ -151,7 +152,7 @@ export function AgentChatPanel({
     () => messagesQuery.data ?? [],
     [messagesQuery.data],
   );
-  const displayName = agent.display_name ?? agent.role;
+  const displayName = agent.display_name?.trim() || roleShortLabel(agent.role);
   const ring = TIER_RING[agent.role_tier] ?? "var(--accent)";
 
   // Build the rendered list — real messages + optimistic in-flight pair.
@@ -218,11 +219,9 @@ export function AgentChatPanel({
         <div className="flex items-start gap-3 border-b border-[var(--line)] p-4">
           <Avatar seed={agent.id} size={48} ring={ring} mood="active" />
           <div className="min-w-0 flex-1">
-            <div className="truncate font-mono text-sm font-semibold">
-              {displayName}
-            </div>
+            <div className="truncate text-sm font-semibold">{displayName}</div>
             <div className="truncate text-[11px] uppercase tracking-wider text-[var(--text-muted)]">
-              {agent.role.replaceAll("_", " ")}
+              {roleShortLabel(agent.role)}
               {agent.project ? ` · ${agent.project}` : " · portfolio"}
             </div>
           </div>
