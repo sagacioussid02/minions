@@ -512,6 +512,7 @@ function Card({ card, onTaskSelect }: { card: SprintCard; onTaskSelect: (task: T
               Sprint {card.sprint_number}
             </div>
           )}
+          <SubtaskProgress tasks={card.tasks} />
           {card.structured_plan && (
             <StructuredPlanMini card={card} onTaskSelect={onTaskSelect} />
           )}
@@ -613,6 +614,33 @@ function Card({ card, onTaskSelect }: { card: SprintCard; onTaskSelect: (task: T
         </div>
       </div>
     </li>
+  );
+}
+
+function SubtaskProgress({ tasks }: { tasks: Task[] }) {
+  const active = tasks.filter((t) => t.status !== "cancelled");
+  if (active.length === 0) return null;
+  const done = active.filter((t) => t.status === "done").length;
+  const pct = Math.round((done / active.length) * 100);
+  const allDone = done === active.length;
+  return (
+    <div className="mt-1.5" title={`${done} of ${active.length} subtasks done`}>
+      <div className="mb-0.5 flex items-center justify-between text-[9px] uppercase tracking-wider text-[var(--text-muted)]">
+        <span>subtasks</span>
+        <span className="tabular-nums">
+          {done}/{active.length} done
+        </span>
+      </div>
+      <div className="h-1 overflow-hidden rounded-full bg-[var(--line)]">
+        <div
+          className="h-full rounded-full"
+          style={{
+            width: `${pct}%`,
+            background: allDone ? "var(--state-success)" : "var(--accent)",
+          }}
+        />
+      </div>
+    </div>
   );
 }
 

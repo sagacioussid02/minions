@@ -751,6 +751,58 @@ import {
  * Cards labelled `[DRY RUN]` are filtered out — they have no real plan and
  * pollute the board.
  */
+// Board-column ordering, least-advanced → most. Used to place a story at the
+// column of its least-progressed subtask.
+const COLUMN_RANK: Record<SprintColumn, number> = {
+  backlog: 0,
+  awaiting_you: 1,
+  approved: 2,
+  in_progress: 3,
+  review: 4,
+  done: 5,
+};
+
+// Map a Task.status to the board column its subtask sits in.
+function taskBoardColumn(status: Task["status"]): SprintColumn | null {
+  switch (status) {
+    case "unassigned":
+    case "queued":
+      // Both are "work not yet started". The board hides the backlog lane,
+      // so surface these in the visible "approved/queued" column rather than
+      // letting an unassigned subtask hide the whole story.
+      return "approved";
+    case "in_progress":
+    case "blocked":
+      return "in_progress";
+    case "review":
+      return "review";
+    case "done":
+      return "done";
+    case "cancelled":
+      return null; // excluded — a cancelled subtask never holds the story back
+    default:
+      return null;
+  }
+}
+
+/**
+ * Derive a story's board column from its subtasks: the least-advanced
+ * (lowest-rank) column across all non-cancelled subtasks. A story only
+ * reaches "done" when every subtask is done. Falls back to the
+ * decision-derived column when the story has no subtasks.
+ */
+function storyColumnFromTasks(tasks: Task[], fallback: SprintColumn): SprintColumn {
+  let least: SprintColumn | null = null;
+  for (const t of tasks) {
+    const col = taskBoardColumn(t.status);
+    if (col === null) continue;
+    if (least === null || COLUMN_RANK[col] < COLUMN_RANK[least]) {
+      least = col;
+    }
+  }
+  return least ?? fallback;
+}
+
 export async function listSprintBoard(
   project?: string,
   window: SprintWindow = "this_week",
@@ -950,8 +1002,16 @@ export async function listSprintBoard(
       // already picked it up — surface it as in_progress so the operator
       // sees the work move out of the queue immediately, not after the
       // engineer_runs row is persisted at the end of the run.
-      const column: SprintColumn =
+      const decisionColumn: SprintColumn =
         liveCrew && r.column === "approved" ? "in_progress" : (r.column as SprintColumn);
+      // Story sits at its least-advanced subtask (only "done" when all
+      // subtasks are done). Decisions in pre-execution states keep their
+      // decision-derived column; once subtasks exist they drive placement.
+      const cardTasks = tasksByDecision.get(r.decision_id) ?? [];
+      const column: SprintColumn =
+        decisionColumn === "awaiting_you" || cardTasks.length === 0
+          ? decisionColumn
+          : storyColumnFromTasks(cardTasks, decisionColumn);
       const stalled =
         !liveCrew && (
           (column === "awaiting_you" && ageMin > 24 * 60) ||
