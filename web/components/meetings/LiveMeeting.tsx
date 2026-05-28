@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { MeetingDetail, MeetingTurn, Seat } from "@/lib/schemas";
 import { humanize } from "@/lib/meetings/format";
+import { Prose } from "@/lib/meetings/prose";
 import { RoundTable } from "./RoundTable";
 
 /**
@@ -335,11 +336,17 @@ function TranscriptItem({ turn, isNew }: { turn: MeetingTurn; isNew: boolean }) 
         )}
       </div>
       {expanded ? (
-        <pre className="mt-1.5 max-h-80 overflow-auto whitespace-pre-wrap rounded bg-[var(--bg-elevated)] p-2 font-mono text-[10px] leading-snug text-[var(--text-primary)]">
-          {body}
-        </pre>
+        isJson ? (
+          <pre className="mt-1.5 max-h-80 overflow-auto whitespace-pre-wrap rounded bg-[var(--bg-elevated)] p-2 font-mono text-[10px] leading-snug text-[var(--text-primary)]">
+            {body}
+          </pre>
+        ) : (
+          <div className="mt-1.5 max-h-80 overflow-auto rounded bg-[var(--bg-elevated)] p-2.5">
+            <Prose text={body} />
+          </div>
+        )
       ) : (
-        <p className="mt-1.5 text-[11px] leading-snug text-[var(--text-primary)]">
+        <p className="mt-1.5 text-[11.5px] leading-relaxed text-[var(--text-primary)]">
           {preview}
         </p>
       )}

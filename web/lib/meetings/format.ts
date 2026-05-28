@@ -43,10 +43,32 @@ export function humanize(rawContent: string): HumanizedContent {
   }
 
   return {
-    preview: clamp(trimmed, MAX_PREVIEW_CHARS),
+    preview: clamp(cleanInlineText(trimmed), MAX_PREVIEW_CHARS),
     body: trimmed,
     isJson: false,
   };
+}
+
+/**
+ * Strip lightweight markdown so a single sentence reads cleanly inside a
+ * chat bubble or transcript preview. Removes leading heading markers,
+ * list bullets, bold/italic/code markers, and collapses whitespace. Does
+ * NOT try to render formatting — that belongs to the prose renderer.
+ */
+export function cleanInlineText(raw: string): string {
+  return raw
+    .replace(/^#{1,6}\s+/gm, "")                // ## Heading → Heading
+    .replace(/^\s*[-*+]\s+/gm, "")              // - bullet  → bullet
+    .replace(/^\s*\d+\.\s+/gm, "")              // 1. item   → item
+    .replace(/```[\s\S]*?```/g, "")             // drop fenced code blocks
+    .replace(/`([^`]+)`/g, "$1")                // inline `code` → code
+    .replace(/\*\*([^*]+)\*\*/g, "$1")          // **bold**     → bold
+    .replace(/__([^_]+)__/g, "$1")              // __bold__     → bold
+    .replace(/(^|[^\w])\*([^*\n]+)\*/g, "$1$2") // *em*         → em
+    .replace(/(^|[^\w])_([^_\n]+)_/g, "$1$2")   // _em_         → em
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")  // [text](url)  → text
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
