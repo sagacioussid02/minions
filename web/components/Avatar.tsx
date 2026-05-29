@@ -15,21 +15,7 @@ export function Avatar({
   className?: string;
 }) {
   const palette = colorPalette(seed, mood);
-  const base = {
-    seed,
-    size,
-    radius: 50,
-    backgroundColor: palette,
-  };
-  const variant = pickVariant(seed, mood);
-  const svg =
-    variant === "notionists"
-      ? createAvatar(notionists, base).toString()
-      : variant === "personas"
-        ? createAvatar(personas, base).toString()
-        : variant === "lorelei"
-          ? createAvatar(lorelei, base).toString()
-          : createAvatar(bottts, base).toString();
+  const svg = buildAvatarSvg(seed, mood, size);
   const accessory = mood === "active" ? null : idleAccessory(seed);
 
   return (
@@ -64,6 +50,28 @@ export function Avatar({
       )}
     </span>
   );
+}
+
+/**
+ * Build the raw dicebear SVG string for a seed/mood. Shared by the 2D
+ * <Avatar> and the 3D meeting room (which paints it onto a texture), so
+ * an agent looks identical in both renderers.
+ */
+export function buildAvatarSvg(
+  seed: string,
+  mood: "active" | "idle" | "leisure" = "active",
+  size = 96,
+): string {
+  const palette = colorPalette(seed, mood);
+  const base = { seed, size, radius: 50, backgroundColor: palette };
+  const variant = pickVariant(seed, mood);
+  return variant === "notionists"
+    ? createAvatar(notionists, base).toString()
+    : variant === "personas"
+      ? createAvatar(personas, base).toString()
+      : variant === "lorelei"
+        ? createAvatar(lorelei, base).toString()
+        : createAvatar(bottts, base).toString();
 }
 
 function pickVariant(seed: string, mood: "active" | "idle" | "leisure") {

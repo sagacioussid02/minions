@@ -93,15 +93,27 @@ export async function listActiveAgents(): Promise<AgentState[]> {
     ),
     -- Latest decision per (project, proposer_role) gives us a stable display
     -- name. The Python side fills proposer_display_name whenever it knows.
+    -- Names are stamped onto whatever record an agent touched. Pull from
+    -- every source (decisions proposed, tasks owned, meeting turns spoken)
+    -- and keep the most recent per (project, role) — otherwise an agent that
+    -- never proposed a Decision shows up nameless.
     display_names AS (
-      SELECT DISTINCT ON (project, payload->>'proposer_role')
-        project,
-        payload->>'proposer_role' AS role,
-        payload->>'proposer_display_name' AS display_name
-      FROM decisions
-      WHERE payload ? 'proposer_display_name'
-        AND payload->>'proposer_display_name' <> ''
-      ORDER BY project, payload->>'proposer_role', created_at DESC
+      SELECT DISTINCT ON (project, role) project, role, display_name
+      FROM (
+        SELECT project,
+               payload->>'proposer_role' AS role,
+               payload->>'proposer_display_name' AS display_name,
+               created_at
+        FROM decisions
+        WHERE COALESCE(payload->>'proposer_display_name', '') <> ''
+          AND payload->>'proposer_display_name' NOT LIKE '%@%'
+        UNION ALL
+        SELECT project, owner_role AS role, owner_display_name AS display_name, created_at
+        FROM tasks
+        WHERE COALESCE(owner_display_name, '') <> ''
+          AND owner_display_name NOT LIKE '%@%'
+      ) name_sources
+      ORDER BY project, role, created_at DESC
     )
     SELECT
       r.project,
@@ -112,7 +124,10 @@ export async function listActiveAgents(): Promise<AgentState[]> {
       r.errored_recently,
       COALESCE(c.cost_today_usd, 0)::float8 AS cost_today_usd,
       (r.last_event_at > NOW() - INTERVAL '90 seconds') AS in_flight,
-      dn.display_name,
+      -- Name resolution: the agent_names registry (this project, then the
+      -- shared bench) is the source of truth; fall back to whatever name was
+      -- stamped onto a Decision/Task only when the registry has no entry.
+      COALESCE(an_proj.display_name, an_shared.display_name, dn.display_name) AS display_name,
       COALESCE(ld.summary, r.last_event) AS last_output,
       live.run_id AS live_run_id,
       live.crew AS live_crew,
@@ -123,6 +138,8 @@ export async function listActiveAgents(): Promise<AgentState[]> {
     FROM recent r
     LEFT JOIN cost_today c USING (project, role)
     LEFT JOIN display_names dn USING (project, role)
+    LEFT JOIN agent_names an_proj ON an_proj.role = r.role AND an_proj.project = r.project
+    LEFT JOIN agent_names an_shared ON an_shared.role = r.role AND an_shared.project = 'shared'
     LEFT JOIN LATERAL (
       SELECT payload->>'summary' AS summary
       FROM decisions d
@@ -1937,7 +1954,7 @@ export async function listMeetings(opts?: {
         MIN(ct.project) AS project,
         MIN(ct.created_at) AS first_turn_at,
         MAX(ct.created_at) AS last_turn_at,
-        COUNT(*) AS turn_count
+        COUNT(*)::int AS turn_count
       FROM crew_transcripts ct
       WHERE ct.created_at > NOW() - (${windowMinutes}::int || ' minutes')::interval
         AND (${project}::text IS NULL OR ct.project = ${project}::text)
@@ -1969,12 +1986,19 @@ export async function listMeetings(opts?: {
     FROM run_window rw
     LEFT JOIN run_lifecycle rl ON rl.run_id = rw.run_id
     ORDER BY
+      -- Keep the less-frequent group rituals from being evicted by the high
+      -- volume of solo engineer runs: list group crews first, then live, then
+      -- most recent. Without this the LIMIT drops planning/discoverer/etc.
+      (CASE WHEN rw.crew IN (
+        'planning', 'discoverer', 'portfolio_review', 'monthly_portfolio_review',
+        'code_auditor', 'scrum', 'backlog_proposer'
+      ) THEN 0 ELSE 1 END),
       CASE
         WHEN COALESCE(rl.finished_ok, false) OR COALESCE(rl.failed, false) THEN 1
         ELSE 0
       END,
       COALESCE(rl.last_event_at, rw.last_turn_at) DESC
-    LIMIT 50
+    LIMIT 80
   `) as Array<{
     run_id: string;
     crew: string;
