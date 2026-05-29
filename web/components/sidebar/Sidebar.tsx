@@ -221,6 +221,28 @@ function Counters({ c }: { c: HeadlineCounters }) {
   );
 }
 
+/**
+ * Make a question card clickable: jump to the related PR when one exists,
+ * otherwise to the project's sprint board so the operator lands on the
+ * decision in context.
+ */
+function QuestionLink({ q, children }: { q: Question; children: React.ReactNode }) {
+  const cls =
+    "block rounded-md border border-[var(--line)] p-2 transition-colors hover:border-[var(--accent)]/50 hover:bg-[var(--bg-surface)]";
+  if (q.related_pr_url) {
+    return (
+      <a href={q.related_pr_url} target="_blank" rel="noopener noreferrer" className={cls}>
+        {children}
+      </a>
+    );
+  }
+  return (
+    <Link href={`/sprint?project=${encodeURIComponent(q.project)}`} className={cls}>
+      {children}
+    </Link>
+  );
+}
+
 function QuestionsInbox({ qs }: { qs: Question[] }) {
   return (
     <div className="rounded-xl border border-[var(--line)] bg-[var(--bg-elevated)] p-4">
@@ -235,18 +257,20 @@ function QuestionsInbox({ qs }: { qs: Question[] }) {
       ) : (
         <ul className="flex flex-col gap-2">
           {qs.slice(0, 5).map((q) => (
-            <li key={q.id} className="rounded-md border border-[var(--line)] p-2">
-              <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
-                <span>{q.project}</span>
-                <span>·</span>
-                <span>{prettyRole(q.asker_role)}</span>
-                {q.status === "escalated" && (
-                  <span className="ml-auto rounded bg-[var(--state-warn)]/15 px-1 text-[var(--state-warn)]">
-                    escalated
-                  </span>
-                )}
-              </div>
-              <div className="mt-1 line-clamp-2 text-sm">{q.question}</div>
+            <li key={q.id}>
+              <QuestionLink q={q}>
+                <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                  <span>{q.project}</span>
+                  <span>·</span>
+                  <span>{prettyRole(q.asker_role)}</span>
+                  {q.status === "escalated" && (
+                    <span className="ml-auto rounded bg-[var(--state-warn)]/15 px-1 text-[var(--state-warn)]">
+                      escalated
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1 line-clamp-2 text-sm">{q.question}</div>
+              </QuestionLink>
             </li>
           ))}
         </ul>

@@ -14,7 +14,7 @@ export function MeetingsList({ meetings }: { meetings: MeetingSummary[] }) {
   if (meetings.length === 0) {
     return (
       <div className="rounded-lg border border-[var(--line)] p-8 text-center text-sm text-[var(--text-muted)]">
-        No meetings in the last 24h. Run{" "}
+        No meetings in the last 7 days. Run{" "}
         <code className="rounded bg-[var(--bg-canvas)] px-1 py-0.5">
           minions plan &lt;project&gt; --no-dry-run
         </code>{" "}
@@ -23,36 +23,47 @@ export function MeetingsList({ meetings }: { meetings: MeetingSummary[] }) {
     );
   }
 
-  const inProgress = meetings.filter((m) => m.status === "in_progress");
-  const completed = meetings.filter((m) => m.status !== "in_progress");
+  // Split by ritual type (group round-table vs solo focused work) so group
+  // rituals always get their own section — even while live — and aren't
+  // buried by frequent engineer runs. Live meetings sort to the top.
+  const liveFirst = (a: MeetingSummary, b: MeetingSummary) =>
+    Number(b.status === "in_progress") - Number(a.status === "in_progress");
+  const groupRituals = meetings.filter((m) => m.multi_agent).sort(liveFirst);
+  const focusedWork = meetings.filter((m) => !m.multi_agent).sort(liveFirst);
 
   return (
     <div className="space-y-8">
-      {inProgress.length > 0 && (
-        <section>
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-[var(--accent)]">
-            Happening now ({inProgress.length})
-          </h2>
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {inProgress.map((m) => (
-              <MeetingCard key={m.run_id} meeting={m} live />
-            ))}
-          </div>
-        </section>
-      )}
-      {completed.length > 0 && (
-        <section>
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-            Recent meetings ({completed.length})
-          </h2>
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {completed.map((m) => (
-              <MeetingCard key={m.run_id} meeting={m} live={false} />
-            ))}
-          </div>
-        </section>
-      )}
+      <MeetingSection title="Group rituals" meetings={groupRituals} accent />
+      <MeetingSection title="Focused work" meetings={focusedWork} />
     </div>
+  );
+}
+
+function MeetingSection({
+  title,
+  meetings,
+  accent = false,
+}: {
+  title: string;
+  meetings: MeetingSummary[];
+  accent?: boolean;
+}) {
+  if (meetings.length === 0) return null;
+  return (
+    <section>
+      <h2
+        className={`mb-3 text-xs font-semibold uppercase tracking-wider ${
+          accent ? "text-[var(--accent)]" : "text-[var(--text-muted)]"
+        }`}
+      >
+        {title} ({meetings.length})
+      </h2>
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        {meetings.map((m) => (
+          <MeetingCard key={m.run_id} meeting={m} live={m.status === "in_progress"} />
+        ))}
+      </div>
+    </section>
   );
 }
 
