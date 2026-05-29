@@ -25,20 +25,27 @@ The default JSON backends + `ConsoleNotifier` mean you can iterate on most of th
 ```bash
 minions check                          # validates config and manifests
 minions org                            # prints org topology
-minions plan Demo                      # dry-run by default — prints what it would do
+minions plan demo                      # dry-run by default — prints what it would do
 minions decisions list                 # inspect submitted Decisions
-minions dashboard                      # Streamlit UI at http://localhost:8501
 ```
 
 The crew tests use mocked Claude responses (see `tests/test_planning_crew.py`), so you can develop and test the planning flow with no Anthropic key at all.
+
+The **operator console** (the visual surface — live meetings, roster, sprint board) is the Next.js app in [`web/`](web/):
+
+```bash
+cd web && pnpm install && pnpm dev     # http://localhost:3000
+```
+
+It reads from the same Postgres the orchestrator writes to; with an empty database it renders clean empty states, so you can work on the UI without a populated DB.
 
 ## What we want help with
 
 Look at [issues labeled `good first issue`](https://github.com/sagacioussid02/minions/labels/good%20first%20issue). Common contribution shapes:
 
+- **Operator console / UX** — the Next.js app in `web/` (the meeting room, roster, sprint board). Lots of polish and feature room; high visual impact.
 - **CLI commands & flags** — small, well-scoped, lots of room.
-- **Dashboard polish** — Streamlit views in `src/minions/dashboard/`. Plenty of UX issues.
-- **Engineer crew** — the next major milestone. See `src/minions/crews/engineer.py` and the issues tagged `engineer-crew`.
+- **Crews & rituals** — extend the agent crews in `src/minions/crews/` or add new Agile rituals to the cadence.
 - **Docs & examples** — always welcome.
 - **Bug fixes** — most carry tests; please add a regression test with the fix.
 
