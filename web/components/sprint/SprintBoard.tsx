@@ -17,8 +17,11 @@ import { prettyRole } from "@/lib/roles";
 import { colorFor, registerProjects } from "@/lib/project-color";
 import { CRON_SCHEDULES, describeNextRun } from "@/lib/cron-schedule";
 
+// Backlog is intentionally absent from the rendered order — the column
+// still exists in the schema for compatibility, but it's unused in
+// today's flow and hiding it removes a permanently empty lane from the
+// operator's view.
 const COLUMN_ORDER: SprintColumn[] = [
-  "backlog",
   "awaiting_you",
   "approved",
   "in_progress",
@@ -43,6 +46,32 @@ const COLUMN_HINT: Record<SprintColumn, string> = {
   review: "PR open · CI green · waiting on merge.",
   done: "Shipped.",
 };
+
+// Swimlane lanes — the work columns subtasks are distributed across. Mirrors
+// the server-side taskBoardColumn() mapping in lib/queries.ts.
+const SWIMLANE_LANES: Array<{ key: SprintColumn; label: string }> = [
+  { key: "approved", label: "Queued" },
+  { key: "in_progress", label: "In Progress" },
+  { key: "review", label: "Review" },
+  { key: "done", label: "Done" },
+];
+
+function taskLane(status: Task["status"]): SprintColumn | null {
+  switch (status) {
+    case "unassigned":
+    case "queued":
+      return "approved";
+    case "in_progress":
+    case "blocked":
+      return "in_progress";
+    case "review":
+      return "review";
+    case "done":
+      return "done";
+    default:
+      return null; // cancelled — not shown
+  }
+}
 
 const WINDOW_OPTIONS: Array<{ value: SprintWindow; label: string }> = [
   { value: "this_week", label: "This week" },
@@ -89,6 +118,7 @@ export function SprintBoard({ initial }: { initial: Board }) {
   const [sprintFilter, setSprintFilter] = useState<number | null>(null);
   const [showClosed, setShowClosed] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [view, setView] = useState<"swimlane" | "board">("swimlane");
 
   const { data } = useQuery({
     queryKey: ["sprint-board", tab, window],
@@ -158,17 +188,25 @@ export function SprintBoard({ initial }: { initial: Board }) {
         showClosed={showClosed}
         onShowClosedChange={setShowClosed}
       />
-      <SprintHeaderStrip cards={filteredCards} />
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 xl:grid-cols-6">
-        {COLUMN_ORDER.map((col) => (
-          <Column
-            key={col}
-            column={col}
-            cards={byColumn.get(col) ?? []}
-            onTaskSelect={setSelectedTask}
-          />
-        ))}
+      <div className="flex items-center justify-between gap-2">
+        <SprintHeaderStrip cards={filteredCards} />
+        <ViewToggle view={view} onChange={setView} />
       </div>
+      {view === "swimlane" ? (
+        <SwimlaneBoard cards={filteredCards} onTaskSelect={setSelectedTask} />
+      ) : (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 xl:grid-cols-5">
+          {COLUMN_ORDER.map((col) => (
+            <Column
+              key={col}
+              column={col}
+              cards={byColumn.get(col) ?? []}
+              onTaskSelect={setSelectedTask}
+            />
+          ))}
+        </div>
+      )}
+      <JargonLegend />
       {selectedTask && (
         <TaskDrawer
           task={selectedTask}
@@ -381,6 +419,179 @@ function SprintHeaderStrip({ cards }: { cards: SprintCard[] }) {
   );
 }
 
+function ViewToggle({
+  view,
+  onChange,
+}: {
+  view: "swimlane" | "board";
+  onChange: (v: "swimlane" | "board") => void;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-1 rounded-md border border-[var(--line)] p-0.5 text-[10px]">
+      {(["swimlane", "board"] as const).map((v) => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => onChange(v)}
+          className={`rounded px-2 py-1 uppercase tracking-wider transition ${
+            view === v
+              ? "bg-[var(--accent)]/15 text-[var(--accent)]"
+              : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+          }`}
+        >
+          {v}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Swimlane: one row per story. Story card pinned in the left rail; its
+// subtasks distributed across the work lanes by status, connected by a
+// dotted lineage spine.
+function SwimlaneBoard({
+  cards,
+  onTaskSelect,
+}: {
+  cards: SprintCard[];
+  onTaskSelect: (task: Task) => void;
+}) {
+  if (cards.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-[var(--line)] p-8 text-center text-sm text-[var(--text-muted)]">
+        No stories in this window.
+      </div>
+    );
+  }
+  // Most-recent (lowest age) first.
+  const rows = [...cards].sort((a, b) => a.age_minutes - b.age_minutes);
+  const gridCols = `minmax(240px, 1.1fr) repeat(${SWIMLANE_LANES.length}, minmax(0, 1fr))`;
+  return (
+    <div className="overflow-x-auto">
+      <div className="min-w-[860px]">
+        {/* Header */}
+        <div className="grid gap-3 pb-2" style={{ gridTemplateColumns: gridCols }}>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            Story
+          </div>
+          {SWIMLANE_LANES.map((lane) => (
+            <div
+              key={lane.key}
+              className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]"
+            >
+              {lane.label}
+            </div>
+          ))}
+        </div>
+        {/* Rows */}
+        <div className="space-y-3">
+          {rows.map((card) => (
+            <SwimlaneRow
+              key={card.decision_id}
+              card={card}
+              gridCols={gridCols}
+              onTaskSelect={onTaskSelect}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SwimlaneRow({
+  card,
+  gridCols,
+  onTaskSelect,
+}: {
+  card: SprintCard;
+  gridCols: string;
+  onTaskSelect: (task: Task) => void;
+}) {
+  // Bucket this story's subtasks into lanes.
+  const byLane = new Map<SprintColumn, Task[]>();
+  for (const t of card.tasks) {
+    const lane = taskLane(t.status);
+    if (lane === null) continue;
+    const arr = byLane.get(lane) ?? [];
+    arr.push(t);
+    byLane.set(lane, arr);
+  }
+  const hasSubtasks = card.tasks.some((t) => taskLane(t.status) !== null);
+  return (
+    <div className="relative rounded-lg border border-[var(--line)] bg-[var(--bg-surface)]/40 p-2">
+      {/* Dotted lineage spine across the lane area. */}
+      <div
+        className="pointer-events-none absolute left-[240px] right-2 top-7 border-t border-dashed border-[var(--line)]"
+        aria-hidden
+      />
+      <ul className="grid items-start gap-3" style={{ gridTemplateColumns: gridCols }}>
+        {/* Rail: the story card (inline task list suppressed). */}
+        <Card card={card} onTaskSelect={onTaskSelect} hideInlineTasks />
+        {/* Lane cells. */}
+        {SWIMLANE_LANES.map((lane) => {
+          const tasks = byLane.get(lane.key) ?? [];
+          return (
+            <li key={lane.key} className="space-y-2">
+              {tasks.map((t) => (
+                <SubtaskCard key={t.id} task={t} onSelect={onTaskSelect} />
+              ))}
+              {tasks.length === 0 && lane.key === "approved" && !hasSubtasks && (
+                <div className="rounded border border-dashed border-[var(--line)] px-2 py-3 text-center text-[9px] text-[var(--text-muted)]">
+                  no subtasks yet
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function SubtaskCard({
+  task,
+  onSelect,
+}: {
+  task: Task;
+  onSelect: (task: Task) => void;
+}) {
+  const isUnassigned = task.status === "unassigned";
+  const isBlocked = task.status === "blocked";
+  const owner = task.owner_display_name;
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(task)}
+      className={`block w-full rounded-md border p-2 text-left transition hover:border-[var(--accent)]/50 ${
+        isBlocked
+          ? "border-[var(--state-danger)]/50 bg-[var(--state-danger)]/5"
+          : isUnassigned
+            ? "border-dashed border-amber-300/70 bg-amber-50/40"
+            : "border-[var(--line)] bg-[var(--bg-elevated)]"
+      }`}
+      title={task.description || task.title}
+    >
+      <div className="line-clamp-2 text-[11px] font-medium leading-snug text-[var(--text-primary)]">
+        {task.title}
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-1 text-[9px] text-[var(--text-muted)]">
+        <span className="rounded bg-[var(--bg-surface)] px-1 font-mono uppercase">
+          {task.estimated_effort}
+        </span>
+        {isBlocked && (
+          <span className="rounded bg-[var(--state-danger)]/15 px-1 uppercase text-[var(--state-danger)]">
+            blocked
+          </span>
+        )}
+        <span className="truncate">
+          {owner ? `👤 ${owner}` : isUnassigned ? "⏳ auto-assigned" : "—"}
+        </span>
+      </div>
+    </button>
+  );
+}
+
 function Column({
   column,
   cards,
@@ -418,7 +629,15 @@ function Column({
   );
 }
 
-function Card({ card, onTaskSelect }: { card: SprintCard; onTaskSelect: (task: Task) => void }) {
+function Card({
+  card,
+  onTaskSelect,
+  hideInlineTasks = false,
+}: {
+  card: SprintCard;
+  onTaskSelect: (task: Task) => void;
+  hideInlineTasks?: boolean;
+}) {
   const qc = useQueryClient();
   const projectColor = colorFor(card.project);
   const ageLabel = formatAgeMinutes(card.age_minutes);
@@ -508,7 +727,8 @@ function Card({ card, onTaskSelect }: { card: SprintCard; onTaskSelect: (task: T
               Sprint {card.sprint_number}
             </div>
           )}
-          {card.structured_plan && (
+          <SubtaskProgress tasks={card.tasks} />
+          {card.structured_plan && !hideInlineTasks && (
             <StructuredPlanMini card={card} onTaskSelect={onTaskSelect} />
           )}
           <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-[var(--text-muted)]">
@@ -609,6 +829,33 @@ function Card({ card, onTaskSelect }: { card: SprintCard; onTaskSelect: (task: T
         </div>
       </div>
     </li>
+  );
+}
+
+function SubtaskProgress({ tasks }: { tasks: Task[] }) {
+  const active = tasks.filter((t) => t.status !== "cancelled");
+  if (active.length === 0) return null;
+  const done = active.filter((t) => t.status === "done").length;
+  const pct = Math.round((done / active.length) * 100);
+  const allDone = done === active.length;
+  return (
+    <div className="mt-1.5" title={`${done} of ${active.length} subtasks done`}>
+      <div className="mb-0.5 flex items-center justify-between text-[9px] uppercase tracking-wider text-[var(--text-muted)]">
+        <span>subtasks</span>
+        <span className="tabular-nums">
+          {done}/{active.length} done
+        </span>
+      </div>
+      <div className="h-1 overflow-hidden rounded-full bg-[var(--line)]">
+        <div
+          className="h-full rounded-full"
+          style={{
+            width: `${pct}%`,
+            background: allDone ? "var(--state-success)" : "var(--accent)",
+          }}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -945,6 +1192,36 @@ function formatAgeMinutes(minutes: number): string {
   if (hours < 24) return `${Math.round(hours)}h ago`;
   const days = hours / 24;
   return `${Math.round(days)}d ago`;
+}
+
+function JargonLegend() {
+  // Short glossary for the chips and labels scattered through the board.
+  // Kept inline (not a tooltip-per-chip) so investors / new operators can
+  // scan the whole vocabulary at a glance.
+  const items: Array<{ term: string; meaning: string }> = [
+    { term: "low / medium / high", meaning: "Risk level of the change. Drives reviewer set + auto-merge eligibility." },
+    { term: "p1 / p2 / p3", meaning: "Priority. p1 = exec/board ask, p2 = principal/PM ask, p3 = default." },
+    { term: "DA", meaning: "Devil's Advocate ran on this plan and surfaced a critique." },
+    { term: "SEC", meaning: "Security Champion review attached (auto for risk ≥ medium)." },
+    { term: "Changes requested", meaning: "A crew reviewer asked for fixes; owner agent is iterating in-place." },
+    { term: "iter N · ci|conflict|review", meaning: "Owner agent has re-dispatched N times. Tag explains why (CI fail / merge conflict / reviewer fix)." },
+    { term: "⚡ expedited", meaning: "Bypasses the slow approval lane (exec request or auto-fix)." },
+  ];
+  return (
+    <section className="mt-6 rounded-lg border border-[var(--line)] bg-[var(--bg-canvas)] p-3">
+      <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+        Legend
+      </div>
+      <dl className="grid grid-cols-1 gap-x-6 gap-y-1.5 text-[11px] sm:grid-cols-2 lg:grid-cols-3">
+        {items.map((item) => (
+          <div key={item.term} className="flex gap-2">
+            <dt className="shrink-0 font-mono text-[var(--text-primary)]">{item.term}</dt>
+            <dd className="text-[var(--text-muted)]">— {item.meaning}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
 }
 
 function formatFailureKind(kind: string): string {
