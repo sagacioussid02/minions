@@ -600,3 +600,33 @@ export const HeadlineCountersSchema = z.object({
   queued_fixes: z.number(),
 });
 export type HeadlineCounters = z.infer<typeof HeadlineCountersSchema>;
+
+// ---------- Site Sentry ----------
+
+export const SiteHealthCheckSchema = z.object({
+  check_path: z.string(),
+  ok: z.boolean(),
+  status_code: z.number().nullable(),
+  latency_ms: z.number().nullable(),
+  error: z.string().nullable(),
+  last_check_at: z.string(),
+  last_ok_at: z.string().nullable(),
+  last_failed_at: z.string().nullable(),
+  p50_ms_24h: z.number(),
+  p99_ms_24h: z.number(),
+  uptime_24h: z.number(),
+  samples_24h: z.number(),
+});
+export type SiteHealthCheck = z.infer<typeof SiteHealthCheckSchema>;
+
+export const SiteHealthProjectSchema = z.object({
+  project: z.string(),
+  ok: z.boolean(),
+  checks: z.array(SiteHealthCheckSchema),
+});
+export type SiteHealthProject = z.infer<typeof SiteHealthProjectSchema>;
+
+export const SiteHealthSchema = z.object({
+  projects: z.array(SiteHealthProjectSchema),
+});
+export type SiteHealth = z.infer<typeof SiteHealthSchema>;

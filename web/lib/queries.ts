@@ -20,6 +20,7 @@ import {
   type HeadlineCounters,
   type HeroEvent,
   type Question,
+  type SiteHealth,
   type WorkItem,
   type WorkItemStage,
 } from "./schemas";
@@ -2168,4 +2169,117 @@ export async function getMeeting(runId: string): Promise<MeetingDetail | null> {
   });
 
   return { ...summary, turns };
+}
+
+// ---------- Site Sentry ----------
+
+/**
+ * Per-project + per-check site-health summary for the /sentry console page.
+ *
+ * One row per (project, check_path) joining:
+ *   - the latest sample (for current status + last status_code/latency/error),
+ *   - last_ok_at / last_failed_at across all history,
+ *   - rolling 24h p50 / p99 latency + uptime fraction.
+ *
+ * Aggregated to a project's overall ``ok`` flag (any failing check =>
+ * project not ok) for the Sidebar tile.
+ */
+export async function listSiteHealth(): Promise<SiteHealth> {
+  const s = sql();
+  const rows = (await s`
+    WITH latest AS (
+      SELECT DISTINCT ON (project, check_path)
+        project, check_path, ts, ok, status_code, latency_ms, error
+      FROM site_health_samples
+      ORDER BY project, check_path, ts DESC
+    ),
+    last_ok AS (
+      SELECT project, check_path, MAX(ts) AS last_ok_at
+      FROM site_health_samples WHERE ok
+      GROUP BY project, check_path
+    ),
+    last_failed AS (
+      SELECT project, check_path, MAX(ts) AS last_failed_at
+      FROM site_health_samples WHERE NOT ok
+      GROUP BY project, check_path
+    ),
+    last_24h AS (
+      SELECT
+        project,
+        check_path,
+        percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms)::int AS p50_ms,
+        percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ms)::int AS p99_ms,
+        COUNT(*)::int AS samples_24h,
+        (SUM(CASE WHEN ok THEN 1 ELSE 0 END)::float8
+          / NULLIF(COUNT(*), 0))::float8 AS uptime_24h
+      FROM site_health_samples
+      WHERE ts >= NOW() - INTERVAL '24 hours' AND latency_ms IS NOT NULL
+      GROUP BY project, check_path
+    )
+    SELECT
+      l.project,
+      l.check_path,
+      l.ok,
+      l.status_code,
+      l.latency_ms,
+      l.error,
+      l.ts AS last_check_at,
+      ok_row.last_ok_at,
+      fail_row.last_failed_at,
+      COALESCE(w.p50_ms, 0)::int AS p50_ms_24h,
+      COALESCE(w.p99_ms, 0)::int AS p99_ms_24h,
+      COALESCE(w.uptime_24h, 1.0)::float8 AS uptime_24h,
+      COALESCE(w.samples_24h, 0)::int AS samples_24h
+    FROM latest l
+    LEFT JOIN last_ok ok_row USING (project, check_path)
+    LEFT JOIN last_failed fail_row USING (project, check_path)
+    LEFT JOIN last_24h w USING (project, check_path)
+    ORDER BY l.project, l.check_path
+  `) as Array<{
+    project: string;
+    check_path: string;
+    ok: boolean;
+    status_code: number | null;
+    latency_ms: number | null;
+    error: string | null;
+    last_check_at: Date | string;
+    last_ok_at: Date | string | null;
+    last_failed_at: Date | string | null;
+    p50_ms_24h: number;
+    p99_ms_24h: number;
+    uptime_24h: number;
+    samples_24h: number;
+  }>;
+
+  const byProject = new Map<
+    string,
+    { project: string; ok: boolean; checks: SiteHealth["projects"][number]["checks"] }
+  >();
+  for (const r of rows) {
+    let bucket = byProject.get(r.project);
+    if (!bucket) {
+      bucket = { project: r.project, ok: true, checks: [] };
+      byProject.set(r.project, bucket);
+    }
+    if (!r.ok) bucket.ok = false;
+    bucket.checks.push({
+      check_path: r.check_path,
+      ok: r.ok,
+      status_code: r.status_code,
+      latency_ms: r.latency_ms,
+      error: r.error,
+      last_check_at: _iso(r.last_check_at),
+      last_ok_at: r.last_ok_at ? _iso(r.last_ok_at) : null,
+      last_failed_at: r.last_failed_at ? _iso(r.last_failed_at) : null,
+      p50_ms_24h: r.p50_ms_24h,
+      p99_ms_24h: r.p99_ms_24h,
+      uptime_24h: r.uptime_24h,
+      samples_24h: r.samples_24h,
+    });
+  }
+  return { projects: Array.from(byProject.values()) };
+}
+
+function _iso(v: Date | string): string {
+  return v instanceof Date ? v.toISOString() : String(v);
 }

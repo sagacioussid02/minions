@@ -9,8 +9,9 @@ export const metadata = {
 };
 
 export default async function MeetingsPage() {
-  // 7-day window so less-frequent group rituals (weekly planning, scrum)
-  // stay visible alongside high-frequency engineer runs. Older runs archived.
+  // 7-day window. Picks up weekly planning meetings (staggered across
+  // projects, so the most recent one for some projects is 3-5 days old)
+  // and other sub-daily rituals. Older runs are archived (not shown).
   const meetings = await listMeetings({ windowMinutes: 7 * 24 * 60 });
 
   return (

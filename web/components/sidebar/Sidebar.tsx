@@ -8,6 +8,7 @@ import {
   type CostSummary,
   type HeadlineCounters,
   type Question,
+  type SiteHealth,
 } from "@/lib/schemas";
 import { prettyRole } from "@/lib/roles";
 
@@ -18,6 +19,7 @@ const NAV_ITEMS: ReadonlyArray<readonly [string, string]> = [
   ["/sprint", "Sprint"],
   ["/roster", "Roster"],
   ["/meetings", "Meetings"],
+  ["/sentry", "Sentry"],
   ["/leadership", "Leadership"],
   ["/spokesperson", "Spokesperson"],
   ["/replay", "Replay"],
@@ -121,6 +123,7 @@ export function Sidebar({
       </nav>
       <CostGauge summary={cost.data} />
       <Counters c={headline.data} />
+      <SentryTile />
       <QuestionsInbox qs={questions.data.questions} />
     </aside>
   );
@@ -218,6 +221,60 @@ function Counters({ c }: { c: HeadlineCounters }) {
         ))}
       </dl>
     </div>
+  );
+}
+
+// Compact site-health tile. Client-fetches /api/site-health so the home
+// page server component doesn't need to take a new prop.
+async function fetchSiteHealth(): Promise<SiteHealth> {
+  const r = await fetch("/api/site-health", { cache: "no-store" });
+  if (!r.ok) throw new Error("site-health fetch failed");
+  return r.json();
+}
+
+function SentryTile() {
+  const q = useQuery({
+    queryKey: ["site-health"],
+    queryFn: fetchSiteHealth,
+    initialData: { projects: [] } as SiteHealth,
+    refetchInterval: 30_000,
+  });
+  const projects = q.data.projects;
+  const total = projects.length;
+  const green = projects.filter((p) => p.ok).length;
+  const allGood = total === 0 || green === total;
+  const dot = allGood ? "var(--state-success)" : "var(--state-danger)";
+
+  return (
+    <Link
+      href="/sentry"
+      className="block rounded-xl border border-[var(--line)] bg-[var(--bg-elevated)] p-4 transition-colors hover:border-[var(--accent)]/50"
+    >
+      <div className="mb-2 flex items-center gap-2 text-sm uppercase tracking-wider text-[var(--text-muted)]">
+        Site health
+        <span
+          className="inline-block h-2 w-2 rounded-full"
+          style={{ backgroundColor: dot }}
+          aria-hidden
+        />
+        <span className="ml-auto font-mono text-[10px]">
+          {green} / {total}
+        </span>
+      </div>
+      {total === 0 ? (
+        <p className="text-xs text-[var(--text-muted)]">
+          No checks yet — set <code className="font-mono">deploy.production_url</code> on a project.
+        </p>
+      ) : allGood ? (
+        <p className="text-xs text-[var(--text-success,var(--state-success))]">
+          All projects healthy.
+        </p>
+      ) : (
+        <p className="text-xs text-[var(--state-danger)]">
+          {total - green} project{total - green === 1 ? "" : "s"} failing — open Sentry.
+        </p>
+      )}
+    </Link>
   );
 }
 
