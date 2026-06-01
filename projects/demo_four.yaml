@@ -18,7 +18,10 @@ delivery_targets:
 
 team:
   intern: false
-  engineers: 1
+  # Bumped to 2 engineer seats so test_project_role_slots_respects_team_overrides
+  # (in tests/test_roster.py) finds the expected 2 ENGINEER entries after the
+  # sync-to-public scrub (this fixture mirrors sidspace.yaml upstream).
+  engineers: 2
   enable_security_champion: false
 
 tier_overrides:
