@@ -17,6 +17,7 @@ from minions.questions.store import QuestionStore
 from minions.scheduled.pr_owner_sweep import (
     _classify_failure,
     _is_owner_actionable,
+    _is_terminal_skip,
     run_pr_owner_sweep,
 )
 
@@ -152,7 +153,7 @@ def test_failing_pr_redispatches_owner_in_place(tmp_path: Path) -> None:
     runs = EngineerRunStore(tmp_path / "runs.json")
     decisions = DecisionStore(tmp_path / "dec.json")
     questions = QuestionStore(tmp_path / "q.json")
-    rec = _record(followup_attempts=0)
+    rec = _record(iteration_count=0)
     runs.update(rec)
     decisions.save(_decision())
 
@@ -189,7 +190,7 @@ def test_failing_pr_redispatches_owner_in_place(tmp_path: Path) -> None:
     # Counter is on the SAME record — sticky.
     updated = runs.get(_FIXED_DECISION_ID)
     assert updated is not None
-    assert updated.followup_attempts == 1
+    assert updated.iteration_count == 1
     assert report.outcomes[0].status == "retried"
     # Zero new Decisions filed by the sweep.
     assert len(decisions.list_all()) == 1
@@ -200,7 +201,7 @@ def test_at_cap_escalates_and_skips_thereafter(tmp_path: Path) -> None:
     decisions = DecisionStore(tmp_path / "dec.json")
     questions = QuestionStore(tmp_path / "q.json")
     # Already at the default cap (3) — next sweep should escalate, not retry.
-    rec = _record(followup_attempts=3)
+    rec = _record(iteration_count=3)
     runs.update(rec)
     decisions.save(_decision())
 
@@ -242,3 +243,94 @@ def test_at_cap_escalates_and_skips_thereafter(tmp_path: Path) -> None:
     assert report2.outcomes[0].status == "skipped"
     assert "awaiting operator" in (report2.outcomes[0].reason or "")
     assert len(questions.list_all()) == 1  # idempotent
+
+
+# --------------------------- terminal-skip handling -------------------------
+
+
+def test_is_terminal_skip_patterns() -> None:
+    assert _is_terminal_skip(
+        "branch 'minions/eng/x' has operator-authored commits; in-place fix declines to overwrite"
+    )
+    assert _is_terminal_skip("in-place target branch 'minions/eng/x' no longer exists")
+    assert _is_terminal_skip("branch 'minions/eng/x' already exists; resolve manually before retry")
+    assert not _is_terminal_skip("preflight failed on step 'pytest' — operator action required")
+    assert not _is_terminal_skip("engineer produced no allowed file changes")
+    assert not _is_terminal_skip(None)
+    assert not _is_terminal_skip("")
+
+
+def test_operator_takeover_escalates_and_stops_dispatching(tmp_path: Path) -> None:
+    """When the engineer skips because the operator pushed to the branch,
+    the sweep must file ONE Question Record + post ONE withdrawal comment,
+    then never re-dispatch — regardless of iteration_count vs cap."""
+    runs = EngineerRunStore(tmp_path / "runs.json")
+    decisions = DecisionStore(tmp_path / "dec.json")
+    questions = QuestionStore(tmp_path / "q.json")
+    rec = _record(iteration_count=0)  # well below the cap of 3
+    runs.update(rec)
+    decisions.save(_decision())
+
+    open_gh, gh = _open_gh(ci="failure", merge="clean")
+    runner_calls = {"n": 0}
+
+    def _runner(_d: Decision, _m: Any, **_kw: Any) -> EngineerResult:
+        runner_calls["n"] += 1
+        return EngineerResult(
+            decision_id=_FIXED_DECISION_ID,
+            branch_name="minions/eng/x",
+            skipped=True,
+            skip_reason=(
+                "branch 'minions/eng/x' has operator-authored commits; "
+                "in-place fix declines to overwrite"
+            ),
+            dry_run=False,
+        )
+
+    report = run_pr_owner_sweep(
+        projects_dir=REPO_ROOT / "projects",
+        store=decisions,
+        engineer_runs_store=runs,
+        questions_store=questions,
+        open_github_client=open_gh,
+        notifier=_SilentNotifier(),
+        api_key="k",
+        dry_run=False,
+        runner=_runner,
+    )
+    assert runner_calls["n"] == 1
+    assert report.outcomes[0].status == "escalated"
+    assert report.outcomes[0].failure_kind == "operator_takeover"
+    assert report.outcomes[0].question_id is not None
+    # Counter must NOT have been bumped — this is a withdrawal, not a real attempt.
+    updated = runs.get(_FIXED_DECISION_ID)
+    assert updated is not None
+    assert updated.iteration_count == 0
+    assert updated.escalated_question_id is not None
+    assert updated.last_failure_kind == "operator_takeover"
+    # ONE withdrawal comment posted (not the retry comment).
+    assert len(gh.comments) == 1
+    assert "Creator is taking care of this with awesomeness" in gh.comments[0]
+    # ONE Question Record filed with the operator_takeover reason.
+    qs = questions.list_all()
+    assert len(qs) == 1
+    assert "operator-authored commits" in (qs[0].escalation_reason or "")
+
+    # Second sweep tick — must be inert (no runner call, no new comment, no new Q).
+    runner_calls["n"] = 0
+    report2 = run_pr_owner_sweep(
+        projects_dir=REPO_ROOT / "projects",
+        store=decisions,
+        engineer_runs_store=runs,
+        questions_store=questions,
+        open_github_client=open_gh,
+        notifier=_SilentNotifier(),
+        api_key="k",
+        dry_run=False,
+        runner=_runner,
+    )
+    assert runner_calls["n"] == 0
+    assert report2.outcomes[0].status == "skipped"
+    assert "awaiting operator" in (report2.outcomes[0].reason or "")
+    assert len(gh.comments) == 1  # NO new comment
+    assert len(questions.list_all()) == 1  # NO new Question

@@ -24,6 +24,7 @@ from minions.scheduled import (
     run_scrum,
     run_weekly_planning,
 )
+from minions.transcripts.store import TranscriptStore
 
 
 class _RecordingNotifier:
@@ -251,6 +252,70 @@ def test_scrum_records_blockers_and_next_actions(
     ritual = agile.list_rituals("alpha")[0]
     assert ritual.ritual == "scrum"
     assert "alpha scrum" in ritual.summary
+
+
+def test_scrum_emits_standup_round_table_transcript(
+    fake_portfolio: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """A scrum sweep should surface as a round-table meeting (crew_transcripts)."""
+    projects_dir, _ = fake_portfolio
+    decisions = DecisionStore(tmp_path / "decisions.json")
+    runs = EngineerRunStore(tmp_path / "runs.json")
+    agile = AgileStore(tmp_path / "agile.json")
+    transcripts = TranscriptStore(tmp_path / "transcripts.json")
+    decisions.save(
+        Decision(
+            project="alpha",
+            type=DecisionType.FEATURE,
+            summary="Needs approval",
+            rationale="test",
+            proposer_role="manager",
+            proposer_agent_id="manager@alpha",
+            status=DecisionStatus.PENDING,
+        )
+    )
+
+    run_scrum(
+        projects_dir=projects_dir,
+        store=decisions,
+        engineer_runs_store=runs,
+        agile_store=agile,
+        transcript_store=transcripts,
+        activity_log_path=tmp_path / "activity.jsonl",
+    )
+
+    rows = [m for m in transcripts.list_all() if m.project == "alpha" and m.crew == "scrum"]
+    assert len(rows) == 4
+    assert {m.agent_role for m in rows} == {
+        "manager",
+        "product_owner",
+        "tech_team_lead",
+        "engineer",
+    }
+    # All four turns share one run_id (one meeting) and content is non-empty.
+    assert len({m.run_id for m in rows}) == 1
+    assert all(m.content.strip() for m in rows)
+    # Lifecycle events emitted so the meeting resolves as completed.
+    events = [json.loads(line) for line in (tmp_path / "activity.jsonl").read_text().splitlines()]
+    scrum_events = {e["event"] for e in events if e.get("crew") == "scrum"}
+    assert {"crew_started", "agent_spoke", "crew_finished"} <= scrum_events
+
+
+def test_scrum_without_transcript_store_skips_round_table(
+    fake_portfolio: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """Backwards-compatible: no transcript_store → no transcript rows, no crash."""
+    projects_dir, _ = fake_portfolio
+    transcripts = TranscriptStore(tmp_path / "transcripts.json")
+    report = run_scrum(
+        projects_dir=projects_dir,
+        store=DecisionStore(tmp_path / "decisions.json"),
+        engineer_runs_store=EngineerRunStore(tmp_path / "runs.json"),
+        agile_store=AgileStore(tmp_path / "agile.json"),
+        activity_log_path=tmp_path / "activity.jsonl",
+    )
+    assert report.errored == 0
+    assert transcripts.list_all() == []
 
 
 def test_weekly_planning_can_scan_one_project(

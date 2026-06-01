@@ -31,6 +31,8 @@ from minions.onboarding import build_profile
 from minions.onboarding.profile import ProjectProfile
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from minions.agents.memory_store_factory import AgentMemoryStoreLike
     from minions.agile.store_factory import AgileStoreLike
     from minions.dossiers.store_factory import DossierStoreLike
@@ -51,6 +53,13 @@ _WEEKDAY_NAMES = (
 def _weekday_name(idx: int) -> str:
     """Map ``datetime.weekday()`` (Mon=0…Sun=6) to the lowercase day name."""
     return _WEEKDAY_NAMES[idx]
+
+
+def _week_parity(now: datetime) -> Literal["odd", "even"]:
+    """Parity of the current ISO week number — drives the biweekly rotation
+    gate. Independent of the calendar year (week 53 + week 1 may be adjacent
+    but still flip parity, which is the correct biweekly behavior)."""
+    return "odd" if now.isocalendar().week % 2 == 1 else "even"
 
 
 class PlanningOutcome(BaseModel):
@@ -97,6 +106,7 @@ def run_weekly_planning(
     sprints_path: Path | None = None,
     memory_store: AgentMemoryStoreLike | None = None,
     dossier_store: DossierStoreLike | None = None,
+    now: datetime | None = None,
 ) -> WeeklyPlanningReport:
     """Run the planning crew for every active project, fan out to approvals.
 
@@ -107,7 +117,7 @@ def run_weekly_planning(
     import uuid
     from datetime import UTC, datetime  # local import keeps top of file lean
 
-    started_dt = datetime.now(tz=UTC)
+    started_dt = now or datetime.now(tz=UTC)
     started = started_dt.isoformat()
     manifests = load_active_manifests(projects_dir)
     if projects:
@@ -122,10 +132,16 @@ def run_weekly_planning(
         # planning_day always run — preserves the legacy single-cron behavior
         # for projects the operator hasn't migrated yet.
         today = _weekday_name(started_dt.weekday())
+        # Biweekly rotation gate. ``planning_week_parity`` (default "any")
+        # lets a manifest opt into running only on odd or only on even ISO
+        # weeks — so the operator can shape a "two projects this week,
+        # three next week" cadence without manual day-flipping.
+        parity = _week_parity(started_dt)
         manifests = {
             name: m
             for name, m in manifests.items()
-            if m.planning_day is None or m.planning_day == today
+            if (m.planning_day is None or m.planning_day == today)
+            and (m.planning_week_parity == "any" or m.planning_week_parity == parity)
         }
 
     outcomes: list[PlanningOutcome] = []

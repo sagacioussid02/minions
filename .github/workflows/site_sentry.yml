@@ -1,0 +1,27 @@
+name: Site Sentry
+
+# Continuous synthetic monitoring of every project's `deploy.production_url`
+# + declared health checks. HTTP-only; alert-only; no auto-rollback.
+# See openspec/changes/ops-site-sentry for the spec.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'  # every 10 minutes
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Run without emitting notifier alerts (default: false)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: minions-cron-site-sentry
+  cancel-in-progress: false
+
+jobs:
+  sentry:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: ${{ inputs.dry-run && 'cron site-sentry --dry-run' || 'cron site-sentry --no-dry-run' }}
+    secrets: inherit

@@ -188,4 +188,65 @@ def record_task_default(
     )
 
 
-__all__ = ["record_task", "record_task_default"]
+def _result_to_text(result: object) -> str:
+    """Render a crew result (CrewAI output, pydantic model, or string) into
+    readable transcript text. Prefers ``.raw``; falls back to a labelled dump
+    of a pydantic model's fields; else ``str()``."""
+    raw = getattr(result, "raw", None)
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    dump = getattr(result, "model_dump", None)
+    if callable(dump):
+        try:
+            lines: list[str] = []
+            for key, value in dump().items():
+                if value in (None, "", [], {}):
+                    continue
+                if isinstance(value, (list, tuple)):
+                    value = "; ".join(str(v) for v in value)
+                lines.append(f"{key.replace('_', ' ')}: {value}")
+            text = "\n".join(lines).strip()
+            if text:
+                return text
+        except Exception:  # noqa: BLE001 — fall back to str() below
+            pass
+    return str(result).strip()
+
+
+def record_crew_summary(
+    *,
+    run_id: str,
+    project: str,
+    crew: str,
+    agent_role: str,
+    result: object,
+    agent_display_name: str | None = None,
+    role_in_conversation: RoleInConversation = "review",
+    decision_id: str = "",
+) -> CrewTranscriptMessage | None:
+    """Capture a single-output crew's verdict as one transcript turn.
+
+    For the reviewer/critique crews (code auditor, security, devil's advocate,
+    portfolio review, backlog grooming) that emit one structured result rather
+    than a multi-turn debate. Best-effort and silenced via the same
+    ``MINIONS_CREW_TRANSCRIPTS_DISABLED`` escape hatch as ``record_task``.
+    """
+    if result is None or not run_id:
+        return None
+    text = _result_to_text(result)
+    if not text:
+        return None
+    return record_task_default(
+        run_id=run_id,
+        project=project,
+        crew=crew,
+        agent_role=agent_role,
+        agent_display_name=agent_display_name,
+        sequence=0,
+        role_in_conversation=role_in_conversation,
+        task_output=text,
+        decision_id=decision_id,
+    )
+
+
+__all__ = ["record_task", "record_task_default", "record_crew_summary"]

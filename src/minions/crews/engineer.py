@@ -40,6 +40,7 @@ from minions.budget import assert_can_run_engineer
 from minions.budget import evaluate as evaluate_budget
 from minions.cost import clear_attribution, set_attribution
 from minions.github.client import GitHubClient, GitHubError
+from minions.github.models import FailingCheckLog
 from minions.models.decision import Decision, DecisionStatus
 from minions.models.roles import Role
 from minions.observability import add_metadata, observe_crew
@@ -155,6 +156,10 @@ def branch_name_for_task(decision: Decision, task: SprintTask) -> str:
 
 
 _MINIONS_RUN_ID_TRAILER = re.compile(r"^Minions-Run-Id:\s*\S+\s*$", re.MULTILINE)
+
+# Failing-check names that mark a CI failure as a security-class workflow.
+# Kept in lockstep with ``scheduled.pr_owner_sweep._SECURITY_CHECK_NAME_RE``.
+_SECURITY_CHECK_NAME_RE = re.compile(r"security|codeql|trivy|semgrep|snyk|sast|dast", re.IGNORECASE)
 
 
 def _branch_has_operator_commits(github: GitHubClient, branch: str) -> bool:
@@ -327,6 +332,7 @@ def run_engineer_crew(
     retry_attempt: int = 0,
     is_conflict_resolution: bool = False,
     is_review_response: bool = False,
+    is_security_failure: bool = False,
 ) -> EngineerResult:
     """Run the engineer crew for an approved Decision. Opens a draft PR.
 
@@ -399,6 +405,7 @@ def run_engineer_crew(
             retry_attempt=retry_attempt,
             is_conflict_resolution=is_conflict_resolution,
             is_review_response=is_review_response,
+            is_security_failure=is_security_failure,
             existing_pr_number=existing_pr_number,
         )
 
@@ -888,25 +895,38 @@ def _gather_conflict_files(
     return out
 
 
-def _gather_ci_failure_excerpt(github: GitHubClient, pr_number: int) -> str | None:
-    """Pull a short excerpt of the failing CI check for the engineer's retry
-    context. Best-effort; returns None on any error so the engineer can
-    proceed using just the Acceptance criteria.
+def _gather_failing_check_logs(github: GitHubClient, pr_number: int) -> list[FailingCheckLog]:
+    """Pull tail-truncated logs for every failing check on a PR.
+
+    Best-effort; returns ``[]`` on any error so the engineer can proceed
+    using just the diff + acceptance criteria.
     """
     try:
-        conclusion, details_url = github.get_pr_check_status(pr_number)
+        return github.get_pr_failing_check_logs(pr_number)
     except GitHubError:
-        return None
-    if conclusion != "failure":
-        return None
-    if not details_url:
-        return None
-    return (
-        f"CI failed (latest run: {details_url}). The orchestrator can not "
-        "fetch the run logs over the API without extra scopes — open the URL "
-        "above to see the full trace. Diagnose the failure from the failing "
-        "PR's diff + acceptance criteria and produce a targeted fix."
-    )
+        return []
+    except Exception:  # noqa: BLE001 — log fetch must never abort a retry
+        logger.warning("failing-check logs fetch raised; continuing without logs", exc_info=True)
+        return []
+
+
+def _render_failing_check_logs(logs: list[FailingCheckLog]) -> str:
+    """Render a list of FailingCheckLog entries as a markdown section the
+    engineer can read in the retry prompt.
+    """
+    if not logs:
+        return "(no failing-check logs available — diagnose from the diff + acceptance criteria)"
+    blocks: list[str] = []
+    for log in logs:
+        header_bits = [f"### Failing check: `{log.check_name}`"]
+        if log.app_slug:
+            header_bits.append(f"app=`{log.app_slug}`")
+        header_bits.append(f"conclusion=`{log.conclusion}`")
+        if log.html_url:
+            header_bits.append(f"[details]({log.html_url})")
+        header = " · ".join(header_bits)
+        blocks.append(f"{header}\n```text\n{log.log_excerpt}\n```")
+    return "\n\n".join(blocks)
 
 
 def _gather_review_comments(github: GitHubClient, pr_number: int) -> list[dict[str, str]]:
@@ -956,6 +976,7 @@ def _run_engineer_llm(
     retry_attempt: int = 0,
     is_conflict_resolution: bool = False,
     is_review_response: bool = False,
+    is_security_failure: bool = False,
     existing_pr_number: int | None = None,
     preflight_failure: object | None = None,
 ) -> EngineerOutput:
@@ -1087,23 +1108,86 @@ def _run_engineer_llm(
             {comments_block}
             """
         )
+    elif is_security_failure and existing_pr_number is not None:
+        failing_logs = _gather_failing_check_logs(github, existing_pr_number)
+        security_logs = [
+            log for log in failing_logs if _SECURITY_CHECK_NAME_RE.search(log.check_name or "")
+        ]
+        other_logs = [log for log in failing_logs if log not in security_logs]
+        security_block = _render_failing_check_logs(security_logs)
+        other_block = _render_failing_check_logs(other_logs) if other_logs else "(none)"
+        mode_block = textwrap.dedent(
+            f"""\
+            ## MODE: security CI fix (attempt #{retry_attempt})
+
+            A previous engineer attempt landed on this branch but a
+            **security workflow** (CodeQL / Trivy / Semgrep / Snyk / a custom
+            SAST/DAST check) flagged the change. The PR is #{existing_pr_number}.
+            **You** still own this fix — the operator does not want to read
+            security tool output and debug it themselves. Read the security
+            findings BELOW first; they are the ground truth.
+
+            How to approach a security finding (vs a normal CI failure):
+
+            * Identify the root cause from the tool's report (CWE, rule id,
+              file, line). Do NOT just silence the warning, comment it out,
+              add to an allow-list, or weaken the rule configuration.
+            * If the finding is a true positive (injection, sanitization,
+              auth/authz, secrets, unsafe deserialization, unsafe regex,
+              path traversal, SSRF, hardcoded credential, vulnerable
+              dependency): fix the root cause directly in the code or
+              tighten the dependency version.
+            * If the finding is a known false positive on a specific line
+              (rare), suppress with the most narrowly-scoped mechanism the
+              tool offers (e.g. CodeQL `// lgtm[js/sql-injection]` on the
+              exact line) AND explain why in a code comment AND in the PR
+              body. Do not suppress at the rule or file level.
+            * If a dependency advisory triggered the finding, bump the
+              dependency to the patched version in `package.json` /
+              `pyproject.toml` AND update the lockfile in the same patch.
+            * Touch ONLY what's needed to address the findings. Do NOT
+              rewrite unrelated code. Do NOT open a new PR.
+
+            The PR is implicitly being reviewed by the security_champion —
+            anything you suppress will be inspected. Show your work in the
+            PR body: cite the rule, what you changed, and why.
+
+            ## Failing security checks (read first)
+            {security_block}
+
+            ## Other failing checks on the same PR (fix these too)
+            {other_block}
+            """
+        )
     elif retry_attempt > 0 and existing_pr_number is not None:
-        ci_log_excerpt = _gather_ci_failure_excerpt(github, existing_pr_number)
+        failing_logs = _gather_failing_check_logs(github, existing_pr_number)
+        rendered_logs = _render_failing_check_logs(failing_logs)
         mode_block = textwrap.dedent(
             f"""\
             ## MODE: CI fix retry (attempt #{retry_attempt})
 
             A previous engineer attempt landed on this branch but CI failed.
-            The PR is #{existing_pr_number}. Read the failing CI excerpt below
-            and produce the smallest possible commit that turns CI green.
+            The PR is #{existing_pr_number}. Read the failing-check logs
+            FIRST (they are the ground truth), identify the root cause, and
+            ONLY THEN look at the diff. Produce the smallest possible commit
+            that turns every failing check green.
 
             **DO NOT** rewrite unrelated code. DO NOT open a new PR. Push
             ONLY the files that need to change to fix the failing checks.
 
-            ## Failing CI excerpt
-            ```
-            {ci_log_excerpt or "(CI log not available — diagnose from the Acceptance criteria)"}
-            ```
+            How to read the logs:
+            * Failures cluster at the tail of each log — read bottom-up.
+            * If a check name like `lint` or `ruff` reports a specific file
+              + line + rule, that is the exact fix target.
+            * If a `pytest` log shows an assertion failure, fix the
+              production code (not the assertion) unless the assertion is
+              wrong.
+            * If a `mypy` log shows a type error on a line the diff did NOT
+              touch, the diff likely broke a contract elsewhere — chase
+              that, do not silence with `# type: ignore`.
+
+            ## Failing checks (read first)
+            {rendered_logs}
             """
         )
 

@@ -138,6 +138,51 @@ def test_flow_control_override_from_manifest(tmp_path: Path) -> None:
     assert m.flow_control.max_open_prs == 2
 
 
+def test_max_iterations_per_pr_defaults_to_three() -> None:
+    assert FlowControl().max_iterations_per_pr == 3
+
+
+def test_max_iterations_per_pr_override(tmp_path: Path) -> None:
+    src = REPO_ROOT / "projects" / "demo.yaml"
+    data = yaml.safe_load(src.read_text())
+    data["flow_control"] = {"max_iterations_per_pr": 5}
+    out = tmp_path / "x.yaml"
+    out.write_text(yaml.safe_dump(data))
+    m = load_manifest(out)
+    assert m.flow_control.max_iterations_per_pr == 5
+
+
+def test_legacy_max_retries_per_pr_migrates_with_warning(tmp_path: Path) -> None:
+    """A YAML using the deprecated key still loads, forwards the value to
+    the new key, and emits one DeprecationWarning."""
+    import warnings
+
+    src = REPO_ROOT / "projects" / "demo.yaml"
+    data = yaml.safe_load(src.read_text())
+    data["flow_control"] = {"max_retries_per_pr": 7}
+    out = tmp_path / "x.yaml"
+    out.write_text(yaml.safe_dump(data))
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        m = load_manifest(out)
+        deprecation = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+
+    assert m.flow_control.max_iterations_per_pr == 7
+    assert any("max_retries_per_pr" in str(w.message) for w in deprecation)
+
+
+def test_both_keys_set_prefers_new_key(tmp_path: Path) -> None:
+    """If a manifest mistakenly sets both, the new key wins (legacy ignored)."""
+    src = REPO_ROOT / "projects" / "demo.yaml"
+    data = yaml.safe_load(src.read_text())
+    data["flow_control"] = {"max_iterations_per_pr": 4, "max_retries_per_pr": 99}
+    out = tmp_path / "x.yaml"
+    out.write_text(yaml.safe_dump(data))
+    m = load_manifest(out)
+    assert m.flow_control.max_iterations_per_pr == 4
+
+
 # --------------------------- execute_approved cap enforcement ---------------
 
 

@@ -177,9 +177,10 @@ AGILE_PATH = REPO_ROOT / "data" / "local" / "agile.json"
 INTERVIEWS_PATH = REPO_ROOT / "data" / "local" / "interviews.json"
 SPRINTS_PATH = REPO_ROOT / "data" / "local" / "sprints.json"
 TASKS_PATH = REPO_ROOT / "data" / "local" / "tasks.json"
+SITE_HEALTH_PATH = REPO_ROOT / "data" / "local" / "site_health.json"
 AGENT_MEMORY_PATH = REPO_ROOT / "data" / "local" / "agent_memory.json"
 AGENT_LEARNING_PATH = REPO_ROOT / "data" / "local" / "agent_learning.json"
-init_cost_tracking(log_path=COST_LOG_PATH)
+init_cost_tracking(log_path=COST_LOG_PATH, force_jsonl=False)
 
 from minions.activity import set_log_path as _set_activity_log_path  # noqa: E402
 
@@ -230,6 +231,125 @@ def _resolve_project(name: str, manifests: dict[str, Manifest]) -> Manifest:
 # =============================================================================
 # Top-level commands
 # =============================================================================
+
+
+_STARTER_PORTFOLIO_YAML = """\
+# minions portfolio config — see ARCHITECTURE.md for the full schema.
+# Almost everything has sane defaults; `owner` is the only required field.
+
+owner: you@example.com            # operator email — approvals + digests go here
+
+budget_envelope:
+  monthly_total_floor_usd: 15
+  monthly_total_ceiling_usd: 30
+
+delivery_cadence:
+  features_per_week: 1
+  bugs_per_week: 2
+  tech_debt_per_week: 1
+"""
+
+
+@app.command("init")
+def init_cmd(
+    force: bool = typer.Option(
+        False, "--force", help="Overwrite an existing config/portfolio.yaml."
+    ),
+) -> None:
+    """Scaffold config + projects/ so you can run minions on your own repos.
+
+    Writes a minimal `config/portfolio.yaml`, ensures `projects/` exists, then
+    validates. Next: `minions onboard <owner/repo>` to add a project.
+    """
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    rel = CONFIG_PATH.relative_to(REPO_ROOT)
+    if CONFIG_PATH.exists() and not force:
+        rprint(f"[yellow]exists[/yellow] {rel} — leaving it (use --force to overwrite)")
+    else:
+        CONFIG_PATH.write_text(_STARTER_PORTFOLIO_YAML)
+        rprint(f"[green]✓[/green] wrote {rel}")
+
+    try:
+        portfolio = load_portfolio_config(CONFIG_PATH)
+    except Exception as e:  # noqa: BLE001 — surface the validation error clearly
+        rprint(f"  [red]✗ portfolio config invalid:[/red] {e}")
+        raise typer.Exit(1) from e
+    rprint(f"  ✓ valid (owner: {portfolio.owner})")
+
+    rprint("\n[bold]Next steps[/bold]")
+    rprint("  1. Edit [cyan]config/portfolio.yaml[/cyan] — set your [cyan]owner[/cyan] email.")
+    rprint(
+        "  2. Set keys: [cyan]export ANTHROPIC_API_KEY=sk-ant-...[/cyan]"
+        " (and GITHUB_TOKEN, or `gh auth login`)."
+    )
+    rprint("  3. Add a project: [cyan]minions onboard <owner/repo>[/cyan]")
+    rprint("  4. Verify: [cyan]minions check[/cyan]  →  dry-run: [cyan]minions plan <name>[/cyan]")
+
+
+@app.command("onboard")
+def onboard_cmd(
+    repo: str = typer.Argument(
+        ..., help="GitHub repo as owner/name (e.g. octocat/hello-world), or a path with --local."
+    ),
+    name: str | None = typer.Option(
+        None, "--name", help="Project name (default: derived from the repo)."
+    ),
+    local: bool = typer.Option(
+        False, "--local", help="Treat <repo> as a local filesystem path, not a GitHub repo."
+    ),
+    weekly_budget: float = typer.Option(1.0, "--weekly-budget", help="Weekly USD budget cap."),
+    monthly_budget: float = typer.Option(4.0, "--monthly-budget", help="Monthly USD budget cap."),
+    default_branch: str = typer.Option("main", "--default-branch", help="Default branch."),
+    force: bool = typer.Option(False, "--force", help="Overwrite an existing manifest."),
+) -> None:
+    """Add a managed project — writes projects/<name>.yaml (no hand-editing YAML)."""
+    import yaml
+
+    from minions.models.manifest import load_manifest
+
+    if not local and "/" not in repo:
+        rprint("[red]✗[/red] GitHub repo must be `owner/name` (or pass --local for a path).")
+        raise typer.Exit(1)
+
+    display_name = name or (Path(repo).name if local else repo.split("/")[-1])
+    slug = "".join(c if (c.isalnum() or c in "-_") else "-" for c in display_name).lower()
+    path = PROJECTS_DIR / f"{slug}.yaml"
+    if path.exists() and not force:
+        rprint(f"[red]✗[/red] {path.relative_to(REPO_ROOT)} already exists (use --force).")
+        raise typer.Exit(1)
+
+    source = (
+        {"kind": "local", "path": repo, "default_branch": default_branch}
+        if local
+        else {"kind": "github", "repo": repo, "default_branch": default_branch}
+    )
+    manifest_dict = {
+        "name": display_name,
+        "description": "TBD — describe this project on the first onboarding pass",
+        "source": source,
+        "weekly_budget_usd": weekly_budget,
+        "monthly_budget_usd": monthly_budget,
+        "cadence_profile": "v0_frugal",
+    }
+
+    PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(manifest_dict, sort_keys=False))
+    try:
+        manifest = load_manifest(path)
+    except Exception as e:  # noqa: BLE001 — surface the validation error clearly
+        rprint(f"[red]✗ wrote {path.name} but it failed validation:[/red] {e}")
+        raise typer.Exit(1) from e
+
+    rprint(
+        f"[green]✓[/green] onboarded [bold]{manifest.name}[/bold] → {path.relative_to(REPO_ROOT)}"
+    )
+    rprint(f"  source: {source['kind']} · {repo} @ {default_branch}")
+    rprint("\n[bold]Next steps[/bold]")
+    rprint(f"  1. Edit [cyan]{path.relative_to(REPO_ROOT)}[/cyan] — set a real description.")
+    rprint("  2. Verify: [cyan]minions check[/cyan]")
+    rprint(f"  3. Dry-run a sprint: [cyan]minions plan {slug}[/cyan]  (no spend)")
 
 
 @app.command()
@@ -1566,6 +1686,7 @@ def cron_daily(
     from minions.config.portfolio import load_portfolio_config
     from minions.crews.engineer_runs_store_factory import make_engineer_runs_store
     from minions.scheduled import run_daily_monitor
+    from minions.tasks.store_factory import make_task_store
 
     api_key: str | None = None
     portfolio = None
@@ -1583,6 +1704,7 @@ def cron_daily(
         timeout_hours=timeout_hours,
         engineer_runs_store=make_engineer_runs_store(ENGINEER_RUNS_PATH),
         audit_findings_store=make_audit_findings_store(AUDIT_FINDINGS_PATH) if api_key else None,
+        task_store=make_task_store(TASKS_PATH),
         api_key=api_key,
         portfolio=portfolio,
     )
@@ -1674,6 +1796,7 @@ def cron_scrum(
     from minions.crews.engineer_runs_store_factory import make_engineer_runs_store
     from minions.questions.store_factory import make_question_store
     from minions.scheduled import run_scrum
+    from minions.transcripts.store_factory import make_transcript_store
 
     report = run_scrum(
         projects_dir=PROJECTS_DIR,
@@ -1681,6 +1804,7 @@ def cron_scrum(
         engineer_runs_store=make_engineer_runs_store(ENGINEER_RUNS_PATH),
         agile_store=make_agile_store(AGILE_PATH),
         questions_store=make_question_store(QUESTIONS_PATH),
+        transcript_store=make_transcript_store(CREW_TRANSCRIPTS_PATH),
         dry_run=dry_run,
     )
     rprint(f"\n[bold]Scrum ritual[/bold] — recorded {report.recorded}, errored {report.errored}")
@@ -1694,6 +1818,82 @@ def cron_scrum(
         if o.error:
             line += f" — {o.error[:80]}"
         rprint(line)
+
+
+@cron_app.command("maintainer")
+def cron_maintainer(
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Dry run only reports the maintenance backlog; --no-dry-run hands "
+        "the top items to the approval pipeline (propose-only).",
+    ),
+    max_proposals: int = typer.Option(
+        2, "--max-proposals", help="Cap how many items are proposed per run (noise control)."
+    ),
+) -> None:
+    """Maintainer bot — gather maintenance signals and surface (or propose) a backlog.
+
+    A thin scout that reuses the existing human-gated pipeline: it never writes
+    code or merges. See src/minions/scheduled/maintainer.py for the wiring seam.
+    """
+    from minions.questions.store_factory import make_question_store
+    from minions.scheduled import run_maintainer
+
+    report = run_maintainer(
+        questions_store=make_question_store(QUESTIONS_PATH),
+        max_proposals=max_proposals,
+        dry_run=dry_run,
+    )
+    rprint(report.to_markdown())
+
+
+@cron_app.command("site-sentry")
+def cron_site_sentry(
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run/--no-dry-run",
+        help="Dry-run runs probes + persists samples but emits no alerts.",
+    ),
+    fail_threshold: int = typer.Option(
+        2,
+        "--fail-threshold",
+        help="Emit a down-alert after N consecutive failures (default 2).",
+    ),
+    recover_threshold: int = typer.Option(
+        2,
+        "--recover-threshold",
+        help="Emit the all-clear after M consecutive successes (default 2).",
+    ),
+    dedup_minutes: int = typer.Option(
+        30,
+        "--dedup-minutes",
+        help="Suppress repeat down-alerts within this window (default 30 min).",
+    ),
+) -> None:
+    """Site Sentry — probe every project's `deploy.production_url` + health checks.
+
+    Reuses the post-deploy verifier so probes match what runs after a merge.
+    Scheduled by `.github/workflows/site_sentry.yml`; see
+    `openspec/changes/ops-site-sentry` for the full spec.
+    """
+    from datetime import timedelta
+
+    from minions.scheduled import run_site_sentry
+    from minions.sentry.site_health_store_factory import make_site_health_store
+
+    store = make_site_health_store(SITE_HEALTH_PATH)
+    notifier = _notifier()
+    report = run_site_sentry(
+        projects_dir=PROJECTS_DIR,
+        site_health_store=store,
+        notifier=notifier,
+        fail_threshold=fail_threshold,
+        recover_threshold=recover_threshold,
+        dedup_window=timedelta(minutes=dedup_minutes),
+        dry_run=dry_run,
+    )
+    rprint(report.to_markdown())
 
 
 @cron_app.command("friday")
@@ -1839,7 +2039,7 @@ def cron_pr_owner_sweep(
     """Re-dispatch the original owner agent against any actionable open PR.
 
     Replaces the old fix-Decision loop: no new Decisions are filed.
-    After ``flow_control.max_retries_per_pr`` retries, files ONE Question
+    After ``flow_control.max_iterations_per_pr`` iterations, files ONE Question
     Record per PR and stops dispatching that PR until the operator
     answers.
     """
@@ -1961,6 +2161,52 @@ def cron_execute_approved(
             line += f" → {o.pr_url}"
         elif o.reason:
             line += f" — {o.reason[:80]}"
+        rprint(line)
+
+
+@cron_app.command("capacity-review")
+def cron_capacity_review(
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Dry run detects overload + prints proposals without filing Decisions.",
+    ),
+) -> None:
+    """Capacity watcher — propose new seats when the org is short-staffed.
+
+    Detects roles over WIP cap or sitting on a deep unassigned backlog and
+    files propose-only TEAM_COMPOSITION Decisions for the operator to approve.
+    Never mutates a roster. Anti-runaway: per-month proposal caps + 30-day
+    cooldown after a rejection.
+    """
+    from minions.scheduled.capacity_review import run_capacity_review
+    from minions.tasks.store_factory import make_task_store
+
+    report = run_capacity_review(
+        task_store=make_task_store(TASKS_PATH),
+        decision_store=_store(),
+        notifier=_notifier(),
+        dry_run=dry_run,
+    )
+
+    verb = "would propose" if dry_run else "filed"
+    rprint(
+        f"\n[bold]Capacity review[/bold] — {verb} {report.proposed} hire "
+        f"proposal(s) · {len(report.outcomes)} candidate(s) evaluated"
+        + ("  [dim](dry run)[/dim]" if dry_run else "")
+    )
+    for o in report.outcomes:
+        tag = {
+            "proposed": "[green]✓[/green]",
+            "dry_run": "[cyan]≈[/cyan]",
+            "skipped_cap": "[yellow]⊘[/yellow]",
+            "skipped_cooldown": "[dim]⊘[/dim]",
+        }.get(o.status, "·")
+        line = f"  {tag} {o.role}@{o.scope}"
+        if o.decision_id:
+            line += f" ({o.decision_id[:8]})"
+        if o.reason:
+            line += f" — {o.reason[:90]}"
         rprint(line)
 
 
@@ -2169,6 +2415,41 @@ def tasks_list(
             t.estimated_effort,
         )
     console.print(table)
+
+
+@tasks_app.command("reconcile")
+def tasks_reconcile(
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Dry run only previews changes. Use --no-dry-run to apply.",
+    ),
+) -> None:
+    """Advance Tasks stuck in 'review' whose PR has merged/closed.
+
+    Checks each non-terminal Task's PR on GitHub and marks the Task ``done``
+    (merged) or ``cancelled`` (closed). Idempotent; this also runs inside the
+    daily monitor, so it's normally only needed for a one-off backfill.
+    """
+    from minions.models.manifest import load_active_manifests
+    from minions.tasks.reconcile import reconcile_task_statuses
+    from minions.tasks.store_factory import make_task_store
+
+    changes = reconcile_task_statuses(
+        task_store=make_task_store(TASKS_PATH),
+        manifests=load_active_manifests(PROJECTS_DIR),
+        open_github_client=_open_github_client,
+        dry_run=dry_run,
+    )
+    if not changes:
+        rprint("[dim]No Tasks needed reconciling.[/dim]")
+        return
+    verb = "Would advance" if dry_run else "Advanced"
+    rprint(f"[bold]{verb} {len(changes)} Task(s):[/bold]")
+    for c in changes:
+        rprint(f"  • {c.project} · {c.title[:56]} — {c.before} → {c.after}")
+    if dry_run:
+        rprint("[dim]Re-run with --no-dry-run to apply.[/dim]")
 
 
 @tasks_app.command("show")
@@ -2743,6 +3024,199 @@ def cost_weekly() -> None:
             f"[{color}]{pct:.1f}%[/{color}]",
         )
     table.add_row("[bold]TOTAL[/bold]", f"[bold]${total:.4f}[/bold]", "", "")
+    console.print(table)
+
+
+@app.command("agent-chat-smoke")
+def agent_chat_smoke(
+    agent_id: str = typer.Argument(
+        ...,
+        help=(
+            "Roster agent_id to chat with. Examples: 'engineer@demo_three' (Vera), 'ceo@org' (Carla)."
+        ),
+    ),
+    message: str = typer.Option(
+        "What did you ship last week and what broke?",
+        "--message",
+        "-m",
+        help="Message to send. Default is the B6 verification prompt.",
+    ),
+    live: bool = typer.Option(
+        False,
+        "--live",
+        help="Actually call Anthropic. Default is dry-run (prints the context bundle only).",
+    ),
+    save: bool = typer.Option(
+        False,
+        "--save",
+        help="Persist the thread + messages to agent_chat_threads/messages so they show up in the operator console.",
+    ),
+) -> None:
+    """End-to-end smoke test for the Surface B chat path (B6 verification).
+
+    Resolves ``agent_id`` against the live roster, builds the chat
+    context (persona + dossier + learning + recent transcripts) using
+    the same code path the public-console API uses, and either prints
+    the bundle (default) or dispatches a real Anthropic call (``--live``).
+
+    For B6 the recommended runs are:
+      * Vera (engineer@demo_three) with the default prompt -> real PR + name + first-person check
+      * Any cold-start agent (no learning) -> cold_start hint should be present
+      * A shared-bench agent (e.g. principal_engineer@org) -> cross-project transcripts
+    """
+    from minions.agent_chat.chat import respond
+    from minions.agent_chat.context import build_agent_context, resolve_agent_from_id
+    from minions.agent_chat.store_factory import make_agent_chat_store
+    from minions.dossiers.store_factory import make_dossier_store
+    from minions.learning.store_factory import make_agent_learning_store
+    from minions.models.agent_chat import AgentChatMessage, AgentChatThread
+    from minions.transcripts.store_factory import make_transcript_store
+
+    agent = resolve_agent_from_id(agent_id)
+    if agent is None:
+        console.print(f"[red]Unknown agent_id: {agent_id}[/red]")
+        console.print("Try `minions org` to list roster seats.")
+        raise typer.Exit(1)
+
+    learning_store = make_agent_learning_store(AGENT_LEARNING_PATH)
+    dossier_store = make_dossier_store(DOSSIER_DRAFTS_PATH)
+    transcript_store = make_transcript_store(CREW_TRANSCRIPTS_PATH)
+
+    ctx = build_agent_context(
+        agent_id,
+        learning_store=learning_store,
+        dossier_store=dossier_store,
+        transcript_store=transcript_store,
+        agent=agent,
+    )
+
+    console.print(f"\n[bold cyan]Agent[/bold cyan]  {agent_id} -> {ctx.display_name}")
+    console.print(f"[bold cyan]Role[/bold cyan]   {ctx.role}")
+    console.print(f"[bold cyan]Scope[/bold cyan]  {ctx.project or 'portfolio'}")
+    console.print(
+        f"[bold cyan]Bundle[/bold cyan] persona={len(ctx.persona)}B "
+        f"dossier={len(ctx.dossier_excerpt)}B "
+        f"learning={len(ctx.learning)} "
+        f"transcripts={len(ctx.transcript_snippets)} "
+        f"total={ctx.total_bytes}B (cap {8 * 1024}B)"
+    )
+    console.print(f"[bold cyan]Cold-start[/bold cyan] {ctx.cold_start}")
+
+    if not live:
+        console.print(
+            "\n[yellow]Dry run.[/yellow] Re-run with [bold]--live[/bold] to actually "
+            "dispatch the prompt to Anthropic. Estimated cost is well under a cent for Haiku."
+        )
+        return
+
+    from minions.secrets import get_anthropic_api_key
+
+    try:
+        api_key = get_anthropic_api_key()
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[red]Could not resolve ANTHROPIC_API_KEY: {e}[/red]")
+        raise typer.Exit(2) from e
+
+    console.print(f"\n[bold]User:[/bold]  {message}\n")
+    reply = respond(
+        history=[],
+        user_message=message,
+        context=ctx,
+        api_key=api_key,
+    )
+    console.print(f"[bold]{ctx.display_name}:[/bold]  {reply.text}\n")
+    console.print(
+        f"[dim]model={reply.model}  in={reply.prompt_tokens}  out={reply.response_tokens}[/dim]"
+    )
+
+    # Validation checklist — mirrors B6 in tasks.md.
+    import re as _re
+
+    body = reply.text
+    pr_hits = _re.findall(r"#\d{1,5}", body)
+    first_person = bool(_re.search(r"\b(I|I'm|I've|me|my)\b", body))
+    name_hit = ctx.display_name.lower() in body.lower()
+    hint_for_cold = not ctx.cold_start or "don't have" in body.lower() or "no notes" in body.lower()
+
+    def _row(label: str, ok: bool) -> None:
+        mark = "[green]PASS[/green]" if ok else "[red]FAIL[/red]"
+        console.print(f"  {mark}  {label}")
+
+    console.print("\n[bold]Checks[/bold]")
+    _row(f"References a PR (#NNN): {pr_hits or '-'}", bool(pr_hits))
+    _row("Reply uses first person", first_person)
+    _row(f"Reply mentions display name '{ctx.display_name}'", name_hit)
+    if ctx.cold_start:
+        _row("Cold-start agent acknowledged gap", hint_for_cold)
+
+    if save:
+        store = make_agent_chat_store(REPO_ROOT / "data" / "local" / "agent_chat.json")
+        thread = store.save_thread(
+            AgentChatThread(agent_id=agent_id, project=ctx.project, title=message[:60])
+        )
+        store.save_message(AgentChatMessage(thread_id=thread.id, role="user", content=message))
+        store.save_message(
+            AgentChatMessage(
+                thread_id=thread.id,
+                role="agent",
+                content=reply.text,
+                model=reply.model,
+                prompt_tokens=reply.prompt_tokens,
+                response_tokens=reply.response_tokens,
+            )
+        )
+        console.print(f"\n[green]Saved thread[/green] {thread.id}")
+
+
+@cost_app.command("surfaces")
+def cost_surfaces(
+    since: str = typer.Option(
+        "today",
+        "--since",
+        help="Time window: 'today' (default), 'week', 'month'.",
+    ),
+) -> None:
+    """Break LLM cost down by surface ('crew' vs 'agent_chat' etc).
+
+    The public-console agent-chat route (living-org-spaces Surface B)
+    writes ``payload.surface='agent_chat'`` on every cost_log row, so
+    this view shows the new surface's spend separately from regular
+    crew runs.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from minions.cost import cost_by_surface
+
+    now = datetime.now(tz=UTC)
+    if since == "week":
+        since_dt = (now - timedelta(days=now.weekday())).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        title = "Cost by surface — week to date (UTC)"
+    elif since == "month":
+        since_dt = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        title = "Cost by surface — month to date (UTC)"
+    else:
+        since_dt = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        title = "Cost by surface — today (UTC)"
+
+    totals = cost_by_surface(since=since_dt)
+    if not totals:
+        console.print(
+            "[yellow]No cost data available "
+            "(Postgres-only feature; JSONL mode returns nothing).[/yellow]"
+        )
+        return
+
+    table = Table(title=title)
+    table.add_column("Surface")
+    table.add_column("Cost (USD)", justify="right")
+    table.add_column("% of total", justify="right")
+    grand = sum(totals.values())
+    for surface, amount in sorted(totals.items(), key=lambda kv: -kv[1]):
+        pct = (amount / grand * 100) if grand else 0
+        table.add_row(surface, f"${amount:.4f}", f"{pct:.1f}%")
+    table.add_row("[bold]TOTAL[/bold]", f"[bold]${grand:.4f}[/bold]", "")
     console.print(table)
 
 

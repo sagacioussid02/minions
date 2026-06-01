@@ -59,13 +59,24 @@ def attach_review(
             project=decision.project,
             agents=["security_champion"],
             decision_id=str(decision.id),
-        ):
+        ) as run_id:
             result = review(
                 decision,
                 api_key=api_key,
                 portfolio=portfolio,
                 output_override=output_override,
             )
+            if result is not None:
+                from minions.transcripts.capture import record_crew_summary
+
+                record_crew_summary(
+                    run_id=run_id,
+                    project=decision.project,
+                    crew="security_champion",
+                    agent_role="security_champion",
+                    result=result,
+                    decision_id=str(decision.id),
+                )
     finally:
         clear_attribution()
 

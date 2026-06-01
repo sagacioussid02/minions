@@ -1,21 +1,19 @@
-"""PR follow-up sweep — watches minions-authored PRs and reacts to CI failures.
+"""PR follow-up sweep — watches minions-authored PRs and posts the QA review.
 
 Schedule: every ~30 min (per `.github/workflows/pr_followup.yml`).
 
 For each open engineer-run PR:
   1. Fetch the latest CI conclusion (success / failure / pending / None).
   2. Persist it on the EngineerRunRecord.
-  3. On *failure* (and ``followup_attempts < max_attempts``):
-       * Post a comment on the PR explaining the agent noticed the failure.
-       * Write a new "fix" Decision Record (auto-approved, low risk) referencing
-         the failing PR. The existing ``execute-approved`` sweep then runs the
-         engineer crew against it on its next tick.
-       * Bump ``followup_attempts`` on the original record.
+  3. On *success*: run the QA review crew once per PR.
+  4. On *failure*: do NOT file a fix Decision. The PR owner sweep
+     (``scheduled/pr_owner_sweep.py``) is solely responsible for
+     re-dispatching the original engineer in-place on the existing branch
+     and for the unified ``iteration_count`` cap.
 
-This is the autonomy lever that turns the org from "one-shot PRs" into "agents
-iterating on their own work". It does **not** push commits to the existing
-branch — fix attempts go through a fresh Decision/PR so every change is still
-audited through the normal pipeline.
+Historically this sweep filed sibling "fix" Decisions — that was replaced by
+the owner-sweep pattern (one PR ↔ one owner ↔ one sticky counter). The fix
+path is gone; pr_followup is now the QA-review surface plus a CI snapshotter.
 """
 
 from __future__ import annotations
@@ -188,7 +186,7 @@ def run_pr_followup(
 
                 # Dedupe + cap guards: prevent the runaway PR loop where
                 # each fix Decision spawns a new engineer_runs row whose
-                # followup_attempts counter starts at 0, defeating the
+                # iteration_count counter starts at 0, defeating the
                 # per-record max_attempts cap.
                 from minions.crews.flow_control import (
                     distinct_open_pr_count,
@@ -236,7 +234,7 @@ def run_pr_followup(
                     )
                     continue
 
-                if record.followup_attempts >= max_attempts:
+                if record.iteration_count >= max_attempts:
                     engineer_runs_store.update(record)
                     outcomes.append(
                         PRFollowupOutcome(
@@ -245,7 +243,7 @@ def run_pr_followup(
                             pr_url=record.pr_url,
                             ci_conclusion=conclusion,
                             status="skipped",
-                            reason=f"followup_attempts={record.followup_attempts} ≥ max={max_attempts}",
+                            reason=f"iteration_count={record.iteration_count} ≥ max={max_attempts}",
                         )
                     )
                     continue
@@ -256,7 +254,7 @@ def run_pr_followup(
                 # for CI-failure retries: it walks the same record, sees
                 # ci_conclusion=failure, re-dispatches the original owner
                 # agent in-place on the existing branch, bumps its own
-                # sticky followup_attempts, and escalates to the operator
+                # sticky iteration_count, and escalates to the operator
                 # via a Question Record after the cap.
                 #
                 # pr_followup's remaining job is the CI snapshot above +

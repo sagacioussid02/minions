@@ -12,6 +12,7 @@ action it surfaces in Monday's planning run or the Friday digest.
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -26,6 +27,8 @@ from minions.notify.base import Notifier
 from minions.onboarding import build_profile
 from minions.onboarding.profile import ProjectProfile
 from minions.sync import sync_pr_status
+from minions.tasks.reconcile import reconcile_task_statuses
+from minions.tasks.store_factory import TaskStoreLike
 
 if TYPE_CHECKING:
     from minions.config.portfolio import PortfolioConfig
@@ -51,6 +54,7 @@ class DailyMonitorReport(BaseModel):
     pr_state_changes: int = 0  # how many PRs flipped state during this run
     pr_audits_run: int = 0  # how many merged PRs the Code Auditor reviewed
     pr_findings_by_severity: dict[str, int] = Field(default_factory=dict)
+    tasks_reconciled: int = 0  # Tasks advanced to done/cancelled from PR state
 
     def to_markdown(self) -> str:
         lines: list[str] = ["# Daily monitoring report", ""]
@@ -66,6 +70,9 @@ class DailyMonitorReport(BaseModel):
             for sev, n in sorted(self.pr_findings_by_severity.items()):
                 emoji = {"high": "🔴", "medium": "🟡", "advisory": "🔵"}.get(sev, "•")
                 lines.append(f"  {emoji} {n} {sev} finding(s)")
+            lines.append("")
+        if self.tasks_reconciled:
+            lines.append(f"✅ **Tasks advanced from PR state:** {self.tasks_reconciled}")
             lines.append("")
         for e in self.entries:
             if e.status == "error":
@@ -88,6 +95,7 @@ def run_daily_monitor(
     timeout_hours: float = DEFAULT_TIMEOUT_HOURS,
     engineer_runs_store: EngineerRunStore | None = None,
     audit_findings_store: AuditFindingStore | None = None,
+    task_store: TaskStoreLike | None = None,
     api_key: str | None = None,
     portfolio: PortfolioConfig | None = None,
 ) -> DailyMonitorReport:
@@ -107,6 +115,7 @@ def run_daily_monitor(
     # PR state sync + (optional) Code Auditor on newly-merged PRs.
     pr_state_changes = 0
     pr_audits_run = 0
+    tasks_reconciled = 0
     pr_findings_by_severity: dict[str, int] = {}
     if engineer_runs_store is not None and store is not None and open_github_client is not None:
         try:
@@ -117,6 +126,17 @@ def run_daily_monitor(
                 decision_store=store,
             )
             pr_state_changes = sync_report.changed
+            # Advance Tasks whose PR has merged/closed (the sync above only
+            # updates the engineer-run ledger, not the Task board).
+            if task_store is not None:
+                with suppress(Exception):
+                    tasks_reconciled = len(
+                        reconcile_task_statuses(
+                            task_store=task_store,
+                            manifests=manifests,
+                            open_github_client=open_github_client,
+                        )
+                    )
             if audit_findings_store is not None:
                 audit_report = audit_after_sync(
                     sync_outcomes=sync_report.outcomes,
@@ -163,4 +183,5 @@ def run_daily_monitor(
         pr_state_changes=pr_state_changes,
         pr_audits_run=pr_audits_run,
         pr_findings_by_severity=pr_findings_by_severity,
+        tasks_reconciled=tasks_reconciled,
     )

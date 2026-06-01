@@ -21,6 +21,7 @@ from minions.cost import (
     init_cost_tracking,
     month_to_date_cost,
     read_log,
+    record_llm_call,
     resolve_tier,
     set_attribution,
     set_log_path,
@@ -228,3 +229,75 @@ def test_init_cost_tracking_idempotent(
     init_cost_tracking()
     init_cost_tracking()
     assert fake_litellm.success_callback.count(_litellm_cost_callback) == 1
+
+
+# ---- record_llm_call + CrewAI event listener (cost-callback fix) -----------
+
+
+def test_record_llm_call_writes_entry_with_litellm_keys(_isolated_log_path: Path) -> None:
+    set_attribution(project="demo_three", decision_id="d1", role="manager")
+    record_llm_call(
+        model="anthropic/claude-sonnet-4-6",
+        usage={"prompt_tokens": 1000, "completion_tokens": 500},
+    )
+    entries = read_log()
+    assert len(entries) == 1
+    e = entries[0]
+    assert e.project == "demo_three"
+    assert e.input_tokens == 1000 and e.output_tokens == 500
+    assert e.cost_usd == pytest.approx(estimate_cost_usd("sonnet", 1000, 500))
+    assert e.cost_usd > 0
+
+
+def test_record_llm_call_accepts_anthropic_native_keys(_isolated_log_path: Path) -> None:
+    set_attribution(project="demo_two", decision_id="d2", role="engineer")
+    record_llm_call(
+        model="anthropic/claude-opus-4-7",
+        usage={"input_tokens": 200, "output_tokens": 100},
+    )
+    entries = read_log()
+    assert len(entries) == 1 and entries[0].input_tokens == 200
+
+
+def test_record_llm_call_zero_usage_is_noop(_isolated_log_path: Path) -> None:
+    set_attribution(project="demo_three")
+    record_llm_call(model="anthropic/claude-opus-4-7", usage={})
+    assert read_log() == []
+
+
+def test_crewai_listener_handler_records_cost(_isolated_log_path: Path) -> None:
+    """The bus handler that fires for crew LLM calls records per-call cost.
+
+    Invokes the real handler with a genuine ``LLMCallCompletedEvent`` (the
+    type the CrewAI bus dispatches), avoiding the process-global event bus so
+    the assertion is deterministic across the suite.
+    """
+    pytest.importorskip("crewai")
+    from crewai.events.types.llm_events import LLMCallCompletedEvent
+
+    from minions.cost import _on_crewai_llm_completed
+
+    set_attribution(project="demo_three", decision_id="d3", role="principal_engineer")
+    event = LLMCallCompletedEvent(
+        model="anthropic/claude-opus-4-7",
+        usage={"prompt_tokens": 800, "completion_tokens": 400},
+        response="ok",
+        call_type="llm_call",
+        call_id="call-1",
+    )
+    _on_crewai_llm_completed("source", event)
+
+    entries = read_log()
+    assert len(entries) == 1
+    assert entries[0].project == "demo_three"
+    assert entries[0].cost_usd == pytest.approx(estimate_cost_usd("opus", 800, 400))
+
+
+def test_crewai_listener_registers_on_bus() -> None:
+    """`init_cost_tracking` registers our handler on the real CrewAI bus."""
+    pytest.importorskip("crewai")
+    import minions.cost as cost_mod
+
+    cost_mod._crewai_listener_registered = False
+    assert cost_mod._register_crewai_cost_listener() is True
+    assert cost_mod._crewai_listener_registered is True

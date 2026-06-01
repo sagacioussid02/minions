@@ -42,6 +42,11 @@ from minions.scheduled.execute_approved import (
     run_execute_approved,
 )
 from minions.scheduled.friday_digest import FridayDigestReport, run_friday_digest
+from minions.scheduled.maintainer import (
+    MaintainerReport,
+    MaintainerSignal,
+    run_maintainer,
+)
 from minions.scheduled.monthly_portfolio_review import (
     MonthlyReviewReport,
     run_monthly_portfolio_review,
@@ -57,6 +62,11 @@ from minions.scheduled.pr_review_loop import (
     run_pr_review_loop,
 )
 from minions.scheduled.scrum import ScrumOutcome, ScrumReport, run_scrum
+from minions.scheduled.site_sentry import (
+    CheckOutcome,
+    SiteSentryReport,
+    run_site_sentry,
+)
 from minions.scheduled.weekly_planning import (
     PlanningOutcome,
     WeeklyPlanningReport,
@@ -92,9 +102,15 @@ __all__ = [
     "run_discovery_sweep",
     "run_execute_approved",
     "run_friday_digest",
+    "run_maintainer",
+    "MaintainerReport",
+    "MaintainerSignal",
     "run_monthly_portfolio_review",
     "run_pr_followup",
     "run_pr_review_loop",
     "run_scrum",
+    "run_site_sentry",
+    "SiteSentryReport",
+    "CheckOutcome",
     "run_weekly_planning",
 ]

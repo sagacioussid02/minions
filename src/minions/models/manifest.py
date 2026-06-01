@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 
 class ManifestSource(BaseModel):
@@ -152,12 +153,43 @@ class FlowControl(BaseModel):
 
     max_open_prs: int = 5
 
-    # Max in-place retries the owner sweep is allowed against ONE PR before
-    # escalating to the operator. After the cap, no more engineer-crew
-    # dispatches fire for that PR until the operator answers the escalation
-    # Question Record. Keeps a stuck PR from burning the project's monthly
-    # budget on infinite retries.
-    max_retries_per_pr: int = 3
+    # Max in-place iterations the owner sweep is allowed against ONE PR
+    # before escalating to the operator. ONE counter covers all sources of
+    # iteration — CI failure, merge conflict, reviewer changes-requested —
+    # so the cap means what it says regardless of which surface triggered
+    # the retry. After the cap, no more engineer-crew dispatches fire for
+    # that PR until the operator answers the escalation Question Record.
+    max_iterations_per_pr: int = 3
+
+    # Deprecated alias kept for one release. YAML files / older configs
+    # that still set ``max_retries_per_pr`` are migrated by
+    # ``_migrate_max_retries_per_pr`` below with a deprecation warning.
+    max_retries_per_pr: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_max_retries_per_pr(cls, data: Any) -> Any:
+        """Translate the legacy ``max_retries_per_pr`` key into
+        ``max_iterations_per_pr`` so older manifests still load.
+
+        Warns once per load. After one release window the old key is
+        removed entirely (see openspec/pr-lifecycle-resilience Phase 5).
+        """
+        if not isinstance(data, dict):
+            return data
+        legacy = data.get("max_retries_per_pr")
+        if legacy is None:
+            return data
+        if "max_iterations_per_pr" not in data:
+            data["max_iterations_per_pr"] = legacy
+        warnings.warn(
+            "flow_control.max_retries_per_pr is deprecated; "
+            "rename to max_iterations_per_pr (same semantics, "
+            "covers reviewer-fix rounds in addition to CI/conflict retries).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return data
 
 
 class Manifest(BaseModel):
@@ -189,6 +221,14 @@ class Manifest(BaseModel):
         ]
         | None
     ) = None
+
+    # Optional biweekly rotation gate. When set to ``odd`` / ``even``,
+    # ``run_weekly_planning`` only files a proposal for this project when the
+    # current ISO-week number's parity matches. Combined with
+    # ``planning_day``, this lets the operator run, say, two projects in odd
+    # weeks and three in even weeks without manually flipping the day field
+    # each week. ``any`` (default) preserves the legacy weekly behavior.
+    planning_week_parity: Literal["odd", "even", "any"] = "any"
 
     delivery_targets: DeliveryTargets = Field(default_factory=DeliveryTargets)
 
