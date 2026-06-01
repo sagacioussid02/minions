@@ -93,7 +93,9 @@ def test_attach_critique_brackets_with_activity_log(tmp_path: Path) -> None:
     attach_critique(_decision("high"), output_override=_override())
 
     events = read_activity_log()
-    assert [e.event for e in events] == ["crew_started", "crew_finished"]
+    # The critique is now also captured as a transcript turn (agent_spoke)
+    # so it surfaces in the meetings feed.
+    assert [e.event for e in events] == ["crew_started", "agent_spoke", "crew_finished"]
     assert events[0].crew == "devils_advocate"
     assert "devils_advocate" in events[0].agents
 

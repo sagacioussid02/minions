@@ -13,11 +13,12 @@ the final decision.
 from __future__ import annotations
 
 import base64
+import re
 from typing import Any
 
 import httpx
 
-from minions.github.models import BranchRef, Issue, PullRequest, Repo
+from minions.github.models import BranchRef, FailingCheckLog, Issue, PullRequest, Repo
 
 
 class GitHubError(RuntimeError):
@@ -494,6 +495,112 @@ class GitHubClient:
             return "pending", None
         return "success", None
 
+    def get_pr_failing_check_logs(
+        self,
+        number: int,
+        *,
+        max_bytes_per_check: int = 32_000,
+        total_byte_cap: int = 128_000,
+    ) -> list[FailingCheckLog]:
+        """Return tail-truncated log excerpts for every failing check on a PR.
+
+        Walks the check-runs on the PR's head SHA, filters to failed
+        conclusions (``failure``/``timed_out``/``cancelled``/``action_required``),
+        and pulls the actual log bytes:
+
+        * GitHub Actions checks → fetch ``/actions/jobs/{job_id}/logs`` (job id
+          parsed from ``details_url``). Returns plain text via a redirect to a
+          signed URL.
+        * Non-GHA checks (Vercel, CodeQL, security scanners, …) → use
+          ``check_run.output.text`` if present, otherwise fall back to
+          ``check_run.output.summary``.
+
+        Bytes are tail-truncated to ``max_bytes_per_check`` per check (the
+        failure is almost always at the bottom of the log). Iteration stops
+        once cumulative bytes hit ``total_byte_cap`` so the engineer's context
+        window stays bounded.
+
+        Safe to call against any PR: stale head SHA / no checks / 403s all
+        return ``[]`` (same swallow-and-continue pattern as
+        ``get_pr_check_status``).
+        """
+        pr = self.get_pull_request(number)
+        if not pr.head_sha:
+            return []
+        try:
+            r = self._request("GET", f"/repos/{self.repo}/commits/{pr.head_sha}/check-runs")
+        except GitHubError as e:
+            if e.status_code in {403, 404, 422}:
+                return []
+            raise
+        runs = r.json().get("check_runs", []) or []
+        out: list[FailingCheckLog] = []
+        total = 0
+        for run in runs:
+            if total >= total_byte_cap:
+                break
+            concl = (run.get("conclusion") or "").lower() or None
+            if concl not in {"failure", "timed_out", "cancelled", "action_required"}:
+                continue
+            check_name = str(run.get("name") or "(unnamed check)")
+            app = run.get("app") or {}
+            app_slug = app.get("slug") if isinstance(app, dict) else None
+            html_url = run.get("html_url") or run.get("details_url")
+            details_url = run.get("details_url") or ""
+
+            raw_log = ""
+            if app_slug == "github-actions":
+                job_id = _parse_gha_job_id(details_url)
+                if job_id is not None:
+                    raw_log = self._fetch_gha_job_logs(job_id)
+            if not raw_log:
+                output = run.get("output") or {}
+                if isinstance(output, dict):
+                    raw_log = str(output.get("text") or output.get("summary") or "")
+
+            if not raw_log:
+                # Nothing to show beyond the URL — surface a stub so the
+                # engineer knows the check failed but logs were unavailable.
+                raw_log = f"(no log content available; see {html_url})" if html_url else ""
+
+            remaining_cap = total_byte_cap - total
+            per_check_cap = min(max_bytes_per_check, remaining_cap)
+            excerpt, truncated, original = _tail_truncate(raw_log, per_check_cap)
+
+            out.append(
+                FailingCheckLog(
+                    check_name=check_name,
+                    app_slug=app_slug,
+                    conclusion=concl,
+                    html_url=html_url,
+                    log_excerpt=excerpt,
+                    was_truncated=truncated,
+                    original_bytes=original,
+                )
+            )
+            total += len(excerpt.encode("utf-8"))
+        return out
+
+    def _fetch_gha_job_logs(self, job_id: int) -> str:
+        """Fetch raw log text for a single GHA job.
+
+        The GitHub logs endpoint 302s to a signed S3 URL with plain text;
+        ``follow_redirects=True`` lets httpx chase it transparently. Returns
+        an empty string on any failure — the engineer falls back to
+        ``check_run.output`` content in that case.
+        """
+        try:
+            response = self._client.request(
+                "GET",
+                f"/repos/{self.repo}/actions/jobs/{job_id}/logs",
+                follow_redirects=True,
+            )
+        except httpx.RequestError:
+            return ""
+        if response.status_code >= 400:
+            return ""
+        return response.text or ""
+
     def list_pull_request_files(self, number: int, *, per_page: int = 30) -> list[dict[str, Any]]:
         """Return PR files: filename, status, additions, deletions, patch (when present).
 
@@ -519,6 +626,46 @@ class GitHubClient:
         return out
 
     # No merge_pull_request method exists by design.
+
+
+_GHA_JOB_URL_RE = re.compile(r"/actions/runs/\d+/job/(\d+)")
+
+
+def _parse_gha_job_id(details_url: str) -> int | None:
+    """Extract the job id from a GHA check_run.details_url.
+
+    The url looks like ``https://github.com/<owner>/<repo>/actions/runs/<run_id>/job/<job_id>``.
+    Returns ``None`` when the pattern doesn't match (e.g. workflow_run-level
+    check with no job id, or an unexpected URL shape).
+    """
+    if not details_url:
+        return None
+    m = _GHA_JOB_URL_RE.search(details_url)
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except ValueError:
+        return None
+
+
+def _tail_truncate(text: str, max_bytes: int) -> tuple[str, bool, int]:
+    """Return ``(excerpt, was_truncated, original_bytes)``.
+
+    Keeps the tail (last ``max_bytes`` UTF-8 bytes) because the meaningful
+    failure line is almost always at the end of a CI log. Prepends a
+    ``[truncated; original N KB]`` marker so the engineer knows there was
+    more above. Slices on UTF-8 boundaries to avoid mid-codepoint cuts.
+    """
+    if max_bytes <= 0:
+        return "", False, len(text.encode("utf-8"))
+    encoded = text.encode("utf-8")
+    original = len(encoded)
+    if original <= max_bytes:
+        return text, False, original
+    tail = encoded[-max_bytes:].decode("utf-8", errors="ignore")
+    marker = f"[truncated; original {original // 1000} KB, showing last {max_bytes // 1000} KB]\n"
+    return marker + tail, True, original
 
 
 def _normalize_issue(item: dict[str, Any]) -> Issue:

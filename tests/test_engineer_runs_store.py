@@ -5,7 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from minions.crews.engineer import EngineerResult
-from minions.crews.engineer_runs_store import EngineerRunStore, PRReviewerAssignment
+from minions.crews.engineer_runs_store import (
+    EngineerRunRecord,
+    EngineerRunStore,
+    PRReviewerAssignment,
+)
 
 
 def _result(**kwargs) -> EngineerResult:
@@ -92,3 +96,41 @@ def test_review_loop_state_round_trips(tmp_path: Path) -> None:
     assert fetched.review_status == "assigned"
     assert fetched.reviewers[0].role == "ttl"
     assert fetched.reviewers[0].verdict == "approve"
+
+
+def test_iteration_count_back_compat_reads_legacy_followup_attempts() -> None:
+    """JSON rows written before the rename still hydrate correctly."""
+    legacy_payload = {
+        "decision_id": "dec-legacy",
+        "project": "p",
+        "completed_at": "2026-05-01T00:00:00+00:00",
+        "followup_attempts": 2,  # legacy key
+    }
+    record = EngineerRunRecord.model_validate(legacy_payload)
+    assert record.iteration_count == 2
+
+
+def test_iteration_count_prefers_new_key_when_both_present() -> None:
+    """If both keys appear, the canonical iteration_count wins."""
+    payload = {
+        "decision_id": "dec-mixed",
+        "project": "p",
+        "completed_at": "2026-05-01T00:00:00+00:00",
+        "iteration_count": 5,
+        "followup_attempts": 99,  # legacy ignored
+    }
+    record = EngineerRunRecord.model_validate(payload)
+    assert record.iteration_count == 5
+
+
+def test_iteration_count_dump_emits_only_new_key() -> None:
+    """Writes only the canonical key — no zombie `followup_attempts` on disk."""
+    record = EngineerRunRecord(
+        decision_id="dec-new",
+        project="p",
+        completed_at="2026-05-26T00:00:00+00:00",  # type: ignore[arg-type]
+        iteration_count=4,
+    )
+    dumped = record.model_dump(mode="json")
+    assert dumped["iteration_count"] == 4
+    assert "followup_attempts" not in dumped

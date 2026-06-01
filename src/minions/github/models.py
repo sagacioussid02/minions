@@ -49,3 +49,22 @@ class BranchRef(BaseModel):
 
     name: str
     sha: str
+
+
+class FailingCheckLog(BaseModel):
+    """Log excerpt for a single failing check_run on a PR's head SHA.
+
+    Produced by ``GitHubClient.get_pr_failing_check_logs``. The engineer
+    crew embeds these in the retry prompt so the owner agent can reason
+    from concrete failure evidence instead of guessing from the diff.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    check_name: str
+    app_slug: str | None = None
+    conclusion: str  # "failure", "timed_out", "cancelled", "action_required"
+    html_url: str | None = None
+    log_excerpt: str
+    was_truncated: bool = False
+    original_bytes: int = 0

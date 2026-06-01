@@ -241,7 +241,7 @@ def run_portfolio_review(
             project="portfolio",
             agents=["ceo", "cto", "md", "synthesis"],
             decision_id=None,
-        ):
+        ) as run_id:
             review = _produce_review(
                 inputs=inputs,
                 api_key=api_key,
@@ -249,6 +249,17 @@ def run_portfolio_review(
                 dry_run=dry_run,
                 output_override=output_override,
             )
+            if review is not None:
+                from minions.transcripts.capture import record_crew_summary
+
+                record_crew_summary(
+                    run_id=run_id,
+                    project="portfolio",
+                    crew="portfolio_review",
+                    agent_role="ceo",
+                    result=review,
+                    role_in_conversation="synthesis",
+                )
     finally:
         clear_attribution()
 

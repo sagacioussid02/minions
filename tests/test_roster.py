@@ -145,8 +145,9 @@ def test_build_named_agent_shared():
 
 def test_project_role_slots_respects_team_overrides():
     manifest = load_manifest(REPO_ROOT / "projects" / "demo_four.yaml")
-    # demo_four disables security_champion AND has engineers=1
+    # demo_four disables security_champion AND has engineers=2 (bumped from
+    # 1 in 2026-05-26 — see PR widening engineer seats).
     roles = project_role_slots(manifest)
     assert Role.SECURITY_CHAMPION not in roles
-    assert sum(1 for r in roles if r is Role.ENGINEER) == 1
+    assert sum(1 for r in roles if r is Role.ENGINEER) == 2
     assert Role.INTERN not in roles  # intern disabled in v0 manifests

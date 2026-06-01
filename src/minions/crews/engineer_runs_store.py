@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from minions.crews.engineer import EngineerResult
 
@@ -75,7 +75,16 @@ class EngineerRunRecord(BaseModel):
     # Populated by the PR follow-up sweep.
     ci_conclusion: str | None = None  # "success" / "failure" / "pending" / None
     ci_last_checked_at: datetime | None = None
-    followup_attempts: int = 0
+    # Unified per-PR iteration counter. Owner-sweep bumps it on EVERY
+    # accepted in-place re-dispatch — whether the trigger was a CI failure,
+    # a merge conflict, or a reviewer changes-requested round. The cap is
+    # ``manifest.flow_control.max_iterations_per_pr``. Reads also accept
+    # the legacy ``followup_attempts`` key so JSON / Postgres rows written
+    # before the rename still hydrate cleanly.
+    iteration_count: int = Field(
+        default=0,
+        validation_alias=AliasChoices("iteration_count", "followup_attempts"),
+    )
     last_followup_at: datetime | None = None
 
     # Set once the QA crew has posted a review comment on the PR.
@@ -92,6 +101,17 @@ class EngineerRunRecord(BaseModel):
     merge_attempted_at: datetime | None = None
     merge_blocked_reason: str | None = None
     human_handoff_posted_at: datetime | None = None
+    # Last time the owner sweep promoted ``ci_failure`` to ``security_failure``
+    # and dispatched the engineer with the security-aware brief. Purely for
+    # dashboard visibility — NOT a dedup key (the triage re-runs every sweep
+    # tick because the failing-check output can change between ticks).
+    last_security_triage_at: datetime | None = None
+    # When the engineer crew refuses a security_failure dispatch because the
+    # branch has operator-authored commits, the sweep posts a single
+    # read-only triage comment (security findings + recommended fix) on
+    # behalf of the agent. This timestamp gates dedup so the comment is
+    # posted exactly once per PR — never on every sweep tick.
+    security_triage_comment_posted_at: datetime | None = None
     conflict_resolution_queued_at: datetime | None = None
     superseded_by_pr_url: str | None = None
     superseded_at: datetime | None = None
@@ -106,12 +126,15 @@ class EngineerRunRecord(BaseModel):
     # backfills any None values via the same default.
     owner_agent_id: str | None = None
     # Set once the owner-sweep escalated this PR to the operator after
-    # ``flow_control.max_retries_per_pr`` failed retries. Idempotent
+    # ``flow_control.max_iterations_per_pr`` accepted iterations. Idempotent
     # gate: subsequent ticks see this and skip.
     escalated_question_id: str | None = None
     # Cached classification of the last failure observed by the owner
-    # sweep, used to phrase the next prompt + the operator handoff.
-    last_failure_kind: str | None = None  # "ci_failure" | "merge_conflict" | None
+    # sweep, used to phrase the next prompt + the operator handoff. One
+    # of: "ci_failure" | "merge_conflict" | "review_changes_requested".
+    # Kept as ``str`` (not Literal) to avoid a circular import with
+    # ``pr_owner_sweep.FailureKind`` and to keep schema reads tolerant.
+    last_failure_kind: str | None = None
 
 
 class EngineerRunStore:

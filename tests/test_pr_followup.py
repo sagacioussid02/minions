@@ -97,7 +97,7 @@ def test_success_ci_only_updates_record(tmp_path: Path) -> None:
     after = runs.get("dec-ok")
     assert after is not None
     assert after.ci_conclusion == "success"
-    assert after.followup_attempts == 0
+    assert after.iteration_count == 0
     # No fix decision was created.
     assert decisions.list_by_status(DecisionStatus.APPROVED) == []
 
@@ -131,7 +131,7 @@ def test_failure_does_not_queue_fix_decision(tmp_path: Path) -> None:
     assert after.ci_conclusion == "failure"
     assert after.ci_last_checked_at is not None
     # Counter NOT touched by pr_followup — owner sweep owns it.
-    assert after.followup_attempts == 0
+    assert after.iteration_count == 0
 
     # Outcome shape: status=ok with reason explaining handoff.
     assert report.outcomes[0].status == "ok"
@@ -147,12 +147,12 @@ def test_failure_skipped_when_attempts_at_cap(tmp_path: Path) -> None:
     decisions = DecisionStore(tmp_path / "d.json")
     runs = EngineerRunStore(tmp_path / "r.json")
     rec = _seed_open_pr("Demo", pr_number=8, decision_id="dec-capped")
-    rec.followup_attempts = 1  # already at default cap
+    rec.iteration_count = 1  # already at default cap
     _save_record(runs, rec)
     # The save above overwrites our attempts field — patch it back via update.
     fresh = runs.get("dec-capped")
     assert fresh is not None
-    fresh.followup_attempts = 1
+    fresh.iteration_count = 1
     runs.update(fresh)
 
     gh = _FakeGH(ci_for={8: ("failure", None)})
@@ -197,7 +197,7 @@ def test_dry_run_does_not_persist_decision_or_comment(tmp_path: Path) -> None:
     # Counter not touched by pr_followup — owner sweep owns it.
     after = runs.get("dec-dry")
     assert after is not None
-    assert after.followup_attempts == 0
+    assert after.iteration_count == 0
 
 
 def test_skips_closed_or_merged_prs(tmp_path: Path) -> None:

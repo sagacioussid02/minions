@@ -100,9 +100,18 @@ def get_attribution() -> dict[str, str]:
     return _attribution.get() or {"project": "", "decision_id": "", "role": ""}
 
 
-def set_log_path(path: Path) -> None:
+def set_log_path(path: Path, *, force_jsonl: bool = True) -> None:
+    """Pin the JSONL fallback path.
+
+    ``force_jsonl`` defaults True for test/explicit-path callers that want a
+    deterministic file. The production CLI passes ``force_jsonl=False`` so a
+    resolvable ``MINIONS_DATABASE_URL`` still routes writes to the Postgres
+    ``cost_log`` — mirrors ``activity.set_log_path``. Without this, every
+    cost write in CI/cron lands in an ephemeral runner file and the shared
+    ledger stays empty.
+    """
     _log_path.set(path)
-    _force_jsonl.set(True)
+    _force_jsonl.set(force_jsonl)
 
 
 def get_log_path() -> Path:
@@ -300,6 +309,37 @@ def week_to_date_cost(
     return cost_by_project(since=week_start, path=path).get(project, 0.0)
 
 
+def cost_by_surface(*, since: datetime | None = None) -> dict[str, float]:
+    """Sum costs grouped by ``payload->>'surface'``. Postgres-only.
+
+    Rows without a surface tag (the historical default — crew runs from
+    LiteLLM) bucket as ``"crew"``. New surfaces (e.g. ``agent_chat`` from
+    the public-console Surface B route) appear as separate rows. Returns
+    an empty dict when the cost ledger is JSONL (test mode / no DB), so
+    callers can degrade gracefully.
+    """
+    if not _use_postgres():
+        return {}
+    from minions.db.connection import connect
+
+    if since is None:
+        since = datetime.now(tz=UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COALESCE(payload->>'surface', 'crew') AS surface,
+                   COALESCE(SUM(cost_usd), 0)::float8 AS total
+            FROM cost_log
+            WHERE ts >= %s
+            GROUP BY surface
+            """,
+            (since,),
+        )
+        rows = cur.fetchall()
+    return {str(row[0]): float(row[1] or 0.0) for row in rows}
+
+
 # ---------------------------------------------------------------------------
 # LiteLLM callback registration.
 # ---------------------------------------------------------------------------
@@ -336,23 +376,114 @@ def _litellm_cost_callback(
         logger.debug("cost callback failed: %s", e)
 
 
-def init_cost_tracking(*, log_path: Path | None = None, verbose: bool = False) -> bool:
-    """Register the LiteLLM cost callback. Idempotent.
+def record_llm_call(*, model: str, usage: Any, role: str | None = None) -> None:
+    """Record one CostEntry from an LLM call's token usage.
 
-    Returns True if registered, False if litellm is missing.
+    ``usage`` is a mapping (or any object exposing the keys) with token
+    counts; both LiteLLM (``prompt_tokens`` / ``completion_tokens``) and
+    Anthropic-native (``input_tokens`` / ``output_tokens``) namings are
+    accepted. Attribution falls back to the supplied ``role`` (e.g. the
+    event's ``agent_role``) when no crew attribution is set.
+    """
+
+    def _tok(*keys: str) -> int:
+        for k in keys:
+            v = usage.get(k) if isinstance(usage, dict) else getattr(usage, k, None)
+            if v:
+                return int(v)
+        return 0
+
+    input_tokens = _tok("prompt_tokens", "input_tokens")
+    output_tokens = _tok("completion_tokens", "output_tokens")
+    if input_tokens == 0 and output_tokens == 0:
+        return
+    attr = get_attribution()
+    append_entry(
+        CostEntry(
+            timestamp=datetime.now(tz=UTC),
+            project=attr["project"],
+            decision_id=attr["decision_id"],
+            role=attr["role"] or (role or ""),
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost_usd=estimate_cost_usd(model, input_tokens, output_tokens),
+        )
+    )
+
+
+# CrewAI ≥1.x manages LiteLLM's callback list itself (stripping function
+# callbacks, overwriting ``litellm.callbacks``) and routes native providers
+# off LiteLLM entirely — so the ``success_callback`` hook never fires for crew
+# runs. The event bus is the reliable surface: both the LiteLLM and native
+# paths emit ``LLMCallCompletedEvent`` with per-call model + usage.
+_crewai_listener_registered = False
+
+
+def _on_crewai_llm_completed(source: Any, event: Any) -> None:  # noqa: ARG001
+    """Bus handler for ``LLMCallCompletedEvent`` — records one CostEntry."""
+    try:
+        if getattr(event, "usage", None) is None or not getattr(event, "model", None):
+            return
+        record_llm_call(
+            model=event.model,
+            usage=event.usage,
+            role=getattr(event, "agent_role", None),
+        )
+    except Exception as e:  # noqa: BLE001 — observability must never crash work
+        logger.debug("crewai cost listener failed: %s", e)
+
+
+def _register_crewai_cost_listener(*, verbose: bool = False) -> bool:
+    global _crewai_listener_registered
+    if _crewai_listener_registered:
+        return True
+    try:
+        from crewai.events.event_bus import crewai_event_bus
+        from crewai.events.types.llm_events import LLMCallCompletedEvent
+    except Exception:  # noqa: BLE001 — crewai missing/older: skip silently
+        return False
+
+    crewai_event_bus.on(LLMCallCompletedEvent)(_on_crewai_llm_completed)
+    _crewai_listener_registered = True
+    if verbose:
+        logger.info("crewai cost event listener registered")
+    return True
+
+
+def init_cost_tracking(
+    *, log_path: Path | None = None, force_jsonl: bool = True, verbose: bool = False
+) -> bool:
+    """Register the cost hooks. Idempotent.
+
+    Registers both the CrewAI event-bus listener (the path that actually fires
+    for crew LLM calls) and the legacy LiteLLM ``success_callback`` (kept as a
+    fallback for any direct LiteLLM use).
+
+    ``force_jsonl`` is forwarded to :func:`set_log_path`. The production CLI
+    passes ``force_jsonl=False`` so cost writes reach the Postgres ledger
+    when a database URL resolves; tests keep the default to stay on JSONL.
+
+    Returns True if at least one hook was registered.
     """
     if log_path is not None:
-        set_log_path(log_path)
+        set_log_path(log_path, force_jsonl=force_jsonl)
+
+    crew_ok = _register_crewai_cost_listener(verbose=verbose)
+
+    litellm_ok = False
     try:
         import litellm  # type: ignore[import-not-found]
+
+        callbacks = list(litellm.success_callback or [])
+        if _litellm_cost_callback not in callbacks:
+            callbacks.append(_litellm_cost_callback)
+            litellm.success_callback = callbacks
+        litellm_ok = True
     except ImportError:
         if verbose:
-            logger.warning("litellm not installed; cost tracking disabled")
-        return False
-    callbacks = list(litellm.success_callback or [])
-    if _litellm_cost_callback not in callbacks:
-        callbacks.append(_litellm_cost_callback)
-        litellm.success_callback = callbacks
-    if verbose:
+            logger.warning("litellm not installed; relying on the crewai event listener")
+
+    if verbose and (crew_ok or litellm_ok):
         logger.info("cost tracking enabled (log: %s)", get_log_path())
-    return True
+    return crew_ok or litellm_ok

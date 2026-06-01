@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import uuid
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -17,6 +18,14 @@ from minions.models.agile import AgileRitualRecord
 from minions.models.decision import DecisionStatus
 from minions.models.manifest import load_active_manifests
 from minions.questions.store_factory import QuestionStoreLike
+from minions.transcripts.capture import record_task
+
+if TYPE_CHECKING:
+    from minions.transcripts.store_factory import TranscriptStoreLike
+
+# Seat roles for the scrum round-table — must match the ``scrum`` ritual
+# seat_layout in the web (lib/meetings/rituals.ts) so the meeting renders.
+_SCRUM_SEATS = ("manager", "product_owner", "tech_team_lead", "engineer")
 
 
 class ScrumOutcome(BaseModel):
@@ -49,6 +58,7 @@ def run_scrum(
     engineer_runs_store: EngineerRunStoreLike,
     agile_store: AgileStoreLike,
     questions_store: QuestionStoreLike | None = None,
+    transcript_store: TranscriptStoreLike | None = None,
     activity_log_path: Path | None = None,
     now: datetime | None = None,
     dry_run: bool = False,
@@ -90,6 +100,7 @@ def run_scrum(
             )
             if not dry_run:
                 agile_store.save_ritual(record)
+                run_id = f"scrum-{project}-{uuid.uuid4().hex}"
                 # Attach the ritual's actual content so the Stage feed renders
                 # "demo_three scrum: 14 blockers — <first blocker>. Next: <first action>"
                 # instead of the generic "shared a daily scrum update" line.
@@ -105,7 +116,7 @@ def run_scrum(
                     ActivityEntry(
                         timestamp=now,
                         event="scrum_created",
-                        run_id=f"scrum-{project}-{uuid.uuid4().hex}",
+                        run_id=run_id,
                         crew="scrum",
                         project=project,
                         decision_id=str(record.id),
@@ -114,6 +125,21 @@ def run_scrum(
                     ),
                     path=activity_log_path,
                 )
+                # Surface the stand-up as a round-table in /meetings by writing
+                # a short transcript per seat from the data computed above.
+                if transcript_store is not None:
+                    _emit_standup_transcript(
+                        transcript_store=transcript_store,
+                        run_id=run_id,
+                        project=project,
+                        decision_id=str(record.id),
+                        summary=summary,
+                        blockers=blockers,
+                        next_actions=next_actions,
+                        runs=runs,
+                        now=now,
+                        activity_log_path=activity_log_path,
+                    )
             outcomes.append(
                 ScrumOutcome(
                     project=project,
@@ -131,6 +157,96 @@ def run_scrum(
         finished_at=datetime.now(tz=UTC).isoformat(),
         outcomes=outcomes,
     )
+
+
+def _emit_standup_transcript(
+    *,
+    transcript_store: TranscriptStoreLike,
+    run_id: str,
+    project: str,
+    decision_id: str,
+    summary: str,
+    blockers: list[str],
+    next_actions: list[str],
+    runs: list[Any],
+    now: datetime,
+    activity_log_path: Path | None,
+) -> None:
+    """Write the stand-up as a 4-seat round-table so it shows in /meetings.
+
+    Content is derived from the data the sweep already computed — no
+    fabricated dialogue. Best-effort: any failure is swallowed so the scrum
+    sweep is never blocked by transcript capture.
+    """
+    open_prs = [f"#{r.pr_number}" for r in runs if (r.pr_state or "open") == "open" and r.pr_number]
+
+    def _bullets(items: list[str], empty: str) -> str:
+        return "\n".join(f"- {i}" for i in items) if items else empty
+
+    # (agent_role, role_in_conversation, content) per seat.
+    turns = [
+        ("manager", "synthesis", summary),
+        (
+            "product_owner",
+            "other",
+            "Next actions for this cycle:\n" + _bullets(next_actions, "- (none queued)"),
+        ),
+        (
+            "tech_team_lead",
+            "other",
+            "Blockers:\n" + _bullets(blockers, "- No blockers this cycle."),
+        ),
+        (
+            "engineer",
+            "task_output",
+            (
+                "Open PRs in flight: " + ", ".join(open_prs)
+                if open_prs
+                else "No open PRs in flight right now."
+            ),
+        ),
+    ]
+
+    with suppress(Exception):
+        append(
+            ActivityEntry(
+                timestamp=now,
+                event="crew_started",
+                run_id=run_id,
+                crew="scrum",
+                project=project,
+                decision_id=decision_id,
+                agents=_SCRUM_SEATS,
+            ),
+            path=activity_log_path,
+        )
+    for sequence, (role, role_in_conversation, content) in enumerate(turns):
+        record_task(
+            store=transcript_store,
+            run_id=run_id,
+            project=project,
+            crew="scrum",
+            agent_role=role,
+            agent_display_name=None,
+            sequence=sequence,
+            role_in_conversation=role_in_conversation,  # type: ignore[arg-type]
+            task_output=content,
+            decision_id=decision_id,
+            activity_log_path=activity_log_path,
+        )
+    with suppress(Exception):
+        append(
+            ActivityEntry(
+                timestamp=datetime.now(tz=UTC),
+                event="crew_finished",
+                run_id=run_id,
+                crew="scrum",
+                project=project,
+                decision_id=decision_id,
+                agents=_SCRUM_SEATS,
+            ),
+            path=activity_log_path,
+        )
 
 
 def _blockers(decisions, runs, open_questions) -> list[str]:

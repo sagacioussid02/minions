@@ -1,176 +1,286 @@
-<div align="center">
+# Minions
 
-# 🐝 minions
+Autonomous AI engineering organization that owns and maintains a portfolio of software projects, with the operator as the sole human-in-the-loop approver.
 
-**An autonomous AI engineering *organization* — not a single coding agent, but a whole org of role-based AI agents that plan, build, review, and ship software across a portfolio of projects. You are the only human, and you sit at the top as the approver.**
+See `openspec/changes/bootstrap-agent-org/` for the full design and phased plan.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
-[![Next.js](https://img.shields.io/badge/dashboard-Next.js-black.svg)](https://nextjs.org/)
+## Status
 
-[What it is](#what-it-is) · [Screenshots](#screenshots) · [How it works](#how-it-works) · [Quickstart](#quickstart) · [Architecture](#architecture) · [Contributing](#contributing)
+**v0 frugal mode** — Phase 2 (org skeleton), Phase 2.5 (CrewAI integration), and Phase 3 (LangGraph approval graph + console notifier) all bootstrapped and end-to-end tested. Phase 1 foundations (GitHub App, AWS, branch protection, Gmail OAuth) need operator console clicks; see Day-1 checklist below.
 
-</div>
+Active managed projects (manifests in `projects/`):
 
----
+| Project | Repo | Monthly cap |
+|---|---|---|
+| Demo | your-github-org/demo | $4 |
+| demo_two | your-github-org/demo_two | $4 |
+| demo_three | your-github-org/demo_three | $4 |
+| demo_four | TBD | $2 |
+| trading | _deferred_ | _$8 when re-added_ |
 
-## What it is
+**Total v0 budget:** ≈ $14/month (envelope $15–$30).
 
-Most "AI coding agents" are a single assistant in your editor. **minions is different: it models an entire software org.**
+## Operator console — living org spaces
 
-There's a Product Owner, a Principal Engineer, a Manager, Engineers, a Code Auditor, a Security Champion, a Devil's Advocate, and an executive bench (CEO/CTO/MD) — each a named AI agent with its own role, model tier, and seat at the table. They run real Agile rituals (sprint planning, scrum, code audits, retros), produce **Decision Records**, and open **draft pull requests**.
+The public console at `minions-public/web` has two surfaces for watching and steering the org:
 
-**Every meaningful action passes through a human approval gate.** Nothing merges to `main` without you. The agents propose; you dispose. That single constraint — *human-in-the-loop by construction* — is the spine of the whole system.
+- **`/meetings`** — Surface A. A live round-table view of every crew that's currently running, with avatars on seats, JSON-aware speech bubbles, and a side-by-side transcript. Replays past meetings with a play / restart / speed control.
+- **`/roster`** — Surface B. Click the **talk** button on any roster card to open a drawer that lets you chat with that specific agent. Their reply is grounded in their own learning records, the latest project dossier, and recent crew transcripts; threads persist across page loads and the daily spend is capped (default $1/day, env-overridable).
 
-You watch it all happen in a live operator console: a **meeting room** where you see the agents debate around a round-table (in 2D *or* 3D), a **roster** of your named agents, a **sprint board**, cost tracking, and a questions inbox where blocked agents ask *you*.
+Demo script (≈ 3 min): see [`docs/living-org-demo.md`](docs/living-org-demo.md).
 
-> **Status:** Active development, dogfooded daily on its own portfolio of projects. It works end-to-end (plan → approve → build → PR → review) and is genuinely fun to watch — but it's young, opinionated, and evolving fast. Issues and PRs very welcome.
+Screenshots: _to be captured after the next live meeting + smoke test (B6) lands._
 
----
+## What's implemented
 
-## Screenshots
+- Project structure (`pyproject.toml`, src-layout, ruff/mypy/pytest config)
+- Pydantic data models: `Decision`, `AuditFinding`, `Manifest`, `PortfolioConfig`
+- Role registry with target + v0 frugal tier mappings (Opus / Sonnet / Haiku)
+- Manifest loader (skips `_deferred/`) + portfolio config loader
+- Base `MinionAgent` class with safety preamble (the four hard rules) injected into every system prompt
+- **CrewAI integration** — `make_crewai_agent()` factory translates `MinionAgent` → `crewai.Agent` with the right LLM tier
+- **Planning crew** — sequential PO → Principal → Manager that produces a sprint Decision Record (dry-run + real modes)
+- **Decision Store** — JSON-file backed (`data/local/decisions.json`); swaps for Neon Postgres in Phase 6
+- **Approval service** — `submit_for_approval()` + `resolve()` with status updates and notifier callbacks
+- **LangGraph approval graph** — durable in-process state machine (notify → interrupt → resolve), with `InMemorySaver` for v0 (swap to `SqliteSaver`/`PostgresSaver` later)
+- **HMAC-signed magic-link tokens** — 72h TTL, sign/verify with timing-safe compare
+- **Notifier abstraction** — `ConsoleNotifier` (v0 demo) + `GmailNotifier` (stub for OAuth-later)
+- **Secrets resolver** — env vars in v0 (`MINIONS_SECRET_*`), AWS Secrets Manager seam for production
+- **CLI**: `minions check`, `org`, `roster`, `plan <project>`, `decisions list/show/approve/reject`
+- **Test suite** — 47 tests covering models, manifests, config, agent assembly, planning crew (dry-run), Decision Store, approval service, approval graph (interrupt+resume), token sign/verify, secrets
 
-> 📸 _Drop images into `docs/screenshots/` with the filenames below and they'll render here._
+## What's NOT implemented yet
 
-| Live meeting room (2D round-table) | 3D round-table |
-|---|---|
-| ![Meetings](docs/screenshots/meetings.png) | ![3D meeting](docs/screenshots/meeting-3d.png) |
+- Real Gmail send (stub raises `NotImplementedError` — needs OAuth in Phase 1.8 / 3.3)
+- GitHub App + branch-protection enforcement (Phase 1)
+- AWS Secrets Manager wrapper (Phase 7; secrets module has the seam)
+- Neon Postgres audit log (Phase 1.6 + 6.1; JSON store in the meantime)
+- Langfuse traces (Phase 1.5)
+- Modal / Fly.io deployment (Phase 1.7)
+- Audit team agents wired up (Phase 9)
+- Procurement / team-composition Decision flows (Phases 10–11)
+- Engineer crew that picks up an approved sprint and opens PRs
+- Cost-accounting middleware (Phase 6.1)
 
-| Roster of named agents | Sprint board |
-|---|---|
-| ![Roster](docs/screenshots/roster.png) | ![Sprint board](docs/screenshots/sprint.png) |
+## Dev setup
 
----
-
-## How it works
-
-```
-  YOU (operator / CEO)
-        ▲  approve / reject / answer questions
-        │
-  ┌─────┴───────────────────────────────────────────────┐
-  │  Decision Records  ──►  Approval gate  ──►  Execution │
-  └──────────────────────────────────────────────────────┘
-        ▲                                          │
-        │ propose                                  │ open draft PR
-  ┌─────┴───────────┐   ┌───────────────┐   ┌──────▼─────────┐
-  │ Planning crew   │   │ Audit/Security │   │ Engineer crew  │
-  │ PO·Principal·Mgr│   │ Devil's Adv.   │   │ writes the code│
-  └─────────────────┘   └───────────────┘   └────────────────┘
-```
-
-1. **Plan.** A planning crew (Product Owner → Principal Engineer → Manager, with a Devil's Advocate critique) debates and produces a sprint **Decision Record**.
-2. **Approve.** The Decision lands in your inbox (console / email). Nothing proceeds until you approve.
-3. **Build.** On approval, the Engineer crew implements the work and opens a **draft PR** — never merging, never touching `main`.
-4. **Review.** Code Auditor, Security Champion, and QA review the PR and post structured verdicts.
-5. **Observe.** Every step streams into the operator console as a live "meeting," and every LLM call is cost-tracked and trace-able.
-
-It runs itself on a cadence (weekly planning, scrum every other day, daily monitoring) via scheduled jobs — but always stops at the approval gate.
-
-### Safety is built in, in four layers
-
-This is the part we take most seriously. AI agents with repo access need hard guarantees:
-
-1. **Prompt** — every agent's system prompt carries four non-negotiable rules.
-2. **Tooling** — filesystem deny-list (`.env*`, `*.pem`, `*.key`, `credentials*`); the GitHub client *has no merge method* and refuses `main`/`master`/`trunk`/`develop`; PRs default to draft.
-3. **Platform** — GitHub branch protection; the App scope excludes secrets.
-4. **Network** — egress allowlist (Anthropic, GitHub, Gmail, Langfuse, Neon, AWS only).
-
----
-
-## Quickstart
-
-minions is two pieces: the **Python orchestrator** (the agent org + CLI) and the **Next.js operator console** (`web/`). You can run either independently. The orchestrator works fully offline in dry-run mode — **no API keys, no cloud, $0.**
-
-### 1. The agent org (Python)
+Recommend [uv](https://github.com/astral-sh/uv) (fast). Pip works too.
 
 ```bash
-git clone https://github.com/sagacioussid02/minions
+# with uv
 cd minions
+uv venv
+uv pip install -e ".[dev]"
 
-# uv recommended (fast); pip works too
-uv venv && uv pip install -e ".[dev]"
-#   or: python3.12 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
-
-minions check                 # validate config + manifests
-minions org                   # print the full org topology + model tiers
-minions roster                # see the named agents
-
-# Run the full plan → decision → approve loop with ZERO spend:
-minions plan demo             # dry-run by default — no LLM calls, $0
-minions decisions list        # the Decision it produced
-minions decisions approve <id-prefix>
+# OR with pip
+cd minions
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
 ```
 
-To run *real* planning (spends a few cents on Claude):
+### Run the CLI
 
+```bash
+minions check                        # validate config/portfolio.yaml + all manifests
+minions org                          # print full org topology with model tiers
+minions roster demo                  # roster for a single project (or omit for all)
+
+# Planning + approval flow (end-to-end demo)
+minions plan demo                    # dry-run by default — no LLM calls, $0
+minions plan demo --no-dry-run       # invoke real Claude Sonnet (~$0.05–$0.15)
+minions decisions list               # show pending decisions
+minions decisions show <id-prefix>   # full decision detail (4-char prefix is enough)
+minions decisions approve <id> [-r "reason"]
+minions decisions reject  <id> [-r "reason"]
+```
+
+For real planning runs set the API key:
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 minions plan demo --no-dry-run
 ```
 
-### 2. The operator console (web dashboard)
+## Observability (Langfuse)
+
+Every CrewAI LLM call auto-traces into Langfuse when credentials are set. You get one trace per crew run (planning / engineer) with child generations for each LLM call — prompt, response, latency, token counts, est. cost — filterable by project / decision_id / dry_run / cadence.
+
+Setup (3 minutes — cloud free tier):
+
+1. Sign up at <https://cloud.langfuse.com>, create a project ("minions").
+2. Settings → API Keys → "+ Create new API keys". Copy the public + secret keys.
+3. Add to `.env` (the orchestrator auto-loads it on startup):
+   ```
+   LANGFUSE_PUBLIC_KEY=pk-lf-...
+   LANGFUSE_SECRET_KEY=sk-lf-...
+   LANGFUSE_HOST=https://cloud.langfuse.com   # or your self-host URL
+   ```
+4. Verify:
+   ```bash
+   minions langfuse
+   # → Host: https://cloud.langfuse.com
+   # → ✓ authenticated to https://cloud.langfuse.com
+   ```
+5. Run anything with LLM calls: `minions plan demo --no-dry-run` — your trace appears in real time at `https://cloud.langfuse.com/traces`.
+
+Self-hosting works the same way: `docker compose up` from the [Langfuse repo](https://github.com/langfuse/langfuse) and point `LANGFUSE_HOST` at it.
+
+When credentials aren't set, `@observe_crew` is a true no-op pass-through — no warnings, no overhead.
+
+## Email approvals (Gmail SMTP)
+
+Default notifier is `ConsoleNotifier` — pretty terminal panels. Switch to real Gmail emails with **5 minutes of setup**:
+
+1. Make sure 2-Step Verification is on for your Google account.
+2. Generate a Gmail App Password at <https://myaccount.google.com/apppasswords> (label it "minions"). 16 chars, no spaces.
+3. Store it:
+   ```bash
+   export MINIONS_SECRET_GMAIL_APP_PASSWORD="<16-char-password>"
+   # OR (production):
+   aws secretsmanager create-secret --name minions/gmail-app-password --secret-string "<16-char-password>"
+   ```
+4. Switch on:
+   ```bash
+   export MINIONS_NOTIFIER=gmail
+   ```
+5. Verify:
+   ```bash
+   minions notify-test     # sends a real test email to the owner address
+   ```
+
+The owner address comes from `config/portfolio.yaml.owner` (currently `operator@example.com`). Magic-link tokens are embedded in every email (72h TTL, HMAC-signed) so once the webhook receiver lands, links become clickable. Until then the email shows the exact `minions decisions approve <id>` command to copy/paste.
+
+If `MINIONS_NOTIFIER=gmail` but the secret is missing, the orchestrator falls back to ConsoleNotifier with a clear warning — no silent failures.
+
+## GitHub
+
+The orchestrator has its own scoped GitHub REST client:
+- Cannot merge PRs (no method exists in code)
+- Refuses to operate on `main`/`master`/`trunk`/`develop` (also enforced server-side via branch protection)
+- Defaults all PRs to draft
 
 ```bash
-cd web
-pnpm install
-cp ../.env.example .env.local   # set DATABASE_URL (Neon Postgres) — see below
-pnpm dev                        # → http://localhost:3000
+minions github check demo         # repo metadata + first 5 open issues
+minions github issues demo -l mini:idea -n 20   # filter and list issues
 ```
 
-The dashboard reads from the same Postgres the orchestrator writes to. Point `DATABASE_URL` at a [Neon](https://neon.tech) database (free tier is plenty). With an empty DB the UI renders cleanly with empty states; run the orchestrator to populate live meetings, roster, and the sprint board.
+Token resolution order:
+1. `GITHUB_TOKEN` env var
+2. AWS Secrets Manager `minions/github-token`
+3. `gh auth token` (local-dev convenience — works as long as `gh auth login` was done)
 
-That's it — clone, install, run. No required external services for the dry-run path.
+If you have a stale `GITHUB_TOKEN` in your shell, `unset` it (or `export GITHUB_TOKEN=$(gh auth token)`).
 
----
+## Secrets
 
-## Architecture
+Resolution chain (first hit wins):
+1. **EnvBackend** — `MINIONS_SECRET_<NAME_UPPER>` env vars (local dev)
+2. **AwsSecretsManagerBackend** — `minions/<name>` from AWS Secrets Manager (production)
 
-The system is organized around **Decision Records flowing through an approval graph**. A few load-bearing ideas:
+```bash
+minions secrets backends           # list active backends
+minions secrets check anthropic-api-key   # verify resolvable, masks the value
+```
 
-- **Roles → model tiers.** Every role maps to a Claude tier (Opus / Sonnet / Haiku) so cheap work runs cheap and hard work runs strong.
-- **Crews.** Sequential [CrewAI](https://crewai.com) crews: planning, engineer, code-audit, security, devil's-advocate, QA, portfolio-review.
-- **Approval pipeline.** Durable Decision store + a [LangGraph](https://www.langchain.com/langgraph) state machine (notify → interrupt → resolve) + HMAC-signed magic-link approvals.
-- **Dual-backend stores.** Every persistent object has a JSON backend (local dev) and a Neon Postgres backend (production), chosen by env. Same interface either way.
-- **Observability.** [Langfuse](https://langfuse.com) traces every crew run when configured; a true no-op when not.
-- **The console.** A Next.js 16 app that reads the activity log + transcripts and renders the org as a living, watchable place.
+### AWS Secrets Manager setup (production)
 
-📖 **Deep dive:** [`ARCHITECTURE.md`](ARCHITECTURE.md)
+1. Configure AWS credentials however you like (`aws configure`, IAM role on the runtime, env vars). The orchestrator uses standard boto3 resolution.
+2. Create an IAM policy granting `secretsmanager:GetSecretValue` scoped to `arn:aws:secretsmanager:*:*:secret:minions/*`. Attach to the role/user the orchestrator runs as.
+3. Create the secrets you need:
+   ```bash
+   aws secretsmanager create-secret --name minions/anthropic-api-key --secret-string sk-ant-...
+   aws secretsmanager create-secret --name minions/token-signing-key --secret-string "$(openssl rand -hex 32)"
+   aws secretsmanager create-secret --name minions/github-app-private-key --secret-string "$(cat key.pem)"
+   ```
+4. Verify: `minions secrets check anthropic-api-key` should print a masked value.
+
+The AWS backend falls through to "not found" silently on missing creds / wrong region / non-existent secret — so dev environments without AWS still work via env vars. **AccessDenied propagates** so misconfigured IAM policies get noticed.
+
+`get_token_signing_key()` has a dev-only fallback that catches *all* errors (including AccessDenied) so the planning flow can run even when AWS is misconfigured. Production deploys MUST set `MINIONS_TOKEN_SECRET` or grant proper IAM access.
+
+### Run tests
+
+```bash
+pytest
+```
+
+### Lint / typecheck
+
+```bash
+ruff check src tests
+ruff format src tests
+mypy src
+```
+
+## Day-1 operator checklist (before any agent runs)
+
+These need your hands at the keyboard for OAuth / console clicks; they cannot be automated.
+
+1. **Confirm demo_four repo URL** — replace `TBD` in `projects/demo_four.yaml`.
+2. **Create GitHub App `minions-org`** — scopes:
+   - `contents: write` (for feature branches only)
+   - `pull-requests: write`
+   - `issues: write`
+   - **NO** `secrets: read`, **NO** `administration`, **NO** `members`
+   Install on the 4 GitHub repos.
+3. **Branch protection** on `main` for Demo, demo_two, demo_three, demo_four:
+   - Require PR
+   - Require ≥1 review
+   - Require status checks
+   - No direct push, no admin bypass
+4. **AWS Secrets Manager** — provision a secrets manager instance in your AWS account; create one secret per integration (`minions/anthropic-api-key`, `minions/github-app-private-key`, `minions/gmail-oauth`, `minions/neon-dsn`, `minions/langfuse`). Create an IAM role/user the orchestrator process will assume.
+5. **Anthropic API key** — store in AWS Secrets Manager.
+6. **Neon Postgres** — create a project (`minions-audit`); run schema migration (Phase 1.6 will provide).
+7. **Gmail** — set up OAuth app for the orchestrator with `gmail.send` and `gmail.modify` scopes; create label `minions/approval`.
+8. **Langfuse** — sign up (cloud free tier OK) or self-host; store project key in AWS Secrets Manager.
+9. **Runtime host** — pick Modal or Fly.io; wire in deps; deploy a smoke test.
+
+After Day-1, Phase 2.x can wire up the actual CrewAI crews and start producing Decision Records (still local until Phase 3 lights up Gmail + Neon).
+
+## Hard safety rules (encoded in 4 layers)
+
+1. **Prompt** — every agent's system prompt contains the four hard rules.
+2. **Tooling** — filesystem deny-list for `.env*`, `secrets/**`, `**/*.pem`, `**/*.key`, `**/credentials*`. Git tool refuses pushes to `main`/`master`. PR tool can open and comment but not merge.
+3. **Platform** — GitHub branch protection. App scope excludes secrets read.
+4. **Network** — runtime egress allowlist: Anthropic, GitHub, Gmail, Langfuse, Neon, AWS Secrets Manager only.
+
+Plus a 90-day audit log in Langfuse + Neon, replayable by Decision Record id.
+
+## Project layout
 
 ```
 minions/
-├── src/minions/          # the orchestrator
-│   ├── agents/           # MinionAgent + the four safety rules
-│   ├── crews/            # planning, engineer, audit, security, ...
-│   ├── approval/         # Decision store, service, LangGraph, tokens
-│   ├── scheduled/        # cron entrypoints (weekly plan, scrum, monitor)
-│   ├── transcripts/      # crew transcript capture → the meeting feed
-│   └── __main__.py       # the `minions` CLI
-├── web/                  # the Next.js operator console
-├── config/ & projects/   # portfolio + per-project manifests
-└── tests/                # ~700 tests
+├── config/
+│   └── portfolio.yaml          # portfolio-level config (cadence, audit, procurement, etc.)
+├── projects/
+│   ├── demo.yaml               # active manifests
+│   ├── demo_two.yaml
+│   ├── demo_four.yaml
+│   ├── demo_three.yaml
+│   └── _deferred/
+│       └── trading.yaml        # not active until re-instated
+├── openspec/                   # full design + phased plan
+│   ├── project.md
+│   └── changes/bootstrap-agent-org/
+├── src/minions/
+│   ├── __main__.py             # CLI
+│   ├── agents/
+│   │   ├── base.py             # MinionAgent
+│   │   └── safety.py           # safety preamble (the four hard rules)
+│   ├── config/
+│   │   └── portfolio.py        # PortfolioConfig
+│   └── models/
+│       ├── audit.py            # AuditFinding
+│       ├── decision.py         # Decision Record
+│       ├── manifest.py         # Manifest
+│       └── roles.py            # Role enum + tier mapping
+└── tests/
 ```
 
----
+## Cost discipline (v0)
 
-## Contributing
-
-**We'd genuinely love your help** — and there's a comfortable on-ramp: most of the codebase runs locally with no API keys, and the test suite runs in seconds.
-
-```bash
-uv pip install -e ".[dev]"
-pytest          # should be green on a clean clone
-ruff check src tests && mypy src
-```
-
-Great first contributions: dashboard/UX polish (`web/`), new CLI commands, more crew rituals, docs, and bug fixes (most carry a regression test). Look for [`good first issue`](https://github.com/sagacioussid02/minions/labels/good%20first%20issue).
-
-One thing that makes this project unusual: **it's a framework for accountable AI engineering, so we hold contributions to the same bar** — AI-assisted PRs are explicitly welcome, but they must be human-reviewed, disclosed, and scoped. Full details (including the safety-critical files that need maintainer review) are in **[`CONTRIBUTING.md`](CONTRIBUTING.md)**.
-
-By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md). Security issues: see [`SECURITY.md`](SECURITY.md) — please don't open public issues for those.
-
----
+Every model call passes through middleware (Phase 6.1) that records (project, role, decision-id, model, tokens, cost) and aggregates nightly. Per-project weekly cap → throttle → operator notify. Total target $14/mo across 4 active projects.
 
 ## License
 
-[MIT](LICENSE) © 2026 Siddharth Shankar and contributors. Use it, fork it, build your own org.
+Proprietary — internal use only.

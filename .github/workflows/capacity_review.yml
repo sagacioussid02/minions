@@ -1,0 +1,22 @@
+name: Capacity review
+
+# openspec/changes/hire-as-decision. Weekly capacity watcher: detects roles
+# over WIP cap or sitting on a deep unassigned backlog and files propose-only
+# TEAM_COMPOSITION (hire) Decisions for the operator to approve. Never mutates
+# a roster. Runs Sunday 10:00 UTC, before Monday planning.
+
+on:
+  schedule:
+    - cron: '0 10 * * 0'
+  workflow_dispatch:
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  capacity-review:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: 'cron capacity-review --no-dry-run'
+    secrets: inherit

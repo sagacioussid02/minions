@@ -77,13 +77,24 @@ def attach_critique(
             project=decision.project,
             agents=["devils_advocate"],
             decision_id=str(decision.id),
-        ):
+        ) as run_id:
             result = critique(
                 decision,
                 api_key=api_key,
                 portfolio=portfolio,
                 output_override=output_override,
             )
+            if result is not None:
+                from minions.transcripts.capture import record_crew_summary
+
+                record_crew_summary(
+                    run_id=run_id,
+                    project=decision.project,
+                    crew="devils_advocate",
+                    agent_role="devils_advocate",
+                    result=result,
+                    decision_id=str(decision.id),
+                )
     finally:
         clear_attribution()
 

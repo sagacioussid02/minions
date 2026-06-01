@@ -2,7 +2,7 @@
 
 These guard against the runaway-PR-loop failure mode where ``pr_followup``
 queues a new fix Decision for every engineer-run row, and each fix in turn
-becomes a fresh row with its own ``followup_attempts`` counter. The
+becomes a fresh row with its own ``iteration_count`` counter. The
 in-place fix path masks the bug while it works; the moment a branch is
 gone or has operator commits, the fix falls through to a fresh PR and the
 loop unfolds.

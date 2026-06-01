@@ -121,7 +121,7 @@ def audit_pr(
             project=record.project,
             agents=["code_auditor"],
             decision_id=record.decision_id,
-        ):
+        ) as run_id:
             if output_override is not None:
                 out: CodeAuditOutput | None = output_override
             elif api_key is None:
@@ -133,6 +133,17 @@ def audit_pr(
                     files=files,
                     api_key=api_key,
                     portfolio=portfolio,
+                )
+            if out is not None:
+                from minions.transcripts.capture import record_crew_summary
+
+                record_crew_summary(
+                    run_id=run_id,
+                    project=record.project,
+                    crew="code_auditor",
+                    agent_role="code_auditor",
+                    result=out,
+                    decision_id=record.decision_id,
                 )
     finally:
         clear_attribution()

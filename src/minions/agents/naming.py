@@ -102,6 +102,34 @@ def set_display_name(agent_id: str, name: str, *, path: Path | None = None) -> N
     names = _load(path)
     names[agent_id] = name.strip()
     _save(names, path)
+    _sync_to_db(agent_id, name.strip())
+
+
+def _sync_to_db(agent_id: str, name: str) -> None:
+    """Best-effort mirror into the Postgres ``agent_names`` table so the
+    dashboard roster/Live views resolve the new name. No-op without a DB."""
+    role, _, project = agent_id.partition("@")
+    project = (project or "shared").partition("#")[0]  # drop seat suffix
+    try:
+        from minions.db.connection import connect, has_database_url
+
+        if not has_database_url():
+            return
+        with connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "CREATE TABLE IF NOT EXISTS agent_names ("
+                "role text NOT NULL, project text NOT NULL, "
+                "display_name text NOT NULL, PRIMARY KEY (role, project))"
+            )
+            cur.execute(
+                "INSERT INTO agent_names (role, project, display_name) "
+                "VALUES (%s, %s, %s) ON CONFLICT (role, project) "
+                "DO UPDATE SET display_name = EXCLUDED.display_name",
+                (role, project, name),
+            )
+            conn.commit()
+    except Exception:  # noqa: BLE001 — naming never blocks on DB availability
+        pass
 
 
 def list_all(path: Path | None = None) -> dict[str, str]:

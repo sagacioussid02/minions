@@ -30,7 +30,7 @@ from minions.crews.engineer_runs_store import (
     ReviewerVerdict,
 )
 from minions.github.client import GitHubError
-from minions.models.decision import Decision, DecisionStatus, DecisionType
+from minions.models.decision import Decision
 from minions.models.manifest import Manifest, load_active_manifests
 
 if TYPE_CHECKING:
@@ -198,35 +198,6 @@ def _assignment_comment(record: EngineerRunRecord) -> str:
     )
 
 
-def _creator_response_comment(
-    record: EngineerRunRecord,
-    *,
-    fix_id: str | None,
-) -> str:
-    blockers = [r for r in record.reviewers if r.status == "changes_requested"]
-    lines = [
-        "🤖 **Creator response**",
-        "",
-        "I read the crew review feedback and found blocking items to address.",
-    ]
-    if blockers:
-        lines += ["", "**Blocking reviewer feedback:**"]
-        lines += [f"- {r.display_name}: {r.summary or 'requested changes'}" for r in blockers]
-    if fix_id:
-        lines += [
-            "",
-            f"I queued one linked fix attempt as Decision `{fix_id[:8]}`. "
-            "The engineer crew will open a follow-up PR and reference this PR.",
-        ]
-    else:
-        lines += [
-            "",
-            "The one allowed creator-response iteration is already used; this PR "
-            "needs operator attention or a manual follow-up.",
-        ]
-    return "\n".join(lines)
-
-
 def _human_handoff_comment(record: EngineerRunRecord, reason: str) -> str:
     return (
         "🤖 **Ready for operator merge**\n\n"
@@ -245,19 +216,6 @@ def _superseded_comment(record: EngineerRunRecord, followup: EngineerRunRecord) 
         "to keep the sprint board clean and the audit trail explicit.\n\n"
         f"**Superseding PR:** {followup.pr_url or 'linked follow-up PR'}\n"
         f"**Original PR:** {record.pr_url or f'PR #{record.pr_number}'}"
-    )
-
-
-def _conflict_comment(record: EngineerRunRecord, fix_id: str) -> str:
-    return (
-        "🤖 **Conflict resolution queued**\n\n"
-        "GitHub reports this PR is dirty/conflicting with the base branch. The "
-        "creator agent should not leave this for the operator: I queued a "
-        f"conflict-resolution Decision `{fix_id[:8]}` for the engineer crew.\n\n"
-        "That follow-up will re-evaluate whether the original change is still "
-        "needed on current `main`. If it is needed, the crew should open a clean "
-        "replacement PR; if it is not needed, the original PR will be closed as "
-        "superseded."
     )
 
 
@@ -362,71 +320,6 @@ def _advance_review_status(record: EngineerRunRecord) -> None:
     record.review_status = "reviewing"
 
 
-def _fix_decision_summary(record: EngineerRunRecord) -> str:
-    pr_ref = f"PR #{record.pr_number}" if record.pr_number else "the prior PR"
-    return f"Address crew review feedback on {pr_ref} ({record.project})"
-
-
-def _fix_decision_plan(record: EngineerRunRecord) -> str:
-    feedback = [
-        f"- {r.display_name}: {r.summary or 'requested changes'}"
-        for r in record.reviewers
-        if r.status == "changes_requested"
-    ]
-    if not feedback:
-        feedback = ["- CI or crew review requested changes."]
-    files = [f"- `{f}`" for f in record.files_changed] or ["- (none recorded)"]
-    return "\n".join(
-        [
-            f"## Crew review requested changes on {record.pr_url or 'prior PR'}",
-            "",
-            "**Blocking feedback:**",
-            *feedback,
-            "",
-            "**Files in the reviewed PR:**",
-            *files,
-            "",
-            "## Requested change",
-            "",
-            "Run the engineer crew once more for this project. Address the reviewer "
-            "feedback and CI failures, then open a linked follow-up PR that references "
-            f"the original PR ({record.pr_url}).",
-        ]
-    )
-
-
-def _conflict_decision_summary(record: EngineerRunRecord) -> str:
-    pr_ref = f"PR #{record.pr_number}" if record.pr_number else "the prior PR"
-    return f"Resolve merge conflict on {pr_ref} ({record.project})"
-
-
-def _conflict_decision_plan(record: EngineerRunRecord) -> str:
-    files = [f"- `{f}`" for f in record.files_changed] or ["- (none recorded)"]
-    return "\n".join(
-        [
-            f"## Merge conflict on {record.pr_url or 'prior PR'}",
-            "",
-            "GitHub reports the original PR is dirty/conflicting with the base branch.",
-            "This is normal engineering work: do not leave the PR stalled.",
-            "",
-            "**Files in the original PR:**",
-            *files,
-            "",
-            "## Requested change",
-            "",
-            "Inspect the current `main` branch and the original PR intent. Decide "
-            "whether the change is still needed.",
-            "",
-            "- If the change is still needed, produce a clean corrected change on a "
-            "fresh minions branch and open a linked follow-up PR that references the "
-            f"original PR ({record.pr_url}).",
-            "- If the change is already covered by current `main`, leave a clear "
-            "comment explaining that the original PR is superseded so the review "
-            "loop can close it.",
-        ]
-    )
-
-
 def _decision_mentions_record(decision: Decision, record: EngineerRunRecord) -> bool:
     haystack = "\n".join(
         [
@@ -439,128 +332,6 @@ def _decision_mentions_record(decision: Decision, record: EngineerRunRecord) -> 
         (record.pr_url and record.pr_url in haystack)
         or (record.pr_number and f"PR #{record.pr_number}" in haystack)
     )
-
-
-def _queue_creator_fix_decision(
-    *,
-    store: DecisionStore,
-    record: EngineerRunRecord,
-) -> Decision:
-    existing = _find_existing_fix_decision(store=store, record=record)
-    if existing is not None:
-        return existing
-
-    # In-place fields: the creator-response fix commits ONTO the original
-    # PR's branch (no new PR opened). See openspec/in-place-pr-fix.
-    in_place_extras: dict[str, object] = {}
-    if record.pr_number is not None and record.branch_name:
-        in_place_extras["existing_pr_number"] = record.pr_number
-        in_place_extras["existing_pr_branch"] = record.branch_name
-        in_place_extras["retry_attempt"] = record.review_round + 1
-    fix = Decision(
-        project=record.project,
-        type=DecisionType.BUG,
-        summary=_fix_decision_summary(record),
-        rationale=(
-            f"Creator agent is responding to crew review feedback on {record.pr_url}. "
-            "Pushing the single allowed linked fix iteration as a commit on the same branch."
-        ),
-        diff_or_plan=_fix_decision_plan(record),
-        risk="low",
-        proposer_role="creator_response",
-        proposer_agent_id=f"creator_response@{record.project}",
-        proposer_display_name="Creator agent",
-        status=DecisionStatus.APPROVED,
-        priority="p2",
-        expedited=True,
-        requested_by_role="pr_review_loop",
-        resolved_reason="auto-approved by PR review loop",
-        resolved_at=datetime.now(tz=UTC),
-        **in_place_extras,  # type: ignore[arg-type]
-    )
-    store.save(fix)
-    return fix
-
-
-def _find_existing_fix_decision(
-    *,
-    store: DecisionStore,
-    record: EngineerRunRecord,
-) -> Decision | None:
-    pr_url = record.pr_url or ""
-    if not pr_url:
-        return None
-    for decision in store.list_by_status(DecisionStatus.APPROVED):
-        if decision.project != record.project:
-            continue
-        if decision.proposer_role not in {"pr_followup", "creator_response"}:
-            continue
-        haystack = "\n".join(
-            [
-                decision.summary or "",
-                decision.rationale or "",
-                decision.diff_or_plan or "",
-            ]
-        )
-        if pr_url in haystack or f"PR #{record.pr_number}" in haystack:
-            return decision
-    return None
-
-
-def _find_existing_conflict_decision(
-    *,
-    store: DecisionStore,
-    record: EngineerRunRecord,
-) -> Decision | None:
-    for decision in store.list_by_status(DecisionStatus.APPROVED):
-        if decision.project != record.project:
-            continue
-        if decision.proposer_role != "conflict_resolution":
-            continue
-        if _decision_mentions_record(decision, record):
-            return decision
-    return None
-
-
-def _queue_conflict_decision(
-    *,
-    store: DecisionStore,
-    record: EngineerRunRecord,
-) -> Decision:
-    existing = _find_existing_conflict_decision(store=store, record=record)
-    if existing is not None:
-        return existing
-
-    # Conflict resolution also commits in-place on the original branch.
-    # Engineer crew will fetch + resolve conflict markers against main HEAD.
-    in_place_extras: dict[str, object] = {}
-    if record.pr_number is not None and record.branch_name:
-        in_place_extras["existing_pr_number"] = record.pr_number
-        in_place_extras["existing_pr_branch"] = record.branch_name
-        in_place_extras["conflict_resolution"] = True
-    fix = Decision(
-        project=record.project,
-        type=DecisionType.BUG,
-        summary=_conflict_decision_summary(record),
-        rationale=(
-            f"PR review-loop observed a merge conflict on {record.pr_url}. "
-            "Resolving in-place on the same branch."
-        ),
-        diff_or_plan=_conflict_decision_plan(record),
-        risk="low",
-        proposer_role="conflict_resolution",
-        proposer_agent_id=f"conflict_resolution@{record.project}",
-        proposer_display_name="Conflict resolver",
-        status=DecisionStatus.APPROVED,
-        priority="p2",
-        expedited=True,
-        requested_by_role="pr_review_loop",
-        resolved_reason="auto-approved by PR review loop",
-        resolved_at=datetime.now(tz=UTC),
-        **in_place_extras,  # type: ignore[arg-type]
-    )
-    store.save(fix)
-    return fix
 
 
 def _find_merged_linked_followup(

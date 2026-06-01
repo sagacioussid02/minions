@@ -89,8 +89,19 @@ def run_backlog_proposer(
             project=manifest.name,
             agents=["product_owner", "senior_engineer"],
             decision_id=None,
-        ):
+        ) as run_id:
             raw = _llm_propose(manifest, dossier, api_key, max_candidates)
+            if raw is not None:
+                from minions.transcripts.capture import record_crew_summary
+
+                record_crew_summary(
+                    run_id=run_id,
+                    project=manifest.name,
+                    crew="backlog_proposer",
+                    agent_role="product_owner",
+                    result=raw,
+                    role_in_conversation="task_output",
+                )
     finally:
         clear_attribution()
 

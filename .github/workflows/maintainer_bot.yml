@@ -1,0 +1,32 @@
+name: Maintainer bot
+
+# Self-improvement scout. On a schedule it gathers maintenance signals
+# (blocked-agent questions today; GitHub issues + failing CI next) and
+# surfaces a ranked backlog. It is propose-only and dry-run by default —
+# it never writes code or merges. Flip to --no-dry-run (manual dispatch)
+# once `_propose()` in scheduled/maintainer.py is wired to the approval
+# pipeline; proposals still pass through the human approval gate.
+
+on:
+  schedule:
+    - cron: '0 9 * * *'   # daily 09:00 UTC — report-only
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Report only (default: true). Uncheck to propose (propose-only, still gated).'
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  maintainer:
+    uses: ./.github/workflows/_cron-shared.yml
+    # Scheduled runs (no inputs) stay dry-run. Only a manual dispatch with the
+    # box unchecked runs live.
+    with:
+      command: ${{ inputs.dry-run == false && 'cron maintainer --no-dry-run' || 'cron maintainer --dry-run' }}
+    secrets: inherit
