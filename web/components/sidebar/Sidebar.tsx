@@ -11,6 +11,18 @@ import {
 } from "@/lib/schemas";
 import { prettyRole } from "@/lib/roles";
 
+// Every navigable top-level page in the console, in menu order.
+const NAV_ITEMS: ReadonlyArray<readonly [string, string]> = [
+  ["/", "Live"],
+  ["/stage", "Stage"],
+  ["/sprint", "Sprint"],
+  ["/roster", "Roster"],
+  ["/meetings", "Meetings"],
+  ["/leadership", "Leadership"],
+  ["/spokesperson", "Spokesperson"],
+  ["/replay", "Replay"],
+];
+
 type CostResp = CostSummary;
 type HeadlineResp = HeadlineCounters;
 type QuestionsResp = { questions: Question[] };
@@ -83,25 +95,28 @@ export function Sidebar({
           Console
         </div>
         <div className="grid grid-cols-2 gap-2">
-          {[
-            ["/", "Live"],
-            ["/stage", "Stage"],
-            ["/leadership", "Leadership"],
-            ["/sprint", "Sprint"],
-          ].map(([href, label]) => (
-            <Link
-              key={href}
-              href={href}
-              className="relative rounded-md border border-[var(--line)] px-2 py-1 text-center text-xs font-medium uppercase tracking-wider text-[var(--text-muted)] hover:border-[var(--accent)]/40 hover:text-[var(--text-primary)]"
-            >
-              {label}
-              {href === "/stage" && !stageOpened && (
-                <span className="absolute -right-1.5 -top-1 rounded-full bg-[var(--accent)] px-1.5 py-0.5 text-[9px] font-semibold leading-none text-white shadow-sm">
-                  new
-                </span>
-              )}
-            </Link>
-          ))}
+          {NAV_ITEMS.map(([href, label]) => {
+            const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+            return (
+              <Link
+                key={href}
+                href={href}
+                aria-current={active ? "page" : undefined}
+                className={`relative rounded-md border px-2 py-1 text-center text-xs font-medium uppercase tracking-wider hover:border-[var(--accent)]/40 hover:text-[var(--text-primary)] ${
+                  active
+                    ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--text-primary)]"
+                    : "border-[var(--line)] text-[var(--text-muted)]"
+                }`}
+              >
+                {label}
+                {href === "/stage" && !stageOpened && (
+                  <span className="absolute -right-1.5 -top-1 rounded-full bg-[var(--accent)] px-1.5 py-0.5 text-[9px] font-semibold leading-none text-white shadow-sm">
+                    new
+                  </span>
+                )}
+              </Link>
+            );
+          })}
         </div>
       </nav>
       <CostGauge summary={cost.data} />
