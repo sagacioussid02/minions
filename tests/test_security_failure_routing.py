@@ -248,3 +248,38 @@ def test_post_triage_swallows_github_errors_gracefully() -> None:
     body = gh.comments[0][1]
     assert "Security triage" in body
     assert record.security_triage_comment_posted_at == now
+
+
+# ---- Regression: don't burn the dedup gate on a failed comment post -------
+
+
+class _FailingCommentGithub(_CommentingGithub):
+    """Like ``_CommentingGithub`` but ``comment_on_pull_request`` raises."""
+
+    def comment_on_pull_request(self, *, number: int, body: str) -> None:  # noqa: ARG002
+        raise RuntimeError("github 503")
+
+
+def test_post_triage_does_not_set_timestamp_when_comment_fails() -> None:
+    """Closes Copilot review on PR #62: a swallowed GitHub error must NOT
+    flip the dedup gate, otherwise the operator stays permanently silent
+    on a real security finding after one transient API hiccup."""
+    gh = _FailingCommentGithub(logs=[_log("CodeQL")])
+    record = _record_for_triage()
+    posted = _post_security_triage_comment(
+        record=record,
+        github=gh,
+        dry_run=False,
+        now=datetime.now(tz=UTC),
+    )
+    assert posted is False
+    assert record.security_triage_comment_posted_at is None
+    # Next sweep tick must be allowed to retry.
+    posted_retry = _post_security_triage_comment(
+        record=record,
+        github=gh,
+        dry_run=False,
+        now=datetime.now(tz=UTC),
+    )
+    assert posted_retry is False  # still failing
+    assert record.security_triage_comment_posted_at is None  # still retryable

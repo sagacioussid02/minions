@@ -161,7 +161,7 @@ def run_site_sentry(
             report.outcomes.append(outcome)
             if outcome.alert_emitted:
                 report.alerts_emitted += 1
-            elif _would_have_alerted(outcome):
+            elif _would_have_alerted(outcome, fail_threshold=fail_threshold):
                 report.alerts_suppressed += 1
 
     return report
@@ -264,11 +264,16 @@ def _streak(history: list[SiteHealthSample], *, ok: bool) -> int:
     return n
 
 
-def _would_have_alerted(outcome: CheckOutcome) -> bool:
-    """Did this run cross a threshold but get suppressed (dedup or dry-run)?"""
+def _would_have_alerted(outcome: CheckOutcome, *, fail_threshold: int) -> bool:
+    """Did this run cross a threshold but get suppressed (dedup or dry-run)?
+
+    Takes the **active** ``fail_threshold`` from the current sweep, NOT the
+    default. Otherwise a non-default threshold mis-reports
+    ``alerts_suppressed`` in the report.
+    """
     if outcome.alert_emitted is not None:
         return False
-    return (not outcome.ok) and outcome.consecutive_failures >= DEFAULT_FAIL_THRESHOLD
+    return (not outcome.ok) and outcome.consecutive_failures >= fail_threshold
 
 
 def _path_from_url(url: str, production_url: str) -> str:

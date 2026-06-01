@@ -335,3 +335,39 @@ def test_independent_state_per_project(tmp_path, monkeypatch):
     subjects = [c[0] for c in notifier.calls]
     assert sum("demo_three" in s and "DOWN" in s for s in subjects) == 1
     assert not any("demo" in s for s in subjects)
+
+
+# ---- Regression: alerts_suppressed must honor the active fail_threshold ---
+
+
+def test_alerts_suppressed_uses_active_threshold_not_default() -> None:
+    """Closes Copilot review on PR #62: when ``fail_threshold`` is
+    overridden, ``_would_have_alerted`` (and therefore the
+    ``alerts_suppressed`` counter) must use the active value, not
+    ``DEFAULT_FAIL_THRESHOLD``. Otherwise the report mis-counts whenever
+    the caller passes a non-default threshold."""
+    from minions.scheduled.site_sentry import (
+        DEFAULT_FAIL_THRESHOLD,
+        CheckOutcome,
+        _would_have_alerted,
+    )
+
+    # 3 consecutive failures, no alert emitted (e.g. inside dedup window).
+    o = CheckOutcome(
+        project="x",
+        check_path="/",
+        ok=False,
+        status_code=503,
+        latency_ms=80,
+        error=None,
+        consecutive_failures=3,
+        consecutive_successes=0,
+        alert_emitted=None,
+    )
+
+    # Default threshold = 2 → 3 ≥ 2 → "would have alerted".
+    assert _would_have_alerted(o, fail_threshold=DEFAULT_FAIL_THRESHOLD) is True
+    # Tighter threshold = 5 → 3 < 5 → did NOT cross the bar.
+    assert _would_have_alerted(o, fail_threshold=5) is False
+    # Looser threshold = 1 → 3 ≥ 1 → would have alerted.
+    assert _would_have_alerted(o, fail_threshold=1) is True

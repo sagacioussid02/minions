@@ -20,6 +20,7 @@ Design parallels ``scheduled/execute_approved.py``:
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable
 from contextlib import suppress
@@ -36,6 +37,8 @@ from minions.crews.engineer_runs_store import EngineerRunRecord, EngineerRunStor
 from minions.models.manifest import Manifest, load_active_manifests
 from minions.models.question import QuestionRecord, QuestionStatus
 from minions.notify.base import Notifier
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from minions.github.client import GitHubClient
@@ -738,8 +741,20 @@ def _post_security_triage_comment(
 
     owner = record.owner_agent_id or "engineer"
     body = _build_security_triage_comment(failing_logs, owner)
-    with suppress(Exception):
+    # Only mark the comment posted (and burn the dedup gate) when GitHub
+    # actually accepted the comment. Setting the timestamp on a swallowed
+    # failure would leave the operator permanently silent on a real
+    # security finding after a single transient API hiccup.
+    try:
         github.comment_on_pull_request(number=record.pr_number, body=body)
+    except Exception as e:  # noqa: BLE001 — never crash the sweep
+        logger.warning(
+            "site_sentry: security triage comment post failed for %s #%s: %s",
+            record.project,
+            record.pr_number,
+            e,
+        )
+        return False
     record.security_triage_comment_posted_at = now
     return True
 

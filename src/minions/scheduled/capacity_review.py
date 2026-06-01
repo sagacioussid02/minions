@@ -124,7 +124,13 @@ def _recent_hire_decisions(
 
         if created >= month_start and d.status != DecisionStatus.REJECTED:
             portfolio += 1
-            per_project[d.project] += 1
+            # Key by the *cap-check key* so shared hires actually count
+            # toward the shared cap. Decision.project for a shared-scope
+            # hire is "portfolio" (or whatever the proposer recorded), but
+            # the cap check below looks up per_project["shared"]. Without
+            # this alignment, shared hires never count toward the cap.
+            proj_key = "shared" if scope == "shared" else d.project
+            per_project[proj_key] += 1
         if d.status == DecisionStatus.REJECTED and created >= cooldown_start:
             rejected[(role, scope)] = created
 
