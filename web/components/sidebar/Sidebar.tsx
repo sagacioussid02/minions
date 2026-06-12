@@ -45,15 +45,15 @@ function getStageOpenedServer(): boolean {
 
 // Every navigable top-level page in the console, in menu order.
 const NAV_ITEMS: ReadonlyArray<readonly [string, string]> = [
-  ["/", "Live"],
-  ["/stage", "Stage"],
-  ["/sprint", "Sprint"],
-  ["/roster", "Roster"],
-  ["/meetings", "Meetings"],
-  ["/sentry", "Sentry"],
-  ["/leadership", "Leadership"],
-  ["/spokesperson", "Spokesperson"],
-  ["/replay", "Replay"],
+  ["/hq", "Live"],
+  ["/hq/stage", "Stage"],
+  ["/hq/sprint", "Sprint"],
+  ["/hq/roster", "Roster"],
+  ["/hq/meetings", "Meetings"],
+  ["/hq/sentry", "Sentry"],
+  ["/hq/leadership", "Leadership"],
+  ["/hq/spokesperson", "Spokesperson"],
+  ["/hq/replay", "Replay"],
 ];
 
 type CostResp = CostSummary;
@@ -118,7 +118,7 @@ export function Sidebar({
   );
 
   useEffect(() => {
-    if (pathname === "/stage") {
+    if (pathname === "/hq/stage") {
       window.localStorage.setItem("minions-stage-opened", "true");
     }
   }, [pathname]);
@@ -131,7 +131,8 @@ export function Sidebar({
         </div>
         <div className="grid grid-cols-2 gap-2">
           {NAV_ITEMS.map(([href, label]) => {
-            const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+            const active =
+              href === "/hq" ? pathname === "/hq" : pathname.startsWith(href);
             return (
               <Link
                 key={href}
@@ -144,7 +145,7 @@ export function Sidebar({
                 }`}
               >
                 {label}
-                {href === "/stage" && !stageOpened && (
+                {href === "/hq/stage" && !stageOpened && (
                   <span className="absolute -right-1.5 -top-1 rounded-full bg-[var(--accent)] px-1.5 py-0.5 text-[9px] font-semibold leading-none text-white shadow-sm">
                     new
                   </span>
@@ -280,7 +281,7 @@ function SentryTile() {
 
   return (
     <Link
-      href="/sentry"
+      href="/hq/sentry"
       className="block rounded-xl border border-[var(--line)] bg-[var(--bg-elevated)] p-4 transition-colors hover:border-[var(--accent)]/50"
     >
       <div className="mb-2 flex items-center gap-2 text-sm uppercase tracking-wider text-[var(--text-muted)]">
@@ -327,7 +328,7 @@ function QuestionLink({ q, children }: { q: Question; children: React.ReactNode 
     );
   }
   return (
-    <Link href={`/sprint?project=${encodeURIComponent(q.project)}`} className={cls}>
+    <Link href={`/hq/sprint?project=${encodeURIComponent(q.project)}`} className={cls}>
       {children}
     </Link>
   );

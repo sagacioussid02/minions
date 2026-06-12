@@ -14,7 +14,7 @@ export default async function SentryPage() {
     <div className="relative flex min-h-screen flex-col">
       <header className="relative flex items-center justify-between border-b border-[var(--line)] px-6 py-3">
         <div className="flex items-center gap-3">
-          <Link href="/" className="font-mono text-sm tracking-tight text-[var(--accent)]">
+          <Link href="/hq" className="font-mono text-sm tracking-tight text-[var(--accent)]">
             ⌬ minions
           </Link>
           <span className="text-xs text-[var(--text-muted)]">sentry</span>

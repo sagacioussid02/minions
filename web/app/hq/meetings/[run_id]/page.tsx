@@ -21,11 +21,11 @@ export default async function MeetingPage({
     <div className="relative flex min-h-screen flex-col">
       <header className="relative flex items-center justify-between border-b border-[var(--line)] px-6 py-3">
         <div className="flex items-center gap-3">
-          <Link href="/" className="font-mono text-sm tracking-tight text-[var(--accent)]">
+          <Link href="/hq" className="font-mono text-sm tracking-tight text-[var(--accent)]">
             ⌬ minions
           </Link>
           <Link
-            href="/meetings"
+            href="/hq/meetings"
             className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]"
           >
             meetings
@@ -38,7 +38,7 @@ export default async function MeetingPage({
         <HeartbeatDot />
       </header>
       <main className="flex-1 overflow-y-auto p-6">
-        <LiveMeeting initial={meeting} threeDHref={`/meetings/${run_id}/3d`} />
+        <LiveMeeting initial={meeting} threeDHref={`/hq/meetings/${run_id}/3d`} />
       </main>
     </div>
   );

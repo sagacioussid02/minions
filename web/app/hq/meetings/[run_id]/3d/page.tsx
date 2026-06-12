@@ -21,18 +21,18 @@ export default async function Meeting3DPage({
     <div className="relative flex min-h-screen flex-col">
       <header className="relative flex items-center justify-between border-b border-[var(--line)] px-6 py-3">
         <div className="flex items-center gap-3">
-          <Link href="/" className="font-mono text-sm tracking-tight text-[var(--accent)]">
+          <Link href="/hq" className="font-mono text-sm tracking-tight text-[var(--accent)]">
             ⌬ minions
           </Link>
           <Link
-            href="/meetings"
+            href="/hq/meetings"
             className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]"
           >
             meetings
           </Link>
           <span className="text-xs text-[var(--text-muted)]">/</span>
           <Link
-            href={`/meetings/${run_id}`}
+            href={`/hq/meetings/${run_id}`}
             className="font-mono text-xs text-[var(--text-primary)] hover:text-[var(--accent)]"
           >
             {run_id.slice(0, 8)}
@@ -43,7 +43,7 @@ export default async function Meeting3DPage({
       </header>
       <main className="flex-1 overflow-y-auto p-6">
         <div className="mx-auto max-w-7xl">
-          <Meeting3DClient initial={meeting} backHref={`/meetings/${run_id}`} />
+          <Meeting3DClient initial={meeting} backHref={`/hq/meetings/${run_id}`} />
         </div>
       </main>
     </div>

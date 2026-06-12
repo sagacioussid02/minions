@@ -42,13 +42,13 @@ export default async function TranscriptPage({
       <header className="relative flex items-center justify-between border-b border-[var(--line)] px-6 py-3">
         <div className="flex items-center gap-3">
           <Link
-            href="/"
+            href="/hq"
             className="font-mono text-sm tracking-tight text-[var(--accent)]"
           >
             ⌬ minions
           </Link>
           <Link
-            href="/stage"
+            href="/hq/stage"
             className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]"
           >
             stage
