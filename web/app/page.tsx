@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
   title: "minions — your autonomous AI engineering org",
@@ -12,12 +14,11 @@ export const metadata: Metadata = {
 // unauthenticated visitor (see public-saas-onboarding spec). The dashboard
 // lives under `/hq/*`.
 //
-// P1 (this change) ships before auth. The CTAs point at `/hq` so the
-// landing is fully functional standalone. P2 repoints "Sign up" → `/sign-up`
-// and "Sign in" → `/sign-in` once Clerk lands, and a server-side redirect
-// sends signed-in visitors from `/` to `/hq`.
-const SIGN_UP_HREF = "/hq";
-const SIGN_IN_HREF = "/hq";
+// Auth (P2) is live: CTAs go to Clerk's sign-in / sign-up, and a signed-in
+// visitor is server-redirected from `/` to `/hq` (see the redirect in the
+// component below) with no client flash.
+const SIGN_UP_HREF = "/sign-up";
+const SIGN_IN_HREF = "/sign-in";
 
 const STEPS: ReadonlyArray<readonly [string, string, string]> = [
   [
@@ -37,7 +38,12 @@ const STEPS: ReadonlyArray<readonly [string, string, string]> = [
   ],
 ];
 
-export default function MarketingLanding() {
+export default async function MarketingLanding() {
+  // Signed-in visitors never see the marketing page — straight to HQ,
+  // server-side, no client flash.
+  const { userId } = await auth();
+  if (userId) redirect("/hq");
+
   return (
     <div className="flex min-h-screen flex-col">
       <header className="flex items-center justify-between border-b border-[var(--line)] px-6 py-4">

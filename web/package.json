@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",
+    "@clerk/nextjs": "^7.5.2",
     "@dicebear/collection": "^9.4.2",
     "@dicebear/core": "^9.4.2",
     "@neondatabase/serverless": "^1.1.0",

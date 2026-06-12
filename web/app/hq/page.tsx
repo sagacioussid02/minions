@@ -6,6 +6,7 @@ import { InvestorDemoMode } from "@/components/demo/InvestorDemoMode";
 import { CompanyRhythm } from "@/components/rhythm/CompanyRhythm";
 import { AmbientParticles } from "@/components/AmbientParticles";
 import { HeartbeatDot } from "@/components/HeartbeatDot";
+import { UserButton } from "@clerk/nextjs";
 import {
   costSummary,
   getHeroEvent,
@@ -73,6 +74,7 @@ export default async function Home() {
               replay
             </a>
             <HeartbeatDot />
+            <UserButton />
           </div>
         </header>
         <div className="relative mx-auto flex w-full max-w-[1500px] flex-col gap-4 p-4 xl:p-5">
