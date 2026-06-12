@@ -53,7 +53,7 @@ export default async function RosterPage() {
         </h1>
         <p className="mb-6 text-xs text-[var(--text-muted)]">
           Every named agent across the org. Click anyone to see what they
-          are working on right now and what's queued up next.
+          are working on right now and what&apos;s queued up next.
         </p>
         <RosterGrid initial={agents} />
       </main>
