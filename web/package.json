@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check:tenant-scoping": "node scripts/check-tenant-scoping.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",

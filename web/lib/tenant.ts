@@ -11,6 +11,7 @@
  * founder stays swappable and no identity lives in the public repo.
  */
 
+import { cache } from "react";
 import { auth } from "@clerk/nextjs/server";
 import { sql } from "./db";
 
@@ -82,13 +83,15 @@ async function createTenant(clerkUserId: string): Promise<Tenant> {
 }
 
 /** The current tenant, creating it on first sight. Requires a Clerk session. */
-export async function getCurrentTenant(): Promise<Tenant> {
+export const getCurrentTenant = cache(async (): Promise<Tenant> => {
+  // cache(): resolved once per request, so the dozens of scoped read queries
+  // that call getTenantId() share a single Clerk + tenant lookup.
   const { userId } = await auth();
   if (!userId) {
     throw new Error("getCurrentTenant called without an authenticated session");
   }
   return (await getTenantByClerkId(userId)) ?? (await createTenant(userId));
-}
+});
 
 /**
  * The only way an API route or server component obtains the current tenant id.
