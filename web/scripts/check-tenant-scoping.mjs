@@ -1,20 +1,19 @@
 #!/usr/bin/env node
 /**
- * Tenant-scoping tripwire (P4 of public-saas-onboarding).
+ * Tenant-scoping tripwire (public-saas-onboarding go-live).
  *
- * The read layer (lib/queries.ts, lib/queries-asof.ts) is NOT yet filtered by
- * tenant_id — that threading was deliberately deferred until just before P6
- * lights up real tenants (until then the system is single-tenant, so there is
- * no second tenant to leak to). This script is the guard that makes sure we
- * don't forget: it reports every reference to a tenant-scoped table that has
- * no `tenant_id` filter within 10 lines.
+ * The web read/write layer (lib/queries.ts, lib/queries-asof.ts,
+ * lib/mutations.ts) must filter every tenant-scoped table by `tenant_id`
+ * (the hybrid web side — Postgres RLS guards the Python side). This guard
+ * reports every reference to a scoped table with no `tenant_id` filter
+ * within 10 lines and, when enforcing, fails the build on any gap.
  *
  *   node scripts/check-tenant-scoping.mjs              # report only (exit 0)
  *   MINIONS_ENFORCE_TENANT_SCOPING=1 node scripts/...  # fail on any gap (exit 1)
  *
- * BEFORE P6: do the read-threading, then flip this to enforcing in CI
- * (set MINIONS_ENFORCE_TENANT_SCOPING=1) so a future unscoped query fails the
- * build. See openspec/changes/public-saas-onboarding tasks P4.
+ * Read-threading is DONE and this is now enforcing via the `check:tenant-scoping`
+ * package script, so a future unscoped query fails. See
+ * openspec/changes/public-saas-onboarding.
  */
 
 import { readFileSync } from "node:fs";
@@ -51,6 +50,12 @@ for (const rel of FILES) {
   }
   const lines = text.split("\n");
   lines.forEach((line, i) => {
+    // Skip comment lines — prose like "derive state from activity_log" trips
+    // the case-insensitive FROM/JOIN regex but isn't a real query.
+    const trimmed = line.trim();
+    if (trimmed.startsWith("*") || trimmed.startsWith("//") || trimmed.startsWith("/*")) {
+      return;
+    }
     const m = line.match(refRe);
     if (!m) return;
     refs++;

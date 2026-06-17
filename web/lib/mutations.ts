@@ -5,12 +5,14 @@
  */
 
 import { sql } from "./db";
+import { getTenantId } from "./tenant";
 
 export async function approveDecision(
   decisionId: string,
   reason?: string,
 ): Promise<void> {
   const s = sql();
+  const tid = await getTenantId();
   await s`
     UPDATE decisions
     SET
@@ -22,6 +24,7 @@ export async function approveDecision(
         to_jsonb(${reason ?? "approved via operator console"}::text)
       )
     WHERE id = ${decisionId}::uuid
+      AND tenant_id = ${tid}
   `;
 }
 
@@ -30,6 +33,7 @@ export async function rejectDecision(
   reason?: string,
 ): Promise<void> {
   const s = sql();
+  const tid = await getTenantId();
   await s`
     UPDATE decisions
     SET
@@ -41,6 +45,7 @@ export async function rejectDecision(
         to_jsonb(${reason ?? "rejected via operator console"}::text)
       )
     WHERE id = ${decisionId}::uuid
+      AND tenant_id = ${tid}
   `;
 }
 
@@ -58,6 +63,7 @@ export async function loadMergeContext(decisionId: string): Promise<{
   pr_url?: string;
 }> {
   const s = sql();
+  const tid = await getTenantId();
   const rows = (await s`
     SELECT
       d.project,
@@ -68,8 +74,9 @@ export async function loadMergeContext(decisionId: string): Promise<{
       er.payload->>'ci_conclusion' AS ci_conclusion,
       er.pr_state
     FROM decisions d
-    LEFT JOIN engineer_runs er ON er.decision_id = d.id::text
+    LEFT JOIN engineer_runs er ON er.decision_id = d.id::text AND er.tenant_id = ${tid}
     WHERE d.id = ${decisionId}::uuid
+      AND d.tenant_id = ${tid}
     LIMIT 1
   `) as Array<{
     project: string;
@@ -138,11 +145,13 @@ export async function mergePullRequest(args: {
   // Persist the merged state locally so the board reflects it without
   // waiting for the daily PR sync to run.
   const s = sql();
+  const tid = await getTenantId();
   await s`
     UPDATE engineer_runs
     SET pr_state = 'merged',
         payload = jsonb_set(payload, '{pr_state}', '"merged"'::jsonb)
     WHERE pr_url = ${args.prUrl}
+      AND tenant_id = ${tid}
   `;
   return body;
 }
