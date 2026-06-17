@@ -31,9 +31,12 @@ export default clerkMiddleware(async (auth, req) => {
 
 export const config = {
   matcher: [
-    // Run on every route except Next internals and static asset files...
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js)$).*)",
-    // ...and always on API routes.
+    // Clerk's canonical matcher: skip ALL Next internals (_next/*) and
+    // static files, otherwise the client's RSC/runtime requests get gated
+    // and redirected to /sign-in, which breaks hydration. Run everywhere
+    // else.
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpg|jpeg|gif|png|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    // Always run for API routes.
     "/(api|trpc)(.*)",
   ],
 };
