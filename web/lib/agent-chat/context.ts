@@ -15,6 +15,8 @@ import {
   type TranscriptSnippet,
 } from "./repo";
 import { fallbackDisplayName, type ParsedAgentId } from "./roster";
+import { getAgentProfile } from "../queries";
+import { type AgentProfile } from "../schemas";
 
 export const MAX_PROMPT_BYTES = 8 * 1024;
 export const MAX_DOSSIER_BYTES = 2 * 1024;
@@ -69,17 +71,18 @@ export type ChatContext = {
 export async function buildAgentContext(parsed: ParsedAgentId): Promise<ChatContext> {
   const { agentId, role, project } = parsed;
 
-  const [displayName, dossierMd, learning, transcripts] = await Promise.all([
+  const [displayName, dossierMd, learning, transcripts, profile] = await Promise.all([
     lookupDisplayName({ project, role }).then(
       (name) => name ?? fallbackDisplayName(role),
     ),
     project ? latestMergedDossierMarkdown(project) : Promise.resolve(null),
     listLearningForAgent(agentId, MAX_LEARNING_RECORDS),
     listRecentTranscripts(project, MAX_TRANSCRIPT_SNIPPETS),
+    getAgentProfile(agentId).catch(() => null),
   ]);
 
   const dossierExcerpt = dossierMd ? truncateUtf8(dossierMd, MAX_DOSSIER_BYTES) : "";
-  const persona = renderPersona({ role, displayName, project });
+  const persona = renderPersona({ role, displayName, project, profile });
   const coldStart = learning.length === 0 && transcripts.length === 0;
 
   const ctx: ChatContext = {
@@ -102,18 +105,36 @@ function renderPersona({
   role,
   displayName,
   project,
+  profile,
 }: {
   role: string;
   displayName: string;
   project: string | null;
+  profile?: AgentProfile | null;
 }): string {
   const projectLine = project ? `You are working in project '${project}'.\n` : "";
+  const creds = profile ? profileCredentials(profile) : "";
+  const trackRecord = creds ? `Your track record: ${creds}.\n\n` : "";
   return (
     `Your operator-facing name is ${displayName}. Speak in first person.\n\n` +
     `${projectLine}` +
     `You are an agent with role '${role}' in the minions organization.\n\n` +
+    `${trackRecord}` +
     SAFETY_PREAMBLE
   );
+}
+
+// TS twin of minions.agents.recall.identity_credentials — keep in sync so chat
+// describes the agent the same way the crews do.
+function profileCredentials(p: AgentProfile): string {
+  const bits: string[] = [];
+  if (p.joined_sprint != null) bits.push(`since sprint ${p.joined_sprint}`);
+  if (p.stats.prs_merged || p.stats.prs_opened) {
+    bits.push(`${p.stats.prs_merged} merged of ${p.stats.prs_opened} PRs`);
+  }
+  if (p.stats.reviews_received) bits.push(`${p.stats.reviews_received} reviews`);
+  if (p.specialties.length > 0) bits.push(`strong on ${p.specialties.join(", ")}`);
+  return bits.join("; ");
 }
 
 function truncateUtf8(text: string, maxBytes: number): string {
