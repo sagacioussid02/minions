@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { HeartbeatDot } from "@/components/HeartbeatDot";
-import { listActiveAgents, listTasksForProject } from "@/lib/queries";
+import {
+  getAgentProfile,
+  listActiveAgents,
+  listTasksForProject,
+} from "@/lib/queries";
 import { RosterDetail } from "@/components/roster/RosterDetail";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +32,8 @@ export default async function RosterDetailPage({
       )
     : [];
 
+  const profile = await getAgentProfile(id);
+
   return (
     <div className="relative flex min-h-screen flex-col">
       <header className="relative flex items-center justify-between border-b border-[var(--line)] px-6 py-3">
@@ -51,7 +57,7 @@ export default async function RosterDetailPage({
         <HeartbeatDot />
       </header>
       <main className="relative flex-1 px-6 py-6">
-        <RosterDetail agent={agent} tasks={tasks} />
+        <RosterDetail agent={agent} tasks={tasks} profile={profile} />
       </main>
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { type AgentState, type Task } from "@/lib/schemas";
+import { type AgentProfile, type AgentState, type Task } from "@/lib/schemas";
 import { roleShortLabel } from "@/lib/roles";
 
 const TIER_BADGE: Record<string, string> = {
@@ -22,9 +22,11 @@ const STATUS_BADGE: Record<string, string> = {
 export function RosterDetail({
   agent,
   tasks,
+  profile,
 }: {
   agent: AgentState;
   tasks: Task[];
+  profile?: AgentProfile | null;
 }) {
   const inFlightTasks = tasks.filter(
     (t) => t.status === "in_progress" || t.status === "review"
@@ -103,6 +105,56 @@ export function RosterDetail({
           <Stat label="queued tasks" value={queuedTasks.length.toString()} />
         </div>
       </section>
+
+      {/* Career / dossier — durable identity + lifetime track record */}
+      {profile && (
+        <section className="rounded-lg border border-[var(--line)] bg-[var(--surface-1)] p-5">
+          <h2 className="mb-3 font-mono text-sm uppercase tracking-wider text-[var(--text-muted)]">
+            career
+          </h2>
+          {profile.persona && (
+            <p className="mb-4 text-sm leading-relaxed text-[var(--text-primary)]">
+              {profile.persona}
+            </p>
+          )}
+          <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-5">
+            <Stat
+              label="joined"
+              value={
+                profile.joined_sprint != null
+                  ? `sprint ${profile.joined_sprint}`
+                  : "—"
+              }
+            />
+            <Stat label="PRs opened" value={profile.stats.prs_opened.toString()} />
+            <Stat label="PRs merged" value={profile.stats.prs_merged.toString()} />
+            <Stat label="reviews" value={profile.stats.reviews_received.toString()} />
+            <Stat label="blockers" value={profile.stats.blockers_hit.toString()} />
+          </div>
+          {profile.specialties.length > 0 && (
+            <div className="mt-4">
+              <div className="mb-1.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+                specialties
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {profile.specialties.map((s) => (
+                  <span
+                    key={s}
+                    className="rounded border border-[var(--line)] bg-[var(--surface-2)] px-2 py-0.5 text-[11px] text-[var(--text-primary)]"
+                  >
+                    {s}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {profile.stats.last_active_at && (
+            <div className="mt-4 text-[10px] text-[var(--text-muted)]">
+              last active {new Date(profile.stats.last_active_at).toLocaleString()}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Tasks */}
       <section className="rounded-lg border border-[var(--line)] bg-[var(--surface-1)] p-5">

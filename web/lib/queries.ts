@@ -16,6 +16,7 @@ import {
   type ActivityEvent,
   type AgileArtifact,
   type AgilePanel,
+  type AgentProfile,
   type AgentState,
   type CostSummary,
   type HeadlineCounters,
@@ -36,6 +37,48 @@ import {
 } from "./roster";
 
 // ---------- Agents ----------
+
+/** Persistent profile for one agent — stable identity + rolling track record. */
+export async function getAgentProfile(agentId: string): Promise<AgentProfile | null> {
+  const s = sql();
+  const tid = await getTenantId();
+  const rows = (await s`
+    SELECT agent_id, role, display_name, persona, joined_sprint,
+           specialties, stats, updated_at
+    FROM agent_profiles
+    WHERE tenant_id = ${tid}
+      AND agent_id = ${agentId}
+    LIMIT 1
+  `) as Array<{
+    agent_id: string;
+    role: string;
+    display_name: string | null;
+    persona: string;
+    joined_sprint: number | null;
+    specialties: unknown;
+    stats: Record<string, unknown> | null;
+    updated_at: Date | string;
+  }>;
+  if (rows.length === 0) return null;
+  const r = rows[0];
+  const stats = (r.stats ?? {}) as Record<string, unknown>;
+  return {
+    agent_id: r.agent_id,
+    role: r.role,
+    display_name: r.display_name,
+    persona: r.persona,
+    joined_sprint: r.joined_sprint,
+    specialties: Array.isArray(r.specialties) ? r.specialties.map(String) : [],
+    stats: {
+      prs_opened: Number(stats.prs_opened ?? 0),
+      prs_merged: Number(stats.prs_merged ?? 0),
+      reviews_received: Number(stats.reviews_received ?? 0),
+      blockers_hit: Number(stats.blockers_hit ?? 0),
+      last_active_at: stats.last_active_at ? String(stats.last_active_at) : null,
+    },
+    updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at),
+  };
+}
 
 /**
  * Derive live agent state from activity_log + cost_log.

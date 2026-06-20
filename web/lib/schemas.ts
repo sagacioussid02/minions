@@ -52,6 +52,29 @@ export const AgentStateSchema = z.object({
 });
 export type AgentState = z.infer<typeof AgentStateSchema>;
 
+// ---------- Agent profile (persistent identity) ----------
+
+export const AgentStatsSchema = z.object({
+  prs_opened: z.number(),
+  prs_merged: z.number(),
+  reviews_received: z.number(),
+  blockers_hit: z.number(),
+  last_active_at: z.string().nullable(),
+});
+export type AgentStats = z.infer<typeof AgentStatsSchema>;
+
+export const AgentProfileSchema = z.object({
+  agent_id: z.string(),
+  role: z.string(),
+  display_name: z.string().nullable(),
+  persona: z.string(),
+  joined_sprint: z.number().nullable(),
+  specialties: z.array(z.string()),
+  stats: AgentStatsSchema,
+  updated_at: z.string(),
+});
+export type AgentProfile = z.infer<typeof AgentProfileSchema>;
+
 // ---------- Work items ----------
 
 export const WorkItemStageSchema = z.enum([
