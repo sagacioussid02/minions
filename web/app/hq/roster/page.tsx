@@ -27,22 +27,10 @@ export default async function RosterPage() {
             meetings
           </Link>
           <Link
-            href="/hq/stage"
-            className="rounded border border-[var(--line)] px-2 py-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)] hover:border-[var(--accent)]/40 hover:text-[var(--text-primary)]"
-          >
-            stage
-          </Link>
-          <Link
             href="/hq/sprint"
             className="rounded border border-[var(--line)] px-2 py-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)] hover:border-[var(--accent)]/40 hover:text-[var(--text-primary)]"
           >
             sprint
-          </Link>
-          <Link
-            href="/hq/leadership"
-            className="rounded border border-[var(--line)] px-2 py-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)] hover:border-[var(--accent)]/40 hover:text-[var(--text-primary)]"
-          >
-            leadership
           </Link>
           <HeartbeatDot />
         </div>

@@ -36,12 +36,6 @@ export default async function MeetingsPage() {
           >
             roster
           </Link>
-          <Link
-            href="/hq/leadership"
-            className="rounded border border-[var(--line)] px-2 py-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)] hover:border-[var(--accent)]/40 hover:text-[var(--text-primary)]"
-          >
-            leadership
-          </Link>
           <HeartbeatDot />
         </div>
       </header>

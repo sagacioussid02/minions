@@ -3,7 +3,6 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useSyncExternalStore } from "react";
 import {
   type CostSummary,
   type HeadlineCounters,
@@ -12,47 +11,13 @@ import {
 } from "@/lib/schemas";
 import { prettyRole } from "@/lib/roles";
 
-// ---- Stage-opened "new" badge: SSR-safe external store -----------------
-//
-// localStorage is client-only, so we read it through ``useSyncExternalStore``
-// instead of useState. The server snapshot is ``true`` (badge hidden) to
-// match first client paint; the client snapshot reads the real flag.
-// Subscription bridges the ``minions-stage-opened`` custom event that
-// ``components/stage/Stage.tsx`` dispatches the first time the operator
-// opens /stage.
-const STAGE_OPENED_KEY = "minions-stage-opened";
-
-function subscribeStageOpened(onStoreChange: () => void): () => void {
-  if (typeof window === "undefined") return () => {};
-  window.addEventListener(STAGE_OPENED_KEY, onStoreChange);
-  window.addEventListener("storage", onStoreChange);
-  return () => {
-    window.removeEventListener(STAGE_OPENED_KEY, onStoreChange);
-    window.removeEventListener("storage", onStoreChange);
-  };
-}
-
-function getStageOpenedClient(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    window.localStorage.getItem(STAGE_OPENED_KEY) === "true"
-  );
-}
-
-function getStageOpenedServer(): boolean {
-  return true; // hide badge during SSR; matches first client paint
-}
-
 // Every navigable top-level page in the console, in menu order.
 const NAV_ITEMS: ReadonlyArray<readonly [string, string]> = [
   ["/hq", "Live"],
-  ["/hq/stage", "Stage"],
   ["/hq/sprint", "Sprint"],
   ["/hq/roster", "Roster"],
   ["/hq/meetings", "Meetings"],
   ["/hq/sentry", "Sentry"],
-  ["/hq/leadership", "Leadership"],
-  ["/hq/spokesperson", "Spokesperson"],
   ["/hq/replay", "Replay"],
 ];
 
@@ -103,25 +68,6 @@ export function Sidebar({
     initialData: { questions: initialQuestions },
   });
   const pathname = usePathname();
-  // The "new" badge depends on localStorage, which exists only on the
-  // client. Initializing useState from `window.localStorage` here causes
-  // an SSR hydration mismatch (server: undefined → no badge; client:
-  // maybe shows badge). useSyncExternalStore is the idiomatic answer:
-  // the server snapshot returns `true` (badge hidden) to match the
-  // first client paint, and the client snapshot reads the real value.
-  // It also lets us subscribe to the cross-component "minions-stage-
-  // opened" custom event without a synchronous setState-in-effect.
-  const stageOpened = useSyncExternalStore(
-    subscribeStageOpened,
-    getStageOpenedClient,
-    getStageOpenedServer,
-  );
-
-  useEffect(() => {
-    if (pathname === "/hq/stage") {
-      window.localStorage.setItem("minions-stage-opened", "true");
-    }
-  }, [pathname]);
 
   return (
     <aside className="flex w-80 shrink-0 flex-col gap-4 border-r border-[var(--line)] bg-[var(--bg-surface)] p-4">
@@ -145,11 +91,6 @@ export function Sidebar({
                 }`}
               >
                 {label}
-                {href === "/hq/stage" && !stageOpened && (
-                  <span className="absolute -right-1.5 -top-1 rounded-full bg-[var(--accent)] px-1.5 py-0.5 text-[9px] font-semibold leading-none text-white shadow-sm">
-                    new
-                  </span>
-                )}
               </Link>
             );
           })}

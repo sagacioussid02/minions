@@ -50,18 +50,6 @@ export default async function Home() {
           </div>
           <div className="flex items-center gap-2">
             <a
-              href="/hq/stage"
-              className="rounded-md border border-[var(--line)] px-3 py-1 text-xs uppercase tracking-wider text-[var(--text-muted)] hover:border-[var(--accent)]/40 hover:text-[var(--text-primary)]"
-            >
-              stage
-            </a>
-            <a
-              href="/hq/leadership"
-              className="rounded-md border border-[var(--line)] px-3 py-1 text-xs uppercase tracking-wider text-[var(--text-muted)] hover:border-[var(--accent)]/40 hover:text-[var(--text-primary)]"
-            >
-              leadership
-            </a>
-            <a
               href="/hq/sprint"
               className="rounded-md border border-[var(--line)] px-3 py-1 text-xs uppercase tracking-wider text-[var(--text-muted)] hover:border-[var(--accent)]/40 hover:text-[var(--text-primary)]"
             >
