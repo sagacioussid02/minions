@@ -295,6 +295,11 @@ function MeetingHeader({
         <span>turns · {baseMeeting.total_turns}</span>
         {lastHeartbeatAt > 0 && meeting.status === "in_progress" && (
           <span title="Last SSE heartbeat received from server">
+            {/* Display-only relative time: wall-clock is read at render and
+                naturally refreshes on each SSE-driven re-render of this live
+                component. Not used for any logic, so the render-time read is
+                intentional. */}
+            {/* eslint-disable-next-line react-hooks/purity */}
             last beat · {Math.max(0, Math.round((Date.now() - lastHeartbeatAt) / 1000))}s ago
           </span>
         )}

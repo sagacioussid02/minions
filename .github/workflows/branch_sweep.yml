@@ -9,7 +9,7 @@ name: Branch sweep
 
 on:
   schedule:
-    - cron: '40 */4 * * *'  # :40 past every 4h (offset from other crons)
+    - cron: '40 10 * * *'  # once daily (cost-relaxed; was 40 */4)
   workflow_dispatch:
     inputs:
       dry-run:

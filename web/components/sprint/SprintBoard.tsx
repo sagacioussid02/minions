@@ -73,6 +73,13 @@ function taskLane(status: Task["status"]): SprintColumn | null {
   }
 }
 
+// A single rendered tile in the board (kanban) view: either one subtask (the
+// common case, shown as a child of its Story) or a whole Story (when it has no
+// subtasks yet or still needs a Story-level action).
+type BoardItem =
+  | { kind: "subtask"; task: Task; parent: SprintCard }
+  | { kind: "story"; card: SprintCard };
+
 const WINDOW_OPTIONS: Array<{ value: SprintWindow; label: string }> = [
   { value: "this_week", label: "This week" },
   { value: "last_week", label: "Last week" },
@@ -162,15 +169,35 @@ export function SprintBoard({ initial }: { initial: Board }) {
     });
   }, [board.cards, showClosed, sprintFilter, ownerFilter]);
 
-  const byColumn = useMemo(() => {
-    const m = new Map<SprintColumn, SprintCard[]>();
+  // Board view: each subtask is its own card, placed in the column matching its
+  // own status (not the Story's overall stage), with a parent-Story chip. A slim
+  // Story card is kept only when the Story has no subtasks yet, or still needs a
+  // decision-level action (approve / auto-merge) that lives at the Story level.
+  const boardItemsByColumn = useMemo(() => {
+    const m = new Map<SprintColumn, BoardItem[]>();
+    const push = (col: SprintColumn, item: BoardItem) => {
+      const arr = m.get(col) ?? [];
+      arr.push(item);
+      m.set(col, arr);
+    };
     for (const c of filteredCards) {
-      const arr = m.get(c.column) ?? [];
-      arr.push(c);
-      m.set(c.column, arr);
+      const laneTasks = c.tasks.filter((t) => {
+        if (taskLane(t.status) === null) return false;
+        if (ownerFilter !== null && t.owner_display_name !== ownerFilter) return false;
+        return true;
+      });
+      const needsStoryCard = c.column === "awaiting_you" || c.can_auto_merge;
+      if (laneTasks.length > 0) {
+        for (const t of laneTasks) {
+          push(taskLane(t.status)!, { kind: "subtask", task: t, parent: c });
+        }
+        if (needsStoryCard) push(c.column, { kind: "story", card: c });
+      } else {
+        push(c.column, { kind: "story", card: c });
+      }
     }
     return m;
-  }, [filteredCards]);
+  }, [filteredCards, ownerFilter]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -200,7 +227,7 @@ export function SprintBoard({ initial }: { initial: Board }) {
             <Column
               key={col}
               column={col}
-              cards={byColumn.get(col) ?? []}
+              items={boardItemsByColumn.get(col) ?? []}
               onTaskSelect={setSelectedTask}
             />
           ))}
@@ -552,63 +579,95 @@ function SwimlaneRow({
 function SubtaskCard({
   task,
   onSelect,
+  parent,
 }: {
   task: Task;
   onSelect: (task: Task) => void;
+  // When set (board view), a slim parent-Story chip is shown above the card so
+  // each subtask reads as a child of its Story. Omitted in the swimlane, where
+  // the parent is already the row's left rail.
+  parent?: SprintCard;
 }) {
   const isUnassigned = task.status === "unassigned";
   const isBlocked = task.status === "blocked";
   const owner = task.owner_display_name;
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(task)}
-      className={`block w-full rounded-md border p-2 text-left transition hover:border-[var(--accent)]/50 ${
-        isBlocked
-          ? "border-[var(--state-danger)]/50 bg-[var(--state-danger)]/5"
-          : isUnassigned
-            ? "border-dashed border-amber-300/70 bg-amber-50/40"
-            : "border-[var(--line)] bg-[var(--bg-elevated)]"
-      }`}
-      title={task.description || task.title}
-    >
-      <div className="line-clamp-2 text-[11px] font-medium leading-snug text-[var(--text-primary)]">
-        {task.title}
-      </div>
-      <div className="mt-1 flex flex-wrap items-center gap-1 text-[9px] text-[var(--text-muted)]">
-        <span className="rounded bg-[var(--bg-surface)] px-1 font-mono uppercase">
-          {task.estimated_effort}
-        </span>
-        {isBlocked && (
-          <span className="rounded bg-[var(--state-danger)]/15 px-1 uppercase text-[var(--state-danger)]">
-            blocked
+    <div className={parent ? "border-l-2 border-[var(--line)] pl-2" : undefined}>
+      {parent && <ParentChip card={parent} />}
+      <button
+        type="button"
+        onClick={() => onSelect(task)}
+        className={`block w-full rounded-md border p-2 text-left transition hover:border-[var(--accent)]/50 ${
+          isBlocked
+            ? "border-[var(--state-danger)]/50 bg-[var(--state-danger)]/5"
+            : isUnassigned
+              ? "border-dashed border-amber-300/70 bg-amber-50/40"
+              : "border-[var(--line)] bg-[var(--bg-elevated)]"
+        }`}
+        title={task.description || task.title}
+      >
+        <div className="line-clamp-2 text-[11px] font-medium leading-snug text-[var(--text-primary)]">
+          {task.title}
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-1 text-[9px] text-[var(--text-muted)]">
+          <span className="rounded bg-[var(--bg-surface)] px-1 font-mono uppercase">
+            {task.estimated_effort}
           </span>
-        )}
-        <span className="truncate">
-          {owner ? `👤 ${owner}` : isUnassigned ? "⏳ auto-assigned" : "—"}
-        </span>
-      </div>
-    </button>
+          {isBlocked && (
+            <span className="rounded bg-[var(--state-danger)]/15 px-1 uppercase text-[var(--state-danger)]">
+              blocked
+            </span>
+          )}
+          <span className="truncate">
+            {owner ? `👤 ${owner}` : isUnassigned ? "⏳ auto-assigned" : "—"}
+          </span>
+        </div>
+      </button>
+    </div>
+  );
+}
+
+// Slim lineage header above a subtask card in the board view: the project dot +
+// the parent Story's goal/summary, so the subtask reads as that Story's child.
+function ParentChip({ card }: { card: SprintCard }) {
+  const color = colorFor(card.project);
+  const label = card.structured_plan?.goal || card.summary;
+  return (
+    <div
+      className="mb-1 flex items-center gap-1 truncate text-[9px] uppercase tracking-wider text-[var(--text-muted)]"
+      title={card.summary}
+    >
+      <span
+        className="h-1.5 w-1.5 shrink-0 rounded-full"
+        style={{ background: color }}
+        aria-hidden
+      />
+      <span className="truncate">{truncate(label, 42)}</span>
+    </div>
   );
 }
 
 function Column({
   column,
-  cards,
+  items,
   onTaskSelect,
 }: {
   column: SprintColumn;
-  cards: SprintCard[];
+  items: BoardItem[];
   onTaskSelect: (task: Task) => void;
 }) {
-  const stalled = cards.filter((c) => c.stalled).length;
+  const stalled = items.filter(
+    (it) =>
+      (it.kind === "story" && it.card.stalled) ||
+      (it.kind === "subtask" && it.task.status === "blocked"),
+  ).length;
   return (
     <div className="rounded-xl border border-[var(--line)] bg-[var(--bg-surface)] p-3">
       <header className="mb-2 flex items-center gap-2">
         <h3 className="text-xs font-medium uppercase tracking-wider text-[var(--text-primary)]">
           {COLUMN_LABEL[column]}
         </h3>
-        <span className="text-[10px] text-[var(--text-muted)]">{cards.length}</span>
+        <span className="text-[10px] text-[var(--text-muted)]">{items.length}</span>
         {stalled > 0 && (
           <span className="ml-auto rounded bg-[var(--state-warn)]/15 px-1 text-[9px] uppercase tracking-wider text-[var(--state-warn)]">
             {stalled} stalled
@@ -617,12 +676,28 @@ function Column({
       </header>
       <p className="mb-3 text-[10px] text-[var(--text-muted)]">{COLUMN_HINT[column]}</p>
       <ul className="flex flex-col gap-2">
-        {cards.length === 0 ? (
+        {items.length === 0 ? (
           <li className="rounded-md border border-dashed border-[var(--line)] p-3 text-center text-[10px] text-[var(--text-muted)]">
             empty
           </li>
         ) : (
-          cards.map((c) => <Card key={c.decision_id} card={c} onTaskSelect={onTaskSelect} />)
+          items.map((it) =>
+            it.kind === "subtask" ? (
+              <li key={`t-${it.task.id}`}>
+                <SubtaskCard task={it.task} parent={it.parent} onSelect={onTaskSelect} />
+              </li>
+            ) : (
+              // Story-level tile (no subtasks yet, or needs approve/merge): keep
+              // the full card but suppress the inline subtask list — subtasks are
+              // their own cards now.
+              <Card
+                key={`c-${it.card.decision_id}`}
+                card={it.card}
+                onTaskSelect={onTaskSelect}
+                hideInlineTasks
+              />
+            ),
+          )
         )}
       </ul>
     </div>

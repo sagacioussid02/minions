@@ -66,7 +66,7 @@ export function TimeScrubber({
 
   function updateAt(ms: number) {
     const iso = new Date(ms).toISOString();
-    router.replace(`/replay?at=${encodeURIComponent(iso)}`, { scroll: false });
+    router.replace(`/hq/replay?at=${encodeURIComponent(iso)}`, { scroll: false });
   }
 
   const total = Math.max(1, maxMs - minMs);
@@ -104,7 +104,7 @@ export function TimeScrubber({
           ))}
         </div>
         <Link
-          href="/"
+          href="/hq"
           className="rounded border border-[var(--line)] px-2 py-0.5 text-[10px] hover:border-[var(--accent)]/40 hover:text-[var(--text-primary)]"
         >
           back to live

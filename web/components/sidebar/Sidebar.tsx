@@ -3,24 +3,22 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
 import {
   type CostSummary,
   type HeadlineCounters,
   type Question,
+  type SiteHealth,
 } from "@/lib/schemas";
 import { prettyRole } from "@/lib/roles";
 
 // Every navigable top-level page in the console, in menu order.
 const NAV_ITEMS: ReadonlyArray<readonly [string, string]> = [
-  ["/", "Live"],
-  ["/stage", "Stage"],
-  ["/sprint", "Sprint"],
-  ["/roster", "Roster"],
-  ["/meetings", "Meetings"],
-  ["/leadership", "Leadership"],
-  ["/spokesperson", "Spokesperson"],
-  ["/replay", "Replay"],
+  ["/hq", "Live"],
+  ["/hq/sprint", "Sprint"],
+  ["/hq/roster", "Roster"],
+  ["/hq/meetings", "Meetings"],
+  ["/hq/sentry", "Sentry"],
+  ["/hq/replay", "Replay"],
 ];
 
 type CostResp = CostSummary;
@@ -70,23 +68,6 @@ export function Sidebar({
     initialData: { questions: initialQuestions },
   });
   const pathname = usePathname();
-  const [stageOpened, setStageOpened] = useState(
-    () =>
-      typeof window === "undefined" ||
-      window.localStorage.getItem("minions-stage-opened") === "true",
-  );
-
-  useEffect(() => {
-    const onOpened = () => setStageOpened(true);
-    window.addEventListener("minions-stage-opened", onOpened);
-    return () => window.removeEventListener("minions-stage-opened", onOpened);
-  }, []);
-
-  useEffect(() => {
-    if (pathname === "/stage") {
-      window.localStorage.setItem("minions-stage-opened", "true");
-    }
-  }, [pathname]);
 
   return (
     <aside className="flex w-80 shrink-0 flex-col gap-4 border-r border-[var(--line)] bg-[var(--bg-surface)] p-4">
@@ -96,7 +77,8 @@ export function Sidebar({
         </div>
         <div className="grid grid-cols-2 gap-2">
           {NAV_ITEMS.map(([href, label]) => {
-            const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+            const active =
+              href === "/hq" ? pathname === "/hq" : pathname.startsWith(href);
             return (
               <Link
                 key={href}
@@ -109,11 +91,6 @@ export function Sidebar({
                 }`}
               >
                 {label}
-                {href === "/stage" && !stageOpened && (
-                  <span className="absolute -right-1.5 -top-1 rounded-full bg-[var(--accent)] px-1.5 py-0.5 text-[9px] font-semibold leading-none text-white shadow-sm">
-                    new
-                  </span>
-                )}
               </Link>
             );
           })}
@@ -121,6 +98,7 @@ export function Sidebar({
       </nav>
       <CostGauge summary={cost.data} />
       <Counters c={headline.data} />
+      <SentryTile />
       <QuestionsInbox qs={questions.data.questions} />
     </aside>
   );
@@ -221,6 +199,60 @@ function Counters({ c }: { c: HeadlineCounters }) {
   );
 }
 
+// Compact site-health tile. Client-fetches /api/site-health so the home
+// page server component doesn't need to take a new prop.
+async function fetchSiteHealth(): Promise<SiteHealth> {
+  const r = await fetch("/api/site-health", { cache: "no-store" });
+  if (!r.ok) throw new Error("site-health fetch failed");
+  return r.json();
+}
+
+function SentryTile() {
+  const q = useQuery({
+    queryKey: ["site-health"],
+    queryFn: fetchSiteHealth,
+    initialData: { projects: [] } as SiteHealth,
+    refetchInterval: 30_000,
+  });
+  const projects = q.data.projects;
+  const total = projects.length;
+  const green = projects.filter((p) => p.ok).length;
+  const allGood = total === 0 || green === total;
+  const dot = allGood ? "var(--state-success)" : "var(--state-danger)";
+
+  return (
+    <Link
+      href="/hq/sentry"
+      className="block rounded-xl border border-[var(--line)] bg-[var(--bg-elevated)] p-4 transition-colors hover:border-[var(--accent)]/50"
+    >
+      <div className="mb-2 flex items-center gap-2 text-sm uppercase tracking-wider text-[var(--text-muted)]">
+        Site health
+        <span
+          className="inline-block h-2 w-2 rounded-full"
+          style={{ backgroundColor: dot }}
+          aria-hidden
+        />
+        <span className="ml-auto font-mono text-[10px]">
+          {green} / {total}
+        </span>
+      </div>
+      {total === 0 ? (
+        <p className="text-xs text-[var(--text-muted)]">
+          No checks yet — set <code className="font-mono">deploy.production_url</code> on a project.
+        </p>
+      ) : allGood ? (
+        <p className="text-xs text-[var(--text-success,var(--state-success))]">
+          All projects healthy.
+        </p>
+      ) : (
+        <p className="text-xs text-[var(--state-danger)]">
+          {total - green} project{total - green === 1 ? "" : "s"} failing — open Sentry.
+        </p>
+      )}
+    </Link>
+  );
+}
+
 /**
  * Make a question card clickable: jump to the related PR when one exists,
  * otherwise to the project's sprint board so the operator lands on the
@@ -237,7 +269,7 @@ function QuestionLink({ q, children }: { q: Question; children: React.ReactNode 
     );
   }
   return (
-    <Link href={`/sprint?project=${encodeURIComponent(q.project)}`} className={cls}>
+    <Link href={`/hq/sprint?project=${encodeURIComponent(q.project)}`} className={cls}>
       {children}
     </Link>
   );

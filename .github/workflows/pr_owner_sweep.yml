@@ -13,7 +13,7 @@ name: PR owner sweep
 
 on:
   schedule:
-    - cron: '0 */2 * * *'
+    - cron: '0 10 * * *'   # once daily (cost-relaxed; was 0 */2)
   workflow_dispatch:
     inputs:
       dry-run:

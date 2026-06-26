@@ -115,7 +115,7 @@ export function RosterGrid({ initial }: { initial: AgentState[] }) {
         {filtered.map((a) => (
           <Link
             key={a.id}
-            href={`/roster/${encodeURIComponent(a.id)}`}
+            href={`/hq/roster/${encodeURIComponent(a.id)}`}
             className="group rounded-lg border border-[var(--line)] bg-[var(--surface-1)] p-3 transition hover:border-[var(--accent)]/40 hover:bg-[var(--surface-2)]"
           >
             <div className="mb-2 flex items-start justify-between gap-2">

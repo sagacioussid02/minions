@@ -6,10 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check:tenant-scoping": "MINIONS_ENFORCE_TENANT_SCOPING=1 node scripts/check-tenant-scoping.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",
+    "@clerk/nextjs": "^7.5.2",
     "@dicebear/collection": "^9.4.2",
     "@dicebear/core": "^9.4.2",
     "@neondatabase/serverless": "^1.1.0",

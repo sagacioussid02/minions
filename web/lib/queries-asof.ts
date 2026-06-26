@@ -20,6 +20,7 @@ import {
 } from "./schemas";
 import { tierFor } from "./roles";
 import { describe, deepLinks } from "./activity-renderer";
+import { getTenantId } from "./tenant";
 
 const MEANINGFUL_EVENTS = [
   "pr_opened",
@@ -34,11 +35,13 @@ const MEANINGFUL_EVENTS = [
 
 export async function listActiveAgentsAt(asOf: Date): Promise<AgentState[]> {
   const s = sql();
+  const tid = await getTenantId();
   const rows = (await s`
     WITH all_events AS (
       SELECT project, role, ts, event, decision_id, error
       FROM activity_log
-      WHERE ts <= ${asOf}::timestamptz
+      WHERE tenant_id = ${tid}
+        AND ts <= ${asOf}::timestamptz
         AND ts > ${asOf}::timestamptz - INTERVAL '30 days'
         AND role IS NOT NULL
       UNION ALL
@@ -53,13 +56,15 @@ export async function listActiveAgentsAt(asOf: Date): Promise<AgentState[]> {
       CROSS JOIN LATERAL jsonb_array_elements_text(
         COALESCE(al.payload->'agents', '[]'::jsonb)
       ) AS agent_role
-      WHERE al.ts <= ${asOf}::timestamptz
+      WHERE al.tenant_id = ${tid}
+        AND al.ts <= ${asOf}::timestamptz
         AND al.ts > ${asOf}::timestamptz - INTERVAL '30 days'
         AND al.payload ? 'agents'
       UNION ALL
       SELECT project, role, ts, NULL::text AS event, decision_id, NULL::text AS error
       FROM cost_log
-      WHERE ts <= ${asOf}::timestamptz
+      WHERE tenant_id = ${tid}
+        AND ts <= ${asOf}::timestamptz
         AND ts > ${asOf}::timestamptz - INTERVAL '30 days'
         AND role IS NOT NULL
     ),
@@ -124,6 +129,7 @@ export async function listRecentEventsAt(
   limit = 200,
 ): Promise<ActivityEvent[]> {
   const s = sql();
+  const tid = await getTenantId();
   const rows = (await s`
     SELECT
       id::int8 AS id,
@@ -138,7 +144,8 @@ export async function listRecentEventsAt(
       error,
       payload
     FROM activity_log
-    WHERE ts <= ${asOf}::timestamptz
+    WHERE tenant_id = ${tid}
+      AND ts <= ${asOf}::timestamptz
     ORDER BY id DESC
     LIMIT ${limit}
   `) as Array<{
@@ -172,10 +179,11 @@ export async function listRecentEventsAt(
 
 export async function getHeroEventAt(asOf: Date): Promise<HeroEvent> {
   const s = sql();
+  const tid = await getTenantId();
   let rows = (await s`
     SELECT ts, event, project, role, decision_id, crew, run_id, error, payload
     FROM activity_log
-    WHERE event = ANY(${MEANINGFUL_EVENTS}) AND ts <= ${asOf}::timestamptz
+    WHERE tenant_id = ${tid} AND event = ANY(${MEANINGFUL_EVENTS}) AND ts <= ${asOf}::timestamptz
     ORDER BY ts DESC
     LIMIT 1
   `) as Array<{
@@ -194,7 +202,7 @@ export async function getHeroEventAt(asOf: Date): Promise<HeroEvent> {
     rows = (await s`
       SELECT ts, event, project, role, decision_id, crew, run_id, error, payload
       FROM activity_log
-      WHERE event = 'crew_finished' AND ts <= ${asOf}::timestamptz
+      WHERE tenant_id = ${tid} AND event = 'crew_finished' AND ts <= ${asOf}::timestamptz
       ORDER BY ts DESC
       LIMIT 1
     `) as typeof rows;
@@ -235,8 +243,10 @@ export async function activityTimeRange(): Promise<{
   latest: string;
 }> {
   const s = sql();
+  const tid = await getTenantId();
   const rows = (await s`
     SELECT MIN(ts) AS earliest, MAX(ts) AS latest FROM activity_log
+    WHERE tenant_id = ${tid}
   `) as Array<{ earliest: Date | null; latest: Date | null }>;
   const r = rows[0] ?? { earliest: null, latest: null };
   const now = new Date();
@@ -248,13 +258,15 @@ export async function activityTimeRange(): Promise<{
 
 export async function costSummaryAt(asOf: Date): Promise<CostSummary> {
   const s = sql();
+  const tid = await getTenantId();
   const WEEKLY_CAP_USD = Number(process.env.MINIONS_WEEKLY_CAP_USD ?? "50");
   const rows = (await s`
     SELECT
       COALESCE(SUM(CASE WHEN ts >= DATE_TRUNC('day', ${asOf}::timestamptz) THEN cost_usd ELSE 0 END), 0)::float8 AS today_usd,
       COALESCE(SUM(CASE WHEN ts >= DATE_TRUNC('week', ${asOf}::timestamptz) THEN cost_usd ELSE 0 END), 0)::float8 AS week_to_date_usd
     FROM cost_log
-    WHERE ts <= ${asOf}::timestamptz
+    WHERE tenant_id = ${tid}
+      AND ts <= ${asOf}::timestamptz
       AND ts >= DATE_TRUNC('week', ${asOf}::timestamptz)
   `) as Array<{ today_usd: number; week_to_date_usd: number }>;
   const row = rows[0] ?? { today_usd: 0, week_to_date_usd: 0 };

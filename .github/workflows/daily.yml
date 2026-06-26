@@ -6,8 +6,8 @@ name: Daily monitor
 
 on:
   schedule:
-    # 2x/day (10:00 + 22:00 UTC). Read-only sweep — cost-tuned down from */6h.
-    - cron: '0 10,22 * * *'
+    # Once daily (10:00 UTC). Read-only sweep — cost-relaxed from 2x/day.
+    - cron: '0 10 * * *'
   workflow_dispatch: {}
 
 concurrency:

@@ -52,6 +52,29 @@ export const AgentStateSchema = z.object({
 });
 export type AgentState = z.infer<typeof AgentStateSchema>;
 
+// ---------- Agent profile (persistent identity) ----------
+
+export const AgentStatsSchema = z.object({
+  prs_opened: z.number(),
+  prs_merged: z.number(),
+  reviews_received: z.number(),
+  blockers_hit: z.number(),
+  last_active_at: z.string().nullable(),
+});
+export type AgentStats = z.infer<typeof AgentStatsSchema>;
+
+export const AgentProfileSchema = z.object({
+  agent_id: z.string(),
+  role: z.string(),
+  display_name: z.string().nullable(),
+  persona: z.string(),
+  joined_sprint: z.number().nullable(),
+  specialties: z.array(z.string()),
+  stats: AgentStatsSchema,
+  updated_at: z.string(),
+});
+export type AgentProfile = z.infer<typeof AgentProfileSchema>;
+
 // ---------- Work items ----------
 
 export const WorkItemStageSchema = z.enum([
@@ -600,3 +623,33 @@ export const HeadlineCountersSchema = z.object({
   queued_fixes: z.number(),
 });
 export type HeadlineCounters = z.infer<typeof HeadlineCountersSchema>;
+
+// ---------- Site Sentry ----------
+
+export const SiteHealthCheckSchema = z.object({
+  check_path: z.string(),
+  ok: z.boolean(),
+  status_code: z.number().nullable(),
+  latency_ms: z.number().nullable(),
+  error: z.string().nullable(),
+  last_check_at: z.string(),
+  last_ok_at: z.string().nullable(),
+  last_failed_at: z.string().nullable(),
+  p50_ms_24h: z.number(),
+  p99_ms_24h: z.number(),
+  uptime_24h: z.number(),
+  samples_24h: z.number(),
+});
+export type SiteHealthCheck = z.infer<typeof SiteHealthCheckSchema>;
+
+export const SiteHealthProjectSchema = z.object({
+  project: z.string(),
+  ok: z.boolean(),
+  checks: z.array(SiteHealthCheckSchema),
+});
+export type SiteHealthProject = z.infer<typeof SiteHealthProjectSchema>;
+
+export const SiteHealthSchema = z.object({
+  projects: z.array(SiteHealthProjectSchema),
+});
+export type SiteHealth = z.infer<typeof SiteHealthSchema>;
