@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Avatar } from "@/components/Avatar";
 import { TaskDrawer } from "@/components/sprint/TaskDrawer";
@@ -118,23 +119,83 @@ function primaryOwner(card: SprintCard): string | null {
 
 const CLOSED_REVIEW_STATES = new Set(["closed", "superseded"]);
 
-export function SprintBoard({ initial }: { initial: Board }) {
-  const [tab, setTab] = useState<string | null>(null); // null = All
-  const [window, setWindow] = useState<SprintWindow>("this_week");
-  const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
-  const [sprintFilter, setSprintFilter] = useState<number | null>(null);
-  const [showClosed, setShowClosed] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [view, setView] = useState<"swimlane" | "board">("swimlane");
+const WINDOW_VALUES = new Set<SprintWindow>(WINDOW_OPTIONS.map((o) => o.value));
+
+export function SprintBoard({
+  initial,
+  initialProject = null,
+  initialWindow = "this_week",
+}: {
+  initial: Board;
+  initialProject?: string | null;
+  initialWindow?: SprintWindow;
+}) {
+  // The URL is the single source of truth for navigation state — so views are
+  // shareable, survive the 5s refetch/refresh, and the browser Back button
+  // closes the task drawer instead of leaving the page.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const setParams = useCallback(
+    (mut: (p: URLSearchParams) => void, opts?: { push?: boolean }) => {
+      const p = new URLSearchParams(searchParams.toString());
+      mut(p);
+      const qs = p.toString();
+      const url = qs ? `${pathname}?${qs}` : pathname;
+      if (opts?.push) router.push(url, { scroll: false });
+      else router.replace(url, { scroll: false });
+    },
+    [router, pathname, searchParams],
+  );
+
+  const tab = searchParams.get("project"); // null = All
+  const windowParam = searchParams.get("window") as SprintWindow | null;
+  const window: SprintWindow =
+    windowParam && WINDOW_VALUES.has(windowParam) ? windowParam : "this_week";
+  const view: "swimlane" | "board" =
+    searchParams.get("view") === "board" ? "board" : "swimlane";
+  const ownerFilter = searchParams.get("agent");
+  const sprintParam = searchParams.get("sprint");
+  const sprintFilter = sprintParam && /^\d+$/.test(sprintParam) ? Number(sprintParam) : null;
+  const showClosed = searchParams.get("closed") === "1";
+  const taskId = searchParams.get("task");
+
+  const setTab = (p: string | null) =>
+    setParams((sp) => (p ? sp.set("project", p) : sp.delete("project")));
+  const setWindow = (w: SprintWindow) =>
+    setParams((sp) => (w === "this_week" ? sp.delete("window") : sp.set("window", w)));
+  const setView = (v: "swimlane" | "board") =>
+    setParams((sp) => (v === "swimlane" ? sp.delete("view") : sp.set("view", v)));
+  const setOwnerFilter = (v: string | null) =>
+    setParams((sp) => (v ? sp.set("agent", v) : sp.delete("agent")));
+  const setSprintFilter = (v: number | null) =>
+    setParams((sp) => (v !== null ? sp.set("sprint", String(v)) : sp.delete("sprint")));
+  const setShowClosed = (v: boolean) =>
+    setParams((sp) => (v ? sp.set("closed", "1") : sp.delete("closed")));
+  // Opening a task pushes a history entry so browser Back closes the drawer;
+  // the Close button strips the param in place.
+  const openTask = (t: Task) => setParams((sp) => sp.set("task", t.id), { push: true });
+  const closeTask = () => setParams((sp) => sp.delete("task"));
 
   const { data } = useQuery({
     queryKey: ["sprint-board", tab, window],
     queryFn: () => fetchBoard(tab, window),
-    initialData: tab === null && window === "this_week" ? initial : undefined,
+    initialData: tab === initialProject && window === initialWindow ? initial : undefined,
     refetchInterval: 5_000,
   });
 
   const board = data ?? initial;
+
+  // Deep-link / URL-driven drawer: resolve ?task=<id> against the loaded board.
+  const selectedTask = useMemo<Task | null>(() => {
+    if (!taskId) return null;
+    for (const c of board.cards) {
+      const t = c.tasks.find((task) => task.id === taskId);
+      if (t) return t;
+    }
+    return null;
+  }, [taskId, board.cards]);
 
   // Stable palette assignments.
   registerProjects(board.projects);
@@ -220,7 +281,7 @@ export function SprintBoard({ initial }: { initial: Board }) {
         <ViewToggle view={view} onChange={setView} />
       </div>
       {view === "swimlane" ? (
-        <SwimlaneBoard cards={filteredCards} onTaskSelect={setSelectedTask} />
+        <SwimlaneBoard cards={filteredCards} onTaskSelect={openTask} />
       ) : (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 xl:grid-cols-5">
           {COLUMN_ORDER.map((col) => (
@@ -228,7 +289,7 @@ export function SprintBoard({ initial }: { initial: Board }) {
               key={col}
               column={col}
               items={boardItemsByColumn.get(col) ?? []}
-              onTaskSelect={setSelectedTask}
+              onTaskSelect={openTask}
             />
           ))}
         </div>
@@ -241,7 +302,7 @@ export function SprintBoard({ initial }: { initial: Board }) {
             board.cards.find((card) => card.decision_id === selectedTask.decision_id)
               ?.structured_plan?.discussion ?? []
           }
-          onClose={() => setSelectedTask(null)}
+          onClose={closeTask}
         />
       )}
     </div>
