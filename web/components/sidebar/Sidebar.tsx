@@ -211,7 +211,7 @@ function SentryTile() {
   const q = useQuery({
     queryKey: ["site-health"],
     queryFn: fetchSiteHealth,
-    initialData: { projects: [] } as SiteHealth,
+    initialData: { projects: [], renewals: [] } as SiteHealth,
     refetchInterval: 30_000,
   });
   const projects = q.data.projects;

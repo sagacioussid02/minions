@@ -1,7 +1,21 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { SiteHealth, SiteHealthCheck } from "@/lib/schemas";
+import type { Renewal, SiteHealth, SiteHealthCheck, SiteHealthProject } from "@/lib/schemas";
+
+type Severity = "ok" | "amber" | "red" | "overdue";
+
+const SEVERITY_CLS: Record<Exclude<Severity, "ok">, string> = {
+  amber: "bg-[var(--state-warning,#b7791f)]/15 text-[var(--state-warning,#b7791f)]",
+  red: "bg-[var(--state-danger)]/15 text-[var(--state-danger)]",
+  overdue: "bg-[var(--state-danger)]/20 text-[var(--state-danger)]",
+};
+
+function _dueLabel(daysUntil: number): string {
+  if (daysUntil < 0) return `${-daysUntil}d overdue`;
+  if (daysUntil === 0) return "due today";
+  return `in ${daysUntil}d`;
+}
 
 async function fetchSiteHealth(): Promise<SiteHealth> {
   const r = await fetch("/api/site-health", { cache: "no-store" });
@@ -17,8 +31,9 @@ export function SiteHealthPanel({ initial }: { initial: SiteHealth }) {
     refetchInterval: 30_000,
   });
   const projects = q.data.projects;
+  const renewals = q.data.renewals ?? [];
 
-  if (projects.length === 0) {
+  if (projects.length === 0 && renewals.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-[var(--line)] bg-[var(--bg-surface)] p-6 text-center text-sm text-[var(--text-muted)]">
         No site-health samples yet. Configure{" "}
@@ -35,6 +50,7 @@ export function SiteHealthPanel({ initial }: { initial: SiteHealth }) {
 
   return (
     <div className="space-y-6">
+      <RenewalRadar renewals={renewals} />
       {projects.map((p) => (
         <section
           key={p.project}
@@ -46,6 +62,7 @@ export function SiteHealthPanel({ initial }: { initial: SiteHealth }) {
             <span className="text-xs text-[var(--text-muted)]">
               {p.checks.filter((c) => c.ok).length} / {p.checks.length} checks healthy
             </span>
+            <CertBadge project={p} />
           </header>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">
@@ -104,6 +121,90 @@ function CheckRow({ check }: { check: SiteHealthCheck }) {
         {check.error || ""}
       </td>
     </tr>
+  );
+}
+
+function CertBadge({ project }: { project: SiteHealthProject }) {
+  if (project.cert_expires_at === null || project.cert_days_until === null) return null;
+  const sev = project.cert_severity;
+  const label = `TLS ${_dueLabel(project.cert_days_until)}`;
+  if (sev === "ok" || sev === null) {
+    return (
+      <span className="ml-auto rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)]">
+        🔒 cert {_dueLabel(project.cert_days_until)}
+      </span>
+    );
+  }
+  return (
+    <span
+      className={`ml-auto rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${SEVERITY_CLS[sev]}`}
+      title={`Certificate expires ${project.cert_expires_at}`}
+    >
+      🔒 {label}
+    </span>
+  );
+}
+
+function RenewalRadar({ renewals }: { renewals: Renewal[] }) {
+  if (renewals.length === 0) return null;
+  // Surface anything not fully "ok" first; keep the section quiet otherwise.
+  const flagged = renewals.filter((r) => r.severity !== "ok");
+  const rest = renewals.filter((r) => r.severity === "ok");
+  const ordered = [...flagged, ...rest];
+  return (
+    <section className="rounded-xl border border-[var(--line)] bg-[var(--bg-surface)] p-4">
+      <header className="mb-3 flex items-center gap-2">
+        <h2 className="font-semibold text-[var(--text-primary)]">Renewal radar</h2>
+        <span className="text-xs text-[var(--text-muted)]">
+          {flagged.length > 0 ? `${flagged.length} due soon` : "all clear"} · licenses &amp;
+          credential rotations (dates only)
+        </span>
+      </header>
+      <ul className="space-y-1.5">
+        {ordered.map((r) => (
+          <li
+            key={`${r.project}:${r.kind}:${r.name}`}
+            className="flex items-center gap-2 text-sm text-[var(--text-primary)]"
+          >
+            <span className="text-xs" title={r.kind}>
+              {r.kind === "secret_rotation" ? "🔑" : "📄"}
+            </span>
+            <span className="font-medium">
+              {r.url ? (
+                <a href={r.url} target="_blank" rel="noreferrer" className="underline decoration-dotted">
+                  {r.name}
+                </a>
+              ) : (
+                r.name
+              )}
+            </span>
+            <span className="text-xs text-[var(--text-muted)]">{r.project}</span>
+            {r.note && <span className="text-xs text-[var(--text-muted)]">· {r.note}</span>}
+            <span className="ml-auto font-mono text-xs tabular-nums text-[var(--text-muted)]">
+              {r.due}
+            </span>
+            <RenewalPill severity={r.severity} daysUntil={r.days_until} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function RenewalPill({ severity, daysUntil }: { severity: Severity; daysUntil: number }) {
+  if (severity === "ok") {
+    return (
+      <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)]">
+        {_dueLabel(daysUntil)}
+      </span>
+    );
+  }
+  return (
+    <span
+      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${SEVERITY_CLS[severity]}`}
+    >
+      {_dueLabel(daysUntil)}
+    </span>
   );
 }
 

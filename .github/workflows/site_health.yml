@@ -1,0 +1,23 @@
+name: Site health checks
+
+# The frequent half of Site Sentry: synthetic uptime + TLS cert-expiry probes
+# of each project's deploy.production_url, written to site_health_samples.
+# Runs 3x/day to keep GitHub-Actions minutes modest while still catching
+# outages within a few hours. The slower renewal radar runs once daily in
+# site_sentry.yml. No LLM, no GitHub writes, no Decisions.
+
+on:
+  schedule:
+    - cron: '0 6,14,22 * * *'   # thrice daily (every 8h)
+  workflow_dispatch: {}
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  site-health:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: cron site-sentry --no-dry-run --scope health
+    secrets: inherit

@@ -2,11 +2,28 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+
+
+class RenewalItem(BaseModel):
+    """A dated obligation Site Sentry watches — a license/subscription
+    renewal or a scheduled credential rotation.
+
+    Only the *date* is tracked, never the secret itself: this stays inside
+    the "agents never read secrets" guarantee. Site Sentry flags each item
+    as its ``due`` date approaches (amber ≤30d, red ≤7d / overdue) on the
+    Sentry page and rolls upcoming ones into the Friday digest.
+    """
+
+    name: str  # human label, e.g. "Vercel Pro" or "ANTHROPIC_API_KEY"
+    due: date  # YYYY-MM-DD the license renews / the secret must be rotated by
+    url: str | None = None  # optional link to the renewal/rotation console
+    note: str | None = None  # optional free text ("annual", "PCI requirement")
 
 
 class ManifestSource(BaseModel):
@@ -214,6 +231,12 @@ class Manifest(BaseModel):
     flow_control: FlowControl = Field(default_factory=FlowControl)
     preflight: PreflightConfig = Field(default_factory=lambda: _default_preflight())
     deploy: DeployConfig = Field(default_factory=DeployConfig)
+
+    # Site Sentry "renewal radar": dated obligations to watch. Dates only —
+    # never the secret values (see RenewalItem). ``renewals`` = licenses /
+    # subscriptions; ``secret_rotations`` = credentials due for rotation.
+    renewals: list[RenewalItem] = Field(default_factory=list)
+    secret_rotations: list[RenewalItem] = Field(default_factory=list)
 
     @field_validator("agents", mode="before")
     @classmethod

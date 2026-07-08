@@ -42,6 +42,30 @@ approval_channels:
   email: true
   github_pr: true
 
+# Site Sentry — synthetic uptime + TLS cert expiry monitoring.
+# Point production_url at your deployed site; each health_checks path is
+# probed on the Site Sentry cadence and its status/latency/cert-expiry
+# lands on the operator console's Sentry page.
+deploy:
+  target: generic
+  production_url: https://example.com
+  health_checks:
+    - path: /
+      expect_status: 200
+
+# Renewal radar — dated obligations Site Sentry watches. Dates ONLY; the
+# agents never read the secret values themselves. Amber <=30d, red <=7d /
+# overdue; upcoming ones also roll into the Friday digest.
+renewals:
+  - name: Vercel Pro
+    due: 2026-07-26
+    url: https://vercel.com/account/plans
+    note: annual subscription
+secret_rotations:
+  - name: ANTHROPIC_API_KEY
+    due: 2026-07-10
+    note: rotate quarterly
+
 # Optional display names — uncomment to personalize this project's crew.
 agents:
   # product_owner: Tara

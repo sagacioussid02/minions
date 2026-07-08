@@ -57,6 +57,14 @@ from minions.scheduled.pr_review_loop import (
     run_pr_review_loop,
 )
 from minions.scheduled.scrum import ScrumOutcome, ScrumReport, run_scrum
+from minions.scheduled.site_sentry import (
+    ProbeSample,
+    RenewalStatus,
+    SiteSentryOutcome,
+    SiteSentryReport,
+    renewal_statuses,
+    run_site_sentry,
+)
 from minions.scheduled.weekly_planning import (
     PlanningOutcome,
     WeeklyPlanningReport,
@@ -82,8 +90,12 @@ __all__ = [
     "PRReviewLoopReport",
     "PlanningOutcome",
     "ProjectMonitorEntry",
+    "ProbeSample",
+    "RenewalStatus",
     "ScrumOutcome",
     "ScrumReport",
+    "SiteSentryOutcome",
+    "SiteSentryReport",
     "WeeklyPlanningReport",
     "run_daily_monitor",
     "run_agent_memory_demote",
@@ -95,6 +107,8 @@ __all__ = [
     "run_monthly_portfolio_review",
     "run_pr_followup",
     "run_pr_review_loop",
+    "renewal_statuses",
     "run_scrum",
+    "run_site_sentry",
     "run_weekly_planning",
 ]

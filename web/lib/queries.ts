@@ -2282,7 +2282,7 @@ export async function listSiteHealth(): Promise<SiteHealth> {
   const rows = (await s`
     WITH latest AS (
       SELECT DISTINCT ON (project, check_path)
-        project, check_path, ts, ok, status_code, latency_ms, error
+        project, check_path, ts, ok, status_code, latency_ms, error, cert_expires_at
       FROM site_health_samples
       WHERE tenant_id = ${tid}
       ORDER BY project, check_path, ts DESC
@@ -2317,6 +2317,7 @@ export async function listSiteHealth(): Promise<SiteHealth> {
       l.status_code,
       l.latency_ms,
       l.error,
+      l.cert_expires_at,
       l.ts AS last_check_at,
       ok_row.last_ok_at,
       fail_row.last_failed_at,
@@ -2336,6 +2337,7 @@ export async function listSiteHealth(): Promise<SiteHealth> {
     status_code: number | null;
     latency_ms: number | null;
     error: string | null;
+    cert_expires_at: Date | string | null;
     last_check_at: Date | string;
     last_ok_at: Date | string | null;
     last_failed_at: Date | string | null;
@@ -2347,15 +2349,27 @@ export async function listSiteHealth(): Promise<SiteHealth> {
 
   const byProject = new Map<
     string,
-    { project: string; ok: boolean; checks: SiteHealth["projects"][number]["checks"] }
+    {
+      project: string;
+      ok: boolean;
+      checks: SiteHealth["projects"][number]["checks"];
+      cert_expires_at: string | null;
+    }
   >();
   for (const r of rows) {
     let bucket = byProject.get(r.project);
     if (!bucket) {
-      bucket = { project: r.project, ok: true, checks: [] };
+      bucket = { project: r.project, ok: true, checks: [], cert_expires_at: null };
       byProject.set(r.project, bucket);
     }
     if (!r.ok) bucket.ok = false;
+    // Cert expiry is the same across a host's checks; keep the earliest seen.
+    if (r.cert_expires_at) {
+      const iso = _iso(r.cert_expires_at);
+      if (!bucket.cert_expires_at || iso < bucket.cert_expires_at) {
+        bucket.cert_expires_at = iso;
+      }
+    }
     bucket.checks.push({
       check_path: r.check_path,
       ok: r.ok,
@@ -2371,7 +2385,69 @@ export async function listSiteHealth(): Promise<SiteHealth> {
       samples_24h: r.samples_24h,
     });
   }
-  return { projects: Array.from(byProject.values()) };
+
+  const projects = Array.from(byProject.values()).map((b) => {
+    const certDays =
+      b.cert_expires_at !== null ? _daysUntil(b.cert_expires_at) : null;
+    return {
+      project: b.project,
+      ok: b.ok,
+      checks: b.checks,
+      cert_expires_at: b.cert_expires_at,
+      cert_days_until: certDays,
+      cert_severity: certDays !== null ? _renewalSeverity(certDays) : null,
+    };
+  });
+
+  const renewals = await listRenewals(tid);
+  return { projects, renewals };
+}
+
+// Renewal severity thresholds mirror the Python collector (site_sentry.py).
+const _RENEWAL_RED_DAYS = 7;
+const _RENEWAL_AMBER_DAYS = 30;
+
+function _renewalSeverity(daysUntil: number): "ok" | "amber" | "red" | "overdue" {
+  if (daysUntil < 0) return "overdue";
+  if (daysUntil <= _RENEWAL_RED_DAYS) return "red";
+  if (daysUntil <= _RENEWAL_AMBER_DAYS) return "amber";
+  return "ok";
+}
+
+function _daysUntil(iso: string): number {
+  const MS_PER_DAY = 86_400_000;
+  return Math.floor((new Date(iso).getTime() - Date.now()) / MS_PER_DAY);
+}
+
+async function listRenewals(tid: string): Promise<SiteHealth["renewals"]> {
+  const s = sql();
+  const rows = (await s`
+    SELECT project, kind, name, due, url, note
+    FROM renewal_reminders
+    WHERE tenant_id = ${tid}
+    ORDER BY due ASC
+  `) as Array<{
+    project: string;
+    kind: "license" | "secret_rotation";
+    name: string;
+    due: Date | string;
+    url: string | null;
+    note: string | null;
+  }>;
+  return rows.map((r) => {
+    const dueIso = _iso(r.due);
+    const days = _daysUntil(dueIso);
+    return {
+      project: r.project,
+      kind: r.kind,
+      name: r.name,
+      due: dueIso.slice(0, 10), // YYYY-MM-DD
+      url: r.url,
+      note: r.note,
+      days_until: days,
+      severity: _renewalSeverity(days),
+    };
+  });
 }
 
 function _iso(v: Date | string): string {

@@ -1,0 +1,22 @@
+name: Site Sentry (renewal radar)
+
+# The cheap half of Site Sentry: mirror each project's declared license
+# renewals + credential-rotation dates into renewal_reminders. Dates change
+# slowly, so once a day is plenty. The uptime/cert probes run more often in
+# site_health.yml. No LLM, no GitHub writes, no Decisions.
+
+on:
+  schedule:
+    - cron: '0 9 * * *'   # once daily (09:00 UTC)
+  workflow_dispatch: {}
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  site-sentry-renewals:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: cron site-sentry --no-dry-run --scope renewals
+    secrets: inherit

@@ -1822,6 +1822,74 @@ def cron_post_deploy_verify(
         )
 
 
+@cron_app.command("site-sentry")
+def cron_site_sentry(
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Dry run probes the sites but never writes samples to Postgres.",
+    ),
+    project: str | None = typer.Option(
+        None,
+        "--project",
+        "-p",
+        help="Limit the sweep to a single project (case-insensitive).",
+    ),
+    scope: str = typer.Option(
+        "all",
+        "--scope",
+        help="'health' (uptime + cert probes), 'renewals' (license/rotation "
+        "radar), or 'all'. Lets the two halves run on separate cadences.",
+    ),
+) -> None:
+    """Probe each project's production URL and persist a health sample.
+
+    Continuous synthetic monitoring: walks every active project with a
+    deploy.production_url, runs the same deterministic HTTP probes as
+    post-deploy verify, and appends one site_health_samples row per probe.
+    The operator console's Sentry page reads the latest sample per
+    (project, check_path) plus 24h uptime/latency rollups. No LLM, no
+    GitHub writes, no Decisions. Use --scope to split health probes (run
+    often) from the renewal radar (run daily).
+    """
+    from minions.scheduled.site_sentry import run_site_sentry
+
+    if scope not in ("all", "health", "renewals"):
+        rprint(f"[red]Invalid --scope {scope!r}[/red] (expected all|health|renewals)")
+        raise typer.Exit(2)
+
+    report = run_site_sentry(
+        projects_dir=PROJECTS_DIR,
+        dry_run=dry_run,
+        projects=[project] if project else None,
+        scope=scope,
+    )
+    persisted = "persisted" if report.persisted else "[dim]not persisted (dry-run/no-db)[/dim]"
+    rprint(
+        f"\n[bold]Site Sentry[/bold] — probed {report.projects_probed} project(s), "
+        f"{report.samples_written} sample(s), {report.renewals_due_soon} renewal(s) due soon, "
+        f"{persisted} [dim](tenant {report.tenant_id})[/dim]"
+    )
+    for o in report.outcomes:
+        icon = {
+            "probed": "[green]✓[/green]" if o.unhealthy == 0 else "[red]✗[/red]",
+            "skipped": "[dim]·[/dim]",
+            "error": "[red]✗[/red]",
+        }.get(o.status, "?")
+        detail = (
+            f"{o.healthy}/{len(o.samples)} checks healthy"
+            if o.status == "probed"
+            else (o.reason or o.status)
+        )
+        rprint(f"  {icon} {o.project} — {detail}")
+    for r in report.renewals:
+        if r.severity == "ok":
+            continue
+        color = {"amber": "yellow", "red": "red", "overdue": "red"}.get(r.severity, "yellow")
+        when = f"{r.days_until}d" if r.days_until >= 0 else f"{-r.days_until}d overdue"
+        rprint(f"  [{color}]⧗[/{color}] {r.project} — {r.kind} '{r.name}' due {r.due} ({when})")
+
+
 @cron_app.command("pr-owner-sweep")
 def cron_pr_owner_sweep(
     dry_run: bool = typer.Option(
