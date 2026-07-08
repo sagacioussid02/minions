@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Avatar } from "@/components/Avatar";
@@ -96,6 +96,27 @@ async function fetchBoard(project: string | null, window: SprintWindow): Promise
   const r = await fetch(url, { cache: "no-store" });
   if (!r.ok) throw new Error("sprint board fetch failed");
   return r.json();
+}
+
+// Per-story collapse overrides for the swimlane, backed by sessionStorage so
+// they survive the 5s refetch but reset with the tab. Exposed as an external
+// store for useSyncExternalStore (SSR-safe, no setState-in-effect).
+const collapseListeners = new Set<() => void>();
+
+function subscribeCollapse(cb: () => void): () => void {
+  collapseListeners.add(cb);
+  return () => collapseListeners.delete(cb);
+}
+
+function getCollapseOverride(decisionId: string): boolean | null {
+  if (typeof window === "undefined") return null;
+  const v = window.sessionStorage.getItem(`sprint-collapse:${decisionId}`);
+  return v === null ? null : v === "1";
+}
+
+function setCollapseOverride(decisionId: string, collapsed: boolean): void {
+  window.sessionStorage.setItem(`sprint-collapse:${decisionId}`, collapsed ? "1" : "0");
+  collapseListeners.forEach((cb) => cb());
 }
 
 function primaryOwner(card: SprintCard): string | null {
@@ -714,34 +735,106 @@ function SwimlaneRow({
     byLane.set(lane, arr);
   }
   const hasSubtasks = card.tasks.some((t) => taskLane(t.status) !== null);
+
+  // Fully-shipped stories collapse by default so active work isn't buried in
+  // wide windows; the operator can override per-row (persisted for the tab
+  // session via sessionStorage). useSyncExternalStore keeps SSR and the first
+  // client paint agreeing on the auto default, then swaps in the stored value.
+  const active = card.tasks.filter((t) => t.status !== "cancelled");
+  const allDone = active.length > 0 && active.every((t) => t.status === "done");
+  const override = useSyncExternalStore(
+    subscribeCollapse,
+    () => getCollapseOverride(card.decision_id),
+    () => null,
+  );
+  const collapsed = override ?? allDone;
+  const toggle = () => setCollapseOverride(card.decision_id, !collapsed);
+
   return (
     <div className="relative rounded-lg border border-[var(--line)] bg-[var(--bg-surface)]/40 p-2">
-      {/* Dotted lineage spine across the lane area. */}
-      <div
-        className="pointer-events-none absolute left-[240px] right-2 top-7 border-t border-dashed border-[var(--line)]"
-        aria-hidden
-      />
-      <ul className="grid items-start gap-3" style={{ gridTemplateColumns: gridCols }}>
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={!collapsed}
+        title={collapsed ? "Expand story" : "Collapse story"}
+        className="absolute right-1 top-1 z-10 rounded px-1 text-[10px] leading-none text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+      >
+        {collapsed ? "▸" : "▾"}
+      </button>
+      {/* Dotted lineage spine across the lane area (expanded only). */}
+      {!collapsed && (
+        <div
+          className="pointer-events-none absolute left-[240px] right-2 top-7 border-t border-dashed border-[var(--line)]"
+          aria-hidden
+        />
+      )}
+      <ul
+        className="grid items-start gap-3"
+        style={{ gridTemplateColumns: collapsed ? "minmax(240px, 1.1fr) 3fr" : gridCols }}
+      >
         {/* Rail: the story card (inline task list suppressed). */}
         <Card card={card} onTaskSelect={onTaskSelect} hideInlineTasks />
-        {/* Lane cells. */}
-        {SWIMLANE_LANES.map((lane) => {
-          const tasks = byLane.get(lane.key) ?? [];
-          return (
-            <li key={lane.key} className="space-y-2">
-              {tasks.map((t) => (
-                <SubtaskCard key={t.id} task={t} onSelect={onTaskSelect} />
-              ))}
-              {tasks.length === 0 && lane.key === "approved" && !hasSubtasks && (
-                <div className="rounded border border-dashed border-[var(--line)] px-2 py-3 text-center text-[9px] text-[var(--text-muted)]">
-                  no subtasks yet
-                </div>
-              )}
-            </li>
-          );
-        })}
+        {collapsed ? (
+          <CollapsedLaneSummary byLane={byLane} allDone={allDone} onExpand={toggle} />
+        ) : (
+          /* Lane cells. */
+          SWIMLANE_LANES.map((lane) => {
+            const tasks = byLane.get(lane.key) ?? [];
+            return (
+              <li key={lane.key} className="space-y-2">
+                {tasks.map((t) => (
+                  <SubtaskCard key={t.id} task={t} onSelect={onTaskSelect} />
+                ))}
+                {tasks.length === 0 && lane.key === "approved" && !hasSubtasks && (
+                  <div className="rounded border border-dashed border-[var(--line)] px-2 py-3 text-center text-[9px] text-[var(--text-muted)]">
+                    no subtasks yet
+                  </div>
+                )}
+              </li>
+            );
+          })
+        )}
       </ul>
     </div>
+  );
+}
+
+// Collapsed swimlane row: one-line lane tallies instead of the full grid.
+function CollapsedLaneSummary({
+  byLane,
+  allDone,
+  onExpand,
+}: {
+  byLane: Map<SprintColumn, Task[]>;
+  allDone: boolean;
+  onExpand: () => void;
+}) {
+  return (
+    <li className="flex items-center gap-2 self-center">
+      {allDone && (
+        <span className="rounded bg-[var(--state-success)]/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-[var(--state-success)]">
+          shipped
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={onExpand}
+        className="flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+      >
+        {SWIMLANE_LANES.map((lane) => {
+          const n = (byLane.get(lane.key) ?? []).length;
+          return (
+            <span
+              key={lane.key}
+              className={n === 0 ? "opacity-40" : undefined}
+            >
+              {lane.label} {n}
+            </span>
+          );
+        })}
+        <span className="text-[var(--accent)]">· expand</span>
+      </button>
+    </li>
   );
 }
 
