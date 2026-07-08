@@ -47,6 +47,47 @@ export function CompanyBenchMeetings({
 
 /* ----------------------------------------------------------------- roster */
 
+// One human in the roster. A borrowed specialist (same role + name) shows up
+// per-project in listActiveAgents; collapse those into a single person so the
+// roster is a real directory, not one row per assignment.
+type Person = {
+  rep: AgentState; // representative seat (prefers an in-flight one) — the chat target
+  projects: string[];
+  inFlight: boolean;
+  errored: boolean;
+};
+
+function dedupePeople(agents: AgentState[]): Person[] {
+  const byKey = new Map<string, Person>();
+  for (const a of agents) {
+    // Same role + display name = the same borrowed person. Unnamed agents key
+    // by id so we never merge distinct anonymous seats.
+    const key = a.display_name ? `${a.role}::${a.display_name.toLowerCase()}` : a.id;
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, {
+        rep: a,
+        projects: a.project ? [a.project] : [],
+        inFlight: a.in_flight,
+        errored: a.errored,
+      });
+    } else {
+      if (a.project && !existing.projects.includes(a.project)) existing.projects.push(a.project);
+      existing.inFlight = existing.inFlight || a.in_flight;
+      existing.errored = existing.errored || a.errored;
+      // Prefer an in-flight seat as the representative / chat target.
+      if (a.in_flight && !existing.rep.in_flight) existing.rep = a;
+    }
+  }
+  return [...byKey.values()];
+}
+
+function projectLabel(projects: string[]): string {
+  if (projects.length === 0) return "portfolio";
+  if (projects.length === 1) return projects[0];
+  return `${projects.length} projects`;
+}
+
 function RosterPanel({
   agents,
   onChat,
@@ -56,23 +97,25 @@ function RosterPanel({
 }) {
   const [search, setSearch] = useState("");
 
+  const people = useMemo(() => dedupePeople(agents), [agents]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return agents
-      .filter((a) =>
+    return people
+      .filter((p) =>
         !q
           ? true
-          : (a.display_name ?? "").toLowerCase().includes(q) ||
-            a.role.toLowerCase().includes(q) ||
-            (a.project ?? "").toLowerCase().includes(q),
+          : (p.rep.display_name ?? "").toLowerCase().includes(q) ||
+            p.rep.role.toLowerCase().includes(q) ||
+            p.projects.some((proj) => proj.toLowerCase().includes(q)),
       )
       .sort((a, b) => {
-        if (a.in_flight !== b.in_flight) return a.in_flight ? -1 : 1;
-        const an = a.display_name ?? a.role;
-        const bn = b.display_name ?? b.role;
+        if (a.inFlight !== b.inFlight) return a.inFlight ? -1 : 1;
+        const an = a.rep.display_name ?? a.rep.role;
+        const bn = b.rep.display_name ?? b.rep.role;
         return an.localeCompare(bn);
       });
-  }, [agents, search]);
+  }, [people, search]);
 
   return (
     <div className="flex flex-col rounded-xl border border-[var(--line)] bg-[var(--bg-surface)]">
@@ -81,7 +124,7 @@ function RosterPanel({
           Roster
         </h2>
         <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
-          {filtered.length}/{agents.length} · click to chat
+          {filtered.length}/{people.length} · click to chat
         </span>
       </header>
       <div className="px-3 pt-2.5">
@@ -99,8 +142,8 @@ function RosterPanel({
         </p>
       ) : (
         <ul className="max-h-[62vh] space-y-0.5 overflow-y-auto p-2">
-          {filtered.map((a) => (
-            <RosterRow key={a.id} agent={a} onChat={onChat} />
+          {filtered.map((p) => (
+            <RosterRow key={p.rep.id} person={p} onChat={onChat} />
           ))}
         </ul>
       )}
@@ -109,40 +152,41 @@ function RosterPanel({
 }
 
 function RosterRow({
-  agent,
+  person,
   onChat,
 }: {
-  agent: AgentState;
+  person: Person;
   onChat: (agent: AgentState) => void;
 }) {
-  const ring = `var(--color-role-${agent.role_tier})`;
+  const { rep, projects, inFlight, errored } = person;
+  const ring = `var(--color-role-${rep.role_tier})`;
   return (
     <li>
       <button
         type="button"
-        onClick={() => onChat(agent)}
-        title={`Talk to ${agent.display_name ?? prettyRole(agent.role)}`}
+        onClick={() => onChat(rep)}
+        title={`Talk to ${rep.display_name ?? prettyRole(rep.role)}`}
         className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition hover:bg-[var(--bg-elevated)]"
       >
         <Avatar
-          seed={agentSeedFor(agent.role, agent.project)}
+          seed={agentSeedFor(rep.role, rep.project)}
           size={26}
           ring={ring}
-          mood={agent.in_flight ? "active" : "idle"}
+          mood={inFlight ? "active" : "idle"}
         />
         <div className="min-w-0 flex-1">
-          <AgentLabel displayName={agent.display_name} role={agent.role} />
+          <AgentLabel displayName={rep.display_name} role={rep.role} />
           <div className="truncate text-[10px] text-[var(--text-muted)]">
-            {agent.project ?? "portfolio"}
+            {projectLabel(projects)}
           </div>
         </div>
         <span
           className="h-1.5 w-1.5 shrink-0 rounded-full"
-          title={agent.in_flight ? "working" : agent.errored ? "errored" : "idle"}
+          title={inFlight ? "working" : errored ? "errored" : "idle"}
           style={{
-            backgroundColor: agent.errored
+            backgroundColor: errored
               ? "var(--state-danger)"
-              : agent.in_flight
+              : inFlight
                 ? "var(--state-success)"
                 : "var(--line)",
           }}
