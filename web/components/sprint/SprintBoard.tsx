@@ -177,6 +177,13 @@ export function SprintBoard({
   // the Close button strips the param in place.
   const openTask = (t: Task) => setParams((sp) => sp.set("task", t.id), { push: true });
   const closeTask = () => setParams((sp) => sp.delete("task"));
+  const clearFilters = () =>
+    setParams((sp) => {
+      sp.delete("project");
+      sp.delete("agent");
+      sp.delete("sprint");
+      sp.delete("closed");
+    });
 
   const { data } = useQuery({
     queryKey: ["sprint-board", tab, window],
@@ -277,10 +284,19 @@ export function SprintBoard({
         onShowClosedChange={setShowClosed}
       />
       <div className="flex items-center justify-between gap-2">
-        <SprintHeaderStrip cards={filteredCards} />
+        <SprintHeaderStrip cards={filteredCards} activeProject={tab} onSelectProject={setTab} />
         <ViewToggle view={view} onChange={setView} />
       </div>
-      {view === "swimlane" ? (
+      {filteredCards.length === 0 ? (
+        <EmptyBoard
+          window={window}
+          tab={tab}
+          ownerFilter={ownerFilter}
+          sprintFilter={sprintFilter}
+          onClear={clearFilters}
+          onWiden={() => setWindow("last_30d")}
+        />
+      ) : view === "swimlane" ? (
         <SwimlaneBoard cards={filteredCards} onTaskSelect={openTask} />
       ) : (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 xl:grid-cols-5">
@@ -455,7 +471,15 @@ function TabButton({
   );
 }
 
-function SprintHeaderStrip({ cards }: { cards: SprintCard[] }) {
+function SprintHeaderStrip({
+  cards,
+  activeProject,
+  onSelectProject,
+}: {
+  cards: SprintCard[];
+  activeProject: string | null;
+  onSelectProject: (project: string | null) => void;
+}) {
   const byProject = useMemo(() => {
     const map = new Map<string, SprintCard[]>();
     for (const card of cards) {
@@ -479,15 +503,29 @@ function SprintHeaderStrip({ cards }: { cards: SprintCard[] }) {
         const review = tasks.filter((task) => task.status === "review").length;
         const blocked = tasks.filter((task) => task.status === "blocked").length;
         const goal = projectCards.find((card) => card.structured_plan)?.structured_plan?.goal;
+        const isActive = activeProject === project;
         return (
-          <div key={project} className="rounded-xl border border-[var(--line)] bg-[var(--bg-surface)] p-3">
-            <div className="flex items-center gap-2">
+          <div
+            key={project}
+            className={`rounded-xl border bg-[var(--bg-surface)] p-3 ${
+              isActive ? "border-[var(--accent)]/50" : "border-[var(--line)]"
+            }`}
+          >
+            {/* Clicking the header focuses this project (toggles back to All). */}
+            <button
+              type="button"
+              onClick={() => onSelectProject(isActive ? null : project)}
+              className="flex w-full items-center gap-2 text-left"
+              title={isActive ? "Show all projects" : `Focus ${project}`}
+            >
               <span className="size-2 rounded-full" style={{ backgroundColor: colorFor(project) }} />
-              <span className="font-semibold text-[var(--text-primary)]">{project}</span>
+              <span className="font-semibold text-[var(--text-primary)] hover:text-[var(--accent)]">
+                {project}
+              </span>
               <span className="ml-auto text-xs text-[var(--text-muted)]">
                 Sprint {sprint ?? "?"}
               </span>
-            </div>
+            </button>
             <div className="mt-1 line-clamp-2 text-xs text-[var(--text-muted)]">
               {goal ?? "No structured sprint goal recorded yet."}
             </div>
@@ -503,6 +541,73 @@ function SprintHeaderStrip({ cards }: { cards: SprintCard[] }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// Shown when the current filter/window combination hides every story — names
+// the active filters and offers one-click ways out instead of a dead end.
+function EmptyBoard({
+  window,
+  tab,
+  ownerFilter,
+  sprintFilter,
+  onClear,
+  onWiden,
+}: {
+  window: SprintWindow;
+  tab: string | null;
+  ownerFilter: string | null;
+  sprintFilter: number | null;
+  onClear: () => void;
+  onWiden: () => void;
+}) {
+  const active: string[] = [];
+  if (tab) active.push(`project: ${tab}`);
+  if (ownerFilter) active.push(`agent: ${ownerFilter}`);
+  if (sprintFilter !== null) active.push(`sprint ${sprintFilter}`);
+  const hasFilters = active.length > 0;
+  const windowLabel = WINDOW_OPTIONS.find((o) => o.value === window)?.label ?? window;
+  const canWiden = window === "this_week" || window === "last_week";
+  return (
+    <div className="rounded-lg border border-dashed border-[var(--line)] p-8 text-center">
+      <div className="text-sm text-[var(--text-muted)]">
+        {hasFilters
+          ? "No stories match the current filters."
+          : `No stories in the “${windowLabel}” window.`}
+      </div>
+      {hasFilters && (
+        <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+          {active.map((a) => (
+            <span
+              key={a}
+              className="rounded bg-[var(--bg-surface)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]"
+            >
+              {a}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="mt-3 flex flex-wrap justify-center gap-2 text-xs">
+        {hasFilters && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="rounded-md border border-[var(--line)] px-3 py-1 text-[var(--text-primary)] hover:border-[var(--accent)]/50"
+          >
+            Clear filters
+          </button>
+        )}
+        {canWiden && (
+          <button
+            type="button"
+            onClick={onWiden}
+            className="rounded-md border border-[var(--line)] px-3 py-1 text-[var(--text-muted)] hover:border-[var(--accent)]/50 hover:text-[var(--text-primary)]"
+          >
+            Widen to 30 days
+          </button>
+        )}
+      </div>
     </div>
   );
 }
