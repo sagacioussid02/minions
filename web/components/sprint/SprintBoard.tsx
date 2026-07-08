@@ -269,24 +269,27 @@ export function SprintBoard({
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Condensed control bar: project tabs on the left; window, filters and
+          the view toggle share one wrapping row on the right so the board sits
+          higher up the page. */}
       <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
         <Tabs current={tab} projects={board.projects} onChange={setTab} />
-        <WindowFilter current={window} onChange={setWindow} />
+        <div className="flex flex-wrap items-center gap-2">
+          <FilterRow
+            ownerOptions={ownerOptions}
+            owner={ownerFilter}
+            onOwnerChange={setOwnerFilter}
+            sprintOptions={sprintOptions}
+            sprint={sprintFilter}
+            onSprintChange={setSprintFilter}
+            showClosed={showClosed}
+            onShowClosedChange={setShowClosed}
+          />
+          <WindowFilter current={window} onChange={setWindow} />
+          <ViewToggle view={view} onChange={setView} />
+        </div>
       </div>
-      <FilterRow
-        ownerOptions={ownerOptions}
-        owner={ownerFilter}
-        onOwnerChange={setOwnerFilter}
-        sprintOptions={sprintOptions}
-        sprint={sprintFilter}
-        onSprintChange={setSprintFilter}
-        showClosed={showClosed}
-        onShowClosedChange={setShowClosed}
-      />
-      <div className="flex items-center justify-between gap-2">
-        <SprintHeaderStrip cards={filteredCards} activeProject={tab} onSelectProject={setTab} />
-        <ViewToggle view={view} onChange={setView} />
-      </div>
+      <SprintHeaderStrip cards={filteredCards} activeProject={tab} onSelectProject={setTab} />
       {filteredCards.length === 0 ? (
         <EmptyBoard
           window={window}
@@ -829,7 +832,9 @@ function Column({
   ).length;
   return (
     <div className="rounded-xl border border-[var(--line)] bg-[var(--bg-surface)] p-3">
-      <header className="mb-2 flex items-center gap-2">
+      {/* Sticky so the column label stays visible while scrolling a long lane
+          (the document is the vertical scroller on this page). */}
+      <header className="sticky top-0 z-10 -mx-3 -mt-3 mb-2 flex items-center gap-2 rounded-t-xl border-b border-[var(--line)] bg-[var(--bg-surface)]/95 px-3 py-2 backdrop-blur">
         <h3 className="text-xs font-medium uppercase tracking-wider text-[var(--text-primary)]">
           {COLUMN_LABEL[column]}
         </h3>
