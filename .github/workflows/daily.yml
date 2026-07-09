@@ -7,7 +7,7 @@ name: Daily monitor
 on:
   schedule:
     # Once daily (10:00 UTC). Read-only sweep — cost-relaxed from 2x/day.
-    - cron: '0 10 * * *'
+    - cron: '0 10 * * 1,4'   # budget: twice weekly (Mon/Thu)
   workflow_dispatch: {}
 
 concurrency:

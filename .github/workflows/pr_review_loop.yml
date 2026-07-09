@@ -5,7 +5,7 @@ name: PR review loop
 
 on:
   schedule:
-    - cron: '45 10 * * *'   # once daily (cost-relaxed; was 45 */2)
+    - cron: '45 10 * * 1,4'   # budget: twice weekly (Mon/Thu)
   workflow_dispatch:
     inputs:
       dry-run:

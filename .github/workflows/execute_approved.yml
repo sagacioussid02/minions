@@ -6,7 +6,7 @@ name: Execute approved decisions
 
 on:
   schedule:
-    - cron: '15 12 * * *'   # once daily (cost-relaxed; was 15 */8)
+    - cron: '15 12 * * 1,3,5'   # budget: Mon/Wed/Fri
   workflow_dispatch:
     inputs:
       dry-run:

@@ -7,7 +7,7 @@ name: Site Sentry (renewal radar)
 
 on:
   schedule:
-    - cron: '0 9 * * *'   # once daily (09:00 UTC)
+    - cron: '0 9 * * 1'   # budget: weekly (Mon)
   workflow_dispatch: {}
 
 concurrency:

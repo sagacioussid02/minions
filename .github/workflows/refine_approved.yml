@@ -7,7 +7,7 @@ name: Refine approved sprints
 
 on:
   schedule:
-    - cron: '0 9 * * *'   # once daily (cost-relaxed; was */30)
+    - cron: '0 9 * * 1,4'   # budget: twice weekly (Mon/Thu)
   workflow_dispatch:
 
 concurrency:

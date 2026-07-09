@@ -1503,6 +1503,12 @@ def cron_weekly(
         "-p",
         help="Limit planning scan to one project.",
     ),
+    rotate: bool = typer.Option(
+        False,
+        "--rotate",
+        help="Budget mode: plan one project per run, cycling the portfolio by "
+        "ISO week (ignored when --project is set).",
+    ),
 ) -> None:
     """Manually trigger the Monday weekly planning sweep."""
     from minions.agents.memory_store_factory import make_agent_memory_store
@@ -1531,6 +1537,7 @@ def cron_weekly(
         budget_notifications_path=BUDGET_NOTIFICATIONS_PATH,
         portfolio=load_portfolio_config(CONFIG_PATH),
         projects=[project] if project else None,
+        rotate=rotate,
         agile_store=make_agile_store(AGILE_PATH),
         sprints_path=SPRINTS_PATH,
         memory_store=make_agent_memory_store(AGENT_MEMORY_PATH),
