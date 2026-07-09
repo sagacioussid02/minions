@@ -8,7 +8,7 @@ name: Site health checks
 
 on:
   schedule:
-    - cron: '0 6,14,22 * * *'   # thrice daily (every 8h)
+    - cron: '0 10 * * 1,3,5'   # budget: 3x/week (was 3x/day)
   workflow_dispatch: {}
 
 concurrency:

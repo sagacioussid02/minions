@@ -273,6 +273,28 @@ def test_weekly_planning_can_scan_one_project(
     assert [d.project for d in store.list_all()] == ["beta"]
 
 
+def test_weekly_planning_rotate_plans_one_project(
+    fake_portfolio: tuple[Path, Path], tmp_path: Path
+) -> None:
+    projects_dir, _ = fake_portfolio
+    store = DecisionStore(tmp_path / "decisions.json")
+    notifier = _RecordingNotifier()
+
+    report = run_weekly_planning(
+        projects_dir=projects_dir,
+        store=store,
+        notifier=notifier,
+        dry_run=True,
+        rotate=True,
+    )
+
+    # Budget mode: exactly one project per run (cycling the portfolio by ISO
+    # week), even though the fake portfolio has two active projects.
+    assert report.submitted == 1
+    assert len(report.outcomes) == 1
+    assert report.outcomes[0].project in {"alpha", "beta"}
+
+
 def test_weekly_planning_isolates_failure(
     fake_portfolio: tuple[Path, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -7,7 +7,7 @@ name: Assign backlog tasks
 
 on:
   schedule:
-    - cron: '30 9 * * *'   # once daily (cost-relaxed; was */30)
+    - cron: '30 9 * * 1,4'   # budget: twice weekly (Mon/Thu)
   workflow_dispatch:
 
 concurrency:
