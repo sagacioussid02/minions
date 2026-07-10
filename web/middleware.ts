@@ -30,6 +30,7 @@ export default clerkMiddleware(async (auth, req) => {
 });
 
 export const config = {
+  runtime: "nodejs",
   matcher: [
     // Clerk's canonical matcher: skip ALL Next internals (_next/*) and
     // static files, otherwise the client's RSC/runtime requests get gated
