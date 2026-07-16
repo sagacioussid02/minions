@@ -8,16 +8,16 @@
  *   App JWT (RS256, signed w/ private key)  ->  installation access token
  *   ->  list repos / open PRs as minions[bot]
  *
- * Env (real values in .env.local + deploy secrets, never committed):
- *   MINIONS_GITHUB_APP_ID
- *   MINIONS_GITHUB_APP_PRIVATE_KEY   (PEM; literal or with \n-escaped newlines)
- *   MINIONS_GITHUB_APP_SLUG          (for the install URL)
+ * Credentials come from `getGithubAppConfig()` (DB-first, env-fallback —
+ * see lib/github-app-config.ts). The App itself is created via the manifest
+ * flow at app/admin/github-app, not by hand.
  *
  * Node runtime only (uses node:crypto). Route handlers/RSCs that call this must
  * not be `runtime = "edge"`.
  */
 
 import crypto from "node:crypto";
+import { getGithubAppConfig } from "./github-app-config";
 
 const GH_API = "https://api.github.com";
 const GH_HEADERS = {
@@ -38,14 +38,12 @@ function b64url(input: string): string {
 }
 
 /** Mint a ~9-minute App JWT (RS256) signed with the App private key. */
-export function appJwt(): string {
-  const appId = process.env.MINIONS_GITHUB_APP_ID;
-  const pem = process.env.MINIONS_GITHUB_APP_PRIVATE_KEY;
-  if (!appId || !pem) {
-    throw new Error(
-      "GitHub App not configured: set MINIONS_GITHUB_APP_ID and MINIONS_GITHUB_APP_PRIVATE_KEY",
-    );
+export async function appJwt(): Promise<string> {
+  const config = await getGithubAppConfig();
+  if (!config) {
+    throw new Error("GitHub App not configured — set it up at /admin/github-app");
   }
+  const { appId, privateKey: pem } = config;
   const key = pem.includes("\\n") ? pem.replace(/\\n/g, "\n") : pem;
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
@@ -59,7 +57,7 @@ export function appJwt(): string {
 async function ghApp<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${GH_API}${path}`, {
     ...init,
-    headers: { ...GH_HEADERS, Authorization: `Bearer ${appJwt()}`, ...(init?.headers ?? {}) },
+    headers: { ...GH_HEADERS, Authorization: `Bearer ${await appJwt()}`, ...(init?.headers ?? {}) },
     cache: "no-store",
   });
   if (!r.ok) {
@@ -110,16 +108,12 @@ export async function listInstallationRepos(installationId: number): Promise<GhR
   return out;
 }
 
-export function installUrl(): string {
-  const slug = process.env.MINIONS_GITHUB_APP_SLUG;
-  if (!slug) throw new Error("MINIONS_GITHUB_APP_SLUG not set");
-  return `https://github.com/apps/${slug}/installations/new`;
+export async function installUrl(): Promise<string> {
+  const config = await getGithubAppConfig();
+  if (!config) throw new Error("GitHub App not configured — set it up at /admin/github-app");
+  return `https://github.com/apps/${config.slug}/installations/new`;
 }
 
-export function isGithubAppConfigured(): boolean {
-  return Boolean(
-    process.env.MINIONS_GITHUB_APP_ID &&
-      process.env.MINIONS_GITHUB_APP_PRIVATE_KEY &&
-      process.env.MINIONS_GITHUB_APP_SLUG,
-  );
+export async function isGithubAppConfigured(): Promise<boolean> {
+  return (await getGithubAppConfig()) !== null;
 }
