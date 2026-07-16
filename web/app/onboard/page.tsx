@@ -48,20 +48,25 @@ export default async function OnboardPage({
   }
 
   // step === "repos"
-  if (!isGithubAppConfigured()) {
+  if (!(await isGithubAppConfigured())) {
     return <StepRepos installUrl={null} repos={null} cap={tenant.project_cap} selected={[]} />;
   }
   const installationId = payload.installation_id as number | undefined;
   if (!installationId) {
     return (
-      <StepRepos installUrl={installUrl()} repos={null} cap={tenant.project_cap} selected={[]} />
+      <StepRepos
+        installUrl={await installUrl()}
+        repos={null}
+        cap={tenant.project_cap}
+        selected={[]}
+      />
     );
   }
   const repos = await listInstallationRepos(installationId).catch(() => []);
   const selected = ((payload.repos as PickedRepo[] | undefined) ?? []).map((r) => r.full_name);
   return (
     <StepRepos
-      installUrl={installUrl()}
+      installUrl={await installUrl()}
       repos={repos}
       cap={tenant.project_cap}
       selected={selected}
