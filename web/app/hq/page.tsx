@@ -6,6 +6,7 @@ import { CompanyBenchMeetings } from "@/components/bench/CompanyBenchMeetings";
 import { AmbientParticles } from "@/components/AmbientParticles";
 import { HeartbeatDot } from "@/components/HeartbeatDot";
 import { UserButton } from "@clerk/nextjs";
+import { getCurrentTenant } from "@/lib/tenant";
 import {
   costSummary,
   getHeroEvent,
@@ -21,7 +22,8 @@ export const dynamic = "force-dynamic"; // always SSR fresh
 export default async function Home() {
   // Initial paint server-rendered from a single snapshot. Client takes over
   // with TanStack Query 3-second polling after hydration.
-  const [agents, events, cost, headline, questions, hero, meetings] = await Promise.all([
+  const [tenant, agents, events, cost, headline, questions, hero, meetings] = await Promise.all([
+    getCurrentTenant(),
     listActiveAgents(),
     listRecentEvents({ limit: 200 }),
     costSummary(),
@@ -37,6 +39,7 @@ export default async function Home() {
         initialCost={cost}
         initialHeadline={headline}
         initialQuestions={questions}
+        isFounder={tenant.founder}
       />
       <main className="relative flex-1 overflow-y-auto">
         <AmbientParticles />

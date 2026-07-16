@@ -47,10 +47,12 @@ export function Sidebar({
   initialCost,
   initialHeadline,
   initialQuestions,
+  isFounder,
 }: {
   initialCost: CostResp;
   initialHeadline: HeadlineResp;
   initialQuestions: Question[];
+  isFounder?: boolean;
 }) {
   const cost = useQuery({
     queryKey: ["cost"],
@@ -68,6 +70,9 @@ export function Sidebar({
     initialData: { questions: initialQuestions },
   });
   const pathname = usePathname();
+  const navItems = isFounder
+    ? [...NAV_ITEMS, ["/admin/github-app", "GitHub App"] as const]
+    : NAV_ITEMS;
 
   return (
     <aside className="flex w-80 shrink-0 flex-col gap-4 border-r border-[var(--line)] bg-[var(--bg-surface)] p-4">
@@ -76,7 +81,7 @@ export function Sidebar({
           Console
         </div>
         <div className="grid grid-cols-2 gap-2">
-          {NAV_ITEMS.map(([href, label]) => {
+          {navItems.map(([href, label]) => {
             const active =
               href === "/hq" ? pathname === "/hq" : pathname.startsWith(href);
             return (

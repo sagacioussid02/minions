@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { sql } from "@/lib/db";
+import { getGithubAppConfig } from "@/lib/github-app-config";
 
 /**
  * GitHub App webhook (P7). Production-only sync: in local dev the App webhook
@@ -18,7 +19,8 @@ function verifySignature(raw: string, sig: string | null, secret: string): boole
 }
 
 export async function POST(req: NextRequest) {
-  const secret = process.env.MINIONS_GITHUB_APP_WEBHOOK_SECRET;
+  const config = await getGithubAppConfig();
+  const secret = config?.webhookSecret;
   if (!secret) {
     return NextResponse.json({ error: "webhook not configured" }, { status: 503 });
   }
