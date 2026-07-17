@@ -19,6 +19,10 @@ function buildManifest(base: string) {
     url: base,
     hook_attributes: { url: `${base}/api/github-webhook` },
     redirect_url: `${base}/admin/github-app/callback`,
+    // Distinct from redirect_url: this fires on every *installation* (not
+    // just App creation), sending installers back to /onboard?installation_id=.
+    setup_url: `${base}/onboard`,
+    setup_on_update: true,
     public: true, // customers install this on their own orgs, not just yours
     default_permissions: {
       contents: "write",
