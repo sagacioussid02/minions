@@ -15,6 +15,18 @@ export async function countProjects(tenantId: string): Promise<number> {
   return rows[0]?.n ?? 0;
 }
 
+export type TenantProjectSummary = { project: string; name: string; description: string };
+
+/** Project slugs + display names for the dossier step (Step C). */
+export async function listProjects(tenantId: string): Promise<TenantProjectSummary[]> {
+  const db = sql();
+  const rows = (await db`
+    SELECT project, manifest_json->>'name' AS name, manifest_json->>'description' AS description
+    FROM tenant_projects WHERE tenant_id = ${tenantId} ORDER BY created_at
+  `) as TenantProjectSummary[];
+  return rows;
+}
+
 export async function createProject(
   tenantId: string,
   project: string,
@@ -39,6 +51,7 @@ export function buildManifest(input: {
   defaultBranch: string;
   weeklyBudgetUsd: number;
   monthlyBudgetUsd: number;
+  owner: string;
 }): Record<string, unknown> {
   return {
     name: input.name,
@@ -50,5 +63,6 @@ export function buildManifest(input: {
     },
     weekly_budget_usd: input.weeklyBudgetUsd,
     monthly_budget_usd: input.monthlyBudgetUsd,
+    owner: input.owner,
   };
 }

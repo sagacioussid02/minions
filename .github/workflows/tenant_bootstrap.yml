@@ -1,0 +1,25 @@
+name: Tenant bootstrap
+
+# Dispatched by the web app right when a tenant finishes onboarding (see
+# web/app/api/onboard/dossier/route.ts). Runs real (non-dry-run) planning
+# for that tenant's projects immediately, instead of waiting for the next
+# Monday weekly-planning cron.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tenant_id:
+        description: 'Tenant UUID to bootstrap.'
+        required: true
+        type: string
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: bootstrap-tenant --tenant ${{ inputs.tenant_id }}
+    secrets: inherit

@@ -1409,6 +1409,17 @@ def _open_github_client(manifest: Manifest) -> GitHubClient | None:
             f"local-only signals will be used.[/yellow]"
         )
         return None
+    if manifest.tenant_id is not None:
+        from minions.github.app_auth import get_installation_token
+
+        try:
+            token = get_installation_token(manifest.tenant_id)
+        except Exception as e:  # noqa: BLE001 — surfaced to the operator, not a crash
+            rprint(f"[red]Could not mint GitHub App installation token for tenant "
+                   f"{manifest.tenant_id}:[/red] {e}")
+            raise typer.Exit(1) from e
+        return GitHubClient(token=token, repo=repo)
+
     try:
         token = get_github_token()
     except SecretNotFound as e:
@@ -1555,6 +1566,86 @@ def cron_weekly(
             rprint(f"  [yellow]⊘[/yellow] {o.project} — {o.error}")
         else:
             rprint(f"  [red]✗[/red] {o.project} — {o.error}")
+
+
+@app.command("bootstrap-tenant")
+def bootstrap_tenant(
+    tenant_id: str = typer.Option(..., "--tenant", help="Tenant UUID to kick off."),
+) -> None:
+    """One-off first-sprint kickoff for a newly onboarded tenant.
+
+    Dispatched by the web app (POST .../actions/workflows/tenant_bootstrap.yml/
+    dispatches) right when onboarding completes. Writes an immediate
+    ``crew_started`` activity row per project — so /hq/live shows the run
+    without waiting on the crew — then runs real (non-dry-run) planning for
+    each of the tenant's projects via the same run_weekly_planning path the
+    Monday cron uses. A brand-new project has no dossier yet, which
+    run_planning_crew already treats as freshness="none" (not "very_stale"),
+    so it plans without one — the first real dossier arrives on the normal
+    weekly discovery cadence.
+    """
+    from datetime import UTC, datetime
+
+    from minions.activity import ActivityEntry
+    from minions.activity import append as append_activity
+    from minions.agents.memory_store_factory import make_agent_memory_store
+    from minions.agile.store_factory import make_agile_store
+    from minions.config.portfolio import load_portfolio_config
+    from minions.db.connection import connect
+    from minions.dossiers.store_factory import make_dossier_store
+    from minions.scheduled import run_weekly_planning
+
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT project FROM tenant_projects WHERE tenant_id = %s", (tenant_id,))
+        projects = [row[0] for row in cur.fetchall()]
+
+    if not projects:
+        rprint(f"[yellow]Tenant {tenant_id} has no tenant_projects rows — nothing to bootstrap.[/yellow]")
+        raise typer.Exit(1)
+
+    for project in projects:
+        append_activity(
+            ActivityEntry(
+                timestamp=datetime.now(tz=UTC),
+                event="crew_started",
+                run_id=f"bootstrap-{tenant_id}-{project}",
+                crew="weekly_planning",
+                project=project,
+                decision_id="",
+                agents=("product_owner", "principal_engineer", "manager"),
+                tenant_id=tenant_id,
+            )
+        )
+
+    try:
+        api_key = get_anthropic_api_key()
+    except SecretNotFound as e:
+        rprint(f"[red]Missing API key:[/red] {e}")
+        raise typer.Exit(1) from e
+
+    report = run_weekly_planning(
+        projects_dir=PROJECTS_DIR,
+        store=_store(),
+        notifier=_notifier(),
+        api_key=api_key,
+        dry_run=False,
+        open_github_client=_open_github_client,
+        cost_log_path=COST_LOG_PATH,
+        budget_notifications_path=BUDGET_NOTIFICATIONS_PATH,
+        portfolio=load_portfolio_config(CONFIG_PATH),
+        projects=[f"{tenant_id}:{p}" for p in projects],
+        agile_store=make_agile_store(AGILE_PATH),
+        sprints_path=SPRINTS_PATH,
+        memory_store=make_agent_memory_store(AGENT_MEMORY_PATH),
+        dossier_store=make_dossier_store(DOSSIER_DRAFTS_PATH),
+    )
+    rprint(
+        f"\n[bold]Tenant bootstrap[/bold] {tenant_id} — "
+        f"submitted {report.submitted}, throttled {report.throttled}, errored {report.errored}"
+    )
+    for o in report.outcomes:
+        status_icon = "✓" if o.status == "submitted" else "✗"
+        rprint(f"  [{'green' if o.status == 'submitted' else 'red'}]{status_icon}[/] {o.project} — {o.status}")
 
 
 @cron_app.command("daily")

@@ -107,3 +107,42 @@ def test_active_manifests_all_have_dossier_defaults():
         assert isinstance(m, Manifest)
         assert isinstance(m.dossier, DossierConfig)
         assert m.dossier.max_new_issues_per_cycle >= 0
+
+
+def test_load_active_manifests_merges_in_tenant_manifests(
+    monkeypatch: "pytest.MonkeyPatch",
+) -> None:
+    """Tenant projects (Postgres) ride along with the founder's projects/*.yaml."""
+    fake_tenant_manifest = load_manifest(REPO_ROOT / "projects" / "demo.yaml").model_copy(
+        update={"tenant_id": "11111111-1111-1111-1111-111111111111"}
+    )
+
+    def _fake_load_tenant_manifests():
+        return {"11111111-1111-1111-1111-111111111111:demo-clone": fake_tenant_manifest}
+
+    import minions.config.portfolio_per_tenant as tenant_mod
+
+    monkeypatch.setattr(tenant_mod, "load_tenant_manifests", _fake_load_tenant_manifests)
+
+    manifests = load_active_manifests(REPO_ROOT / "projects")
+    key = "11111111-1111-1111-1111-111111111111:demo-clone"
+    assert key in manifests
+    assert manifests[key].tenant_id == "11111111-1111-1111-1111-111111111111"
+    # Founder projects are untouched and still tenant_id=None.
+    assert manifests["Demo"].tenant_id is None
+
+
+def test_load_active_manifests_tolerates_tenant_load_failure(
+    monkeypatch: "pytest.MonkeyPatch",
+) -> None:
+    """A DB error (e.g. no MINIONS_DATABASE_URL in dev/CI) never blocks the
+    founder's own portfolio from loading."""
+    import minions.config.portfolio_per_tenant as tenant_mod
+
+    def _raise():
+        raise RuntimeError("no db configured")
+
+    monkeypatch.setattr(tenant_mod, "load_tenant_manifests", _raise)
+
+    manifests = load_active_manifests(REPO_ROOT / "projects")
+    assert "Demo" in manifests

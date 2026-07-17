@@ -58,6 +58,18 @@ class GmailNotifier:
         self.recipient = recipient or smtp_user
         self._smtp_send = smtp_send
 
+    def _recipient_for(self, decision: Decision) -> str:
+        """Tenant decisions notify the real customer; founder decisions keep
+        the fixed ``self.recipient``. Never blocks a send — falls back on any
+        lookup failure (missing CLERK_SECRET_KEY, Clerk API error, etc.)."""
+        if decision.tenant_id is not None:
+            from minions.notify.clerk_users import get_tenant_email
+
+            email = get_tenant_email(decision.tenant_id)
+            if email:
+                return email
+        return self.recipient
+
     # ---- Notifier Protocol ----
 
     def notify_approval_request(self, decision: Decision) -> None:
@@ -106,7 +118,7 @@ class GmailNotifier:
 
         msg = MIMEMultipart("alternative")
         msg["From"] = f"minions <{self.smtp_user}>"
-        msg["To"] = self.recipient
+        msg["To"] = self._recipient_for(decision)
         msg["Subject"] = subject
         msg.attach(MIMEText(text_body, "plain"))
         msg.attach(MIMEText(html_body, "html"))
@@ -126,7 +138,7 @@ class GmailNotifier:
         )
         msg = MIMEMultipart("alternative")
         msg["From"] = f"minions <{self.smtp_user}>"
-        msg["To"] = self.recipient
+        msg["To"] = self._recipient_for(decision)
         msg["Subject"] = subject
         msg.attach(MIMEText(text, "plain"))
         return msg

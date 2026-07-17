@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { currentUser } from "@clerk/nextjs/server";
 import { getCurrentTenant } from "@/lib/tenant";
 import { saveOnboardingStep } from "@/lib/onboarding";
 import { buildManifest, countProjects, createProject } from "@/lib/tenant-projects";
@@ -39,6 +40,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Manifest.owner is required Python-side (used as a notify fallback if the
+  // Clerk email lookup fails at run time) — resolve it once here rather than
+  // leaving it unset and failing Manifest validation for every tenant project.
+  const user = await currentUser();
+  const owner = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses[0]?.emailAddress ?? tenant.clerk_user_id;
+
   for (const p of projects) {
     const project = slug(p.name);
     await createProject(
@@ -51,6 +58,7 @@ export async function POST(req: NextRequest) {
         defaultBranch: p.defaultBranch || "main",
         weeklyBudgetUsd: Number(p.weeklyBudgetUsd) || 25,
         monthlyBudgetUsd: Number(p.monthlyBudgetUsd) || 100,
+        owner,
       }),
     );
   }
