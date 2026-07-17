@@ -26,7 +26,8 @@ function buildManifest(base: string) {
       pull_requests: "write",
       metadata: "read",
     },
-    default_events: ["installation", "installation_repositories"],
+    // installation / installation_repositories are delivered to every App's
+    // webhook automatically — GitHub rejects them if declared explicitly.
   };
 }
 
