@@ -119,7 +119,7 @@ def run_scrum(
                         event="scrum_created",
                         run_id=f"scrum-{project}-{uuid.uuid4().hex}",
                         crew="scrum",
-                        project=project,
+                        project=lookup_name,
                         decision_id=str(record.id),
                         agents=("product_owner", "principal_engineer", "manager"),
                         extra=extra_payload,

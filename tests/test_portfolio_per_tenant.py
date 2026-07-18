@@ -102,3 +102,18 @@ def test_load_tenant_manifests_skips_invalid_row(monkeypatch: pytest.MonkeyPatch
     manifests = load_tenant_manifests()
     assert "11111111-1111-1111-1111-111111111111:broken" not in manifests
     assert "22222222-2222-2222-2222-222222222222:ok" in manifests
+
+
+def test_load_tenant_manifests_skips_malformed_json_string(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A manifest_json value that isn't even valid JSON (not just an invalid
+    Manifest) is skipped too, rather than raising and aborting the sweep."""
+    _patch_connect(
+        monkeypatch,
+        [
+            ("11111111-1111-1111-1111-111111111111", "corrupt", "{not valid json"),
+            ("22222222-2222-2222-2222-222222222222", "ok", json.dumps(VALID_MANIFEST)),
+        ],
+    )
+    manifests = load_tenant_manifests()
+    assert "11111111-1111-1111-1111-111111111111:corrupt" not in manifests
+    assert "22222222-2222-2222-2222-222222222222:ok" in manifests

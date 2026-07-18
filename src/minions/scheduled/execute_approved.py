@@ -143,8 +143,12 @@ def run_execute_approved(
         }
     # Decision.project stores manifest.name (the plain display name), not
     # this dict's key — which is a compound "tenant_id:project" for tenant
-    # manifests (see load_tenant_manifests). Resolve lookups by name instead.
-    manifests_by_name = {m.name: m for m in manifests.values()}
+    # manifests (see load_tenant_manifests). Resolve by (tenant_id, name),
+    # not name alone — two different tenants can independently pick the same
+    # project display name (e.g. both call it "demo"), and a name-only
+    # lookup would let one tenant's approved decision execute against the
+    # other tenant's manifest/repo.
+    manifests_by_key = {(m.tenant_id, m.name): m for m in manifests.values()}
     approved = store.list_by_status(DecisionStatus.APPROVED)
     if only_expedited:
         approved = [d for d in approved if d.expedited]
@@ -152,7 +156,7 @@ def run_execute_approved(
         # Scoped dispatch (e.g. tenant-triggered) — only touch decisions
         # whose project resolved into the (already-filtered) manifests above,
         # rather than iterating every other tenant's pending decisions too.
-        approved = [d for d in approved if d.project in manifests_by_name]
+        approved = [d for d in approved if (d.tenant_id, d.project) in manifests_by_key]
     approved.sort(key=_approved_sort_key)
 
     outcomes: list[ExecuteOutcome] = []
@@ -205,7 +209,7 @@ def run_execute_approved(
             )
             continue
 
-        manifest = manifests_by_name.get(decision.project)
+        manifest = manifests_by_key.get((decision.tenant_id, decision.project))
         if manifest is None:
             outcomes.append(
                 ExecuteOutcome(
@@ -229,7 +233,7 @@ def run_execute_approved(
                 project=decision.project,
                 engineer_runs_store=engineer_runs_store,
             )
-            cap = manifests_by_name.get(decision.project)
+            cap = manifests_by_key.get((decision.tenant_id, decision.project))
             cap_value = cap.flow_control.max_open_prs if cap is not None else 5
             if open_prs >= cap_value:
                 outcomes.append(

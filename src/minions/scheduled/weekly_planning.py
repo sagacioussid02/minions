@@ -266,7 +266,7 @@ def run_weekly_planning(
                         event="sprint_planned",
                         run_id=f"sprint-planning-{name}-{uuid.uuid4().hex}",
                         crew="weekly_planning",
-                        project=name,
+                        project=manifest.name,
                         decision_id=str(ritual.id),
                         agents=("product_owner", "principal_engineer", "manager"),
                         tenant_id=manifest.tenant_id,
