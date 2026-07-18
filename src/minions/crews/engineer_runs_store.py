@@ -55,6 +55,11 @@ class EngineerRunRecord(BaseModel):
     decision_id: str
     task_id: str | None = None
     project: str
+    # Set for tenant-project runs (from Manifest.tenant_id); None means the
+    # founder. Two tenants can independently pick the same project display
+    # name, so anything that groups runs by `project` alone (e.g.
+    # distinct_open_pr_count) must also match on this.
+    tenant_id: str | None = None
     completed_at: datetime
     pr_url: str | None = None
     pr_number: int | None = None
@@ -133,7 +138,9 @@ class EngineerRunStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(data, indent=2, default=str))
 
-    def save(self, result: EngineerResult, *, project: str) -> EngineerRunRecord:
+    def save(
+        self, result: EngineerResult, *, project: str, tenant_id: str | None = None
+    ) -> EngineerRunRecord:
         # Sticky-owner default: prefer the agent the engineer crew reported;
         # fall back to the canonical engineer seat so legacy callsites
         # (older test fixtures, replays) still get a non-None owner.
@@ -142,6 +149,7 @@ class EngineerRunStore:
             decision_id=result.decision_id,
             task_id=result.task_id,
             project=project,
+            tenant_id=tenant_id,
             completed_at=datetime.now(tz=UTC),
             pr_url=result.pr_url,
             pr_number=result.pr_number,

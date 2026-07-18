@@ -232,6 +232,7 @@ def run_execute_approved(
             open_prs = distinct_open_pr_count(
                 project=decision.project,
                 engineer_runs_store=engineer_runs_store,
+                tenant_id=decision.tenant_id,
             )
             cap = manifests_by_key.get((decision.tenant_id, decision.project))
             cap_value = cap.flow_control.max_open_prs if cap is not None else 5
@@ -371,7 +372,9 @@ def run_execute_approved(
         # picking the Decision up later.
         if not dry_run:
             with suppress(Exception):
-                engineer_runs_store.save(result, project=manifest.name)
+                engineer_runs_store.save(
+                    result, project=manifest.name, tenant_id=manifest.tenant_id
+                )
 
             if task is not None:
                 with suppress(Exception):

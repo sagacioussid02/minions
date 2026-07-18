@@ -36,6 +36,8 @@ def load_tenant_manifests() -> dict[str, Manifest]:
             raw = {**raw, "tenant_id": str(tenant_id)}
             manifests[f"{tenant_id}:{project}"] = Manifest.model_validate(raw)
         except Exception as e:  # noqa: BLE001 — one bad tenant manifest shouldn't block others
-            logger.warning("tenant_projects row %s/%s failed validation: %s", tenant_id, project, e)
+            logger.warning(
+                "tenant_projects row %s/%s failed to parse/validate: %s", tenant_id, project, e
+            )
 
     return manifests

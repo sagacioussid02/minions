@@ -69,16 +69,21 @@ def run_scrum(
             # Decision/questions store rows key by manifest.name (the plain
             # display name), not this loop's dict key — which is a compound
             # "tenant_id:project" for tenant manifests (see load_tenant_manifests).
+            # Two tenants can independently pick the same display name, so
+            # also match tenant_id where the record carries one (Decision,
+            # EngineerRunRecord) — QuestionRecord doesn't yet, a known gap.
             lookup_name = manifest.name
             decisions = [
                 d
                 for d in store.list_all()
-                if d.project == lookup_name and d.created_at >= period_start
+                if d.project == lookup_name
+                and d.tenant_id == manifest.tenant_id
+                and d.created_at >= period_start
             ]
             runs = [
                 r
                 for r in engineer_runs_store.list_by_project(lookup_name)
-                if r.completed_at >= period_start
+                if r.tenant_id == manifest.tenant_id and r.completed_at >= period_start
             ]
             questions = (
                 [q for q in questions_store.list_all() if q.project == lookup_name]

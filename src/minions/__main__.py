@@ -430,7 +430,9 @@ def implement(
         try:
             from minions.crews.engineer_runs_store_factory import make_engineer_runs_store
 
-            make_engineer_runs_store(ENGINEER_RUNS_PATH).save(result, project=manifest.name)
+            make_engineer_runs_store(ENGINEER_RUNS_PATH).save(
+                result, project=manifest.name, tenant_id=manifest.tenant_id
+            )
         except Exception as e:  # noqa: BLE001 — persistence failure must not crash CLI
             rprint(f"[yellow]warning: failed to persist engineer run: {e}[/yellow]")
 
