@@ -52,31 +52,43 @@ def run_scrum(
     activity_log_path: Path | None = None,
     now: datetime | None = None,
     dry_run: bool = False,
+    projects: list[str] | None = None,
 ) -> ScrumReport:
     now = now or datetime.now(tz=UTC)
     period_start = now - timedelta(days=2)
     manifests = load_active_manifests(projects_dir)
+    if projects:
+        wanted = {p.lower() for p in projects}
+        manifests = {
+            name: manifest for name, manifest in manifests.items() if name.lower() in wanted
+        }
     outcomes: list[ScrumOutcome] = []
 
-    for project in sorted(manifests):
+    for project, manifest in sorted(manifests.items()):
         try:
+            # Decision/questions store rows key by manifest.name (the plain
+            # display name), not this loop's dict key — which is a compound
+            # "tenant_id:project" for tenant manifests (see load_tenant_manifests).
+            lookup_name = manifest.name
             decisions = [
-                d for d in store.list_all() if d.project == project and d.created_at >= period_start
+                d
+                for d in store.list_all()
+                if d.project == lookup_name and d.created_at >= period_start
             ]
             runs = [
                 r
-                for r in engineer_runs_store.list_by_project(project)
+                for r in engineer_runs_store.list_by_project(lookup_name)
                 if r.completed_at >= period_start
             ]
             questions = (
-                [q for q in questions_store.list_all() if q.project == project]
+                [q for q in questions_store.list_all() if q.project == lookup_name]
                 if questions_store is not None
                 else []
             )
             open_questions = [q for q in questions if q.status.value in {"open", "escalated"}]
             blockers = _blockers(decisions, runs, open_questions)
             next_actions = _next_actions(decisions, runs, open_questions)
-            summary = _summary(project, decisions, runs, open_questions, blockers, next_actions)
+            summary = _summary(lookup_name, decisions, runs, open_questions, blockers, next_actions)
             record = AgileRitualRecord(
                 project=project,
                 ritual="scrum",
@@ -111,6 +123,7 @@ def run_scrum(
                         decision_id=str(record.id),
                         agents=("product_owner", "principal_engineer", "manager"),
                         extra=extra_payload,
+                        tenant_id=manifest.tenant_id,
                     ),
                     path=activity_log_path,
                 )

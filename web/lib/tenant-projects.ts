@@ -15,6 +15,25 @@ export async function countProjects(tenantId: string): Promise<number> {
   return rows[0]?.n ?? 0;
 }
 
+export type TenantProjectSummary = { project: string; name: string; description: string };
+
+/** Project slugs + display names for the dossier step (Step C). */
+export async function listProjects(tenantId: string): Promise<TenantProjectSummary[]> {
+  const db = sql();
+  // manifest_json->>'name'/'description' can be NULL if those keys are ever
+  // missing (defensive — buildManifest() always sets them today); normalize
+  // here so callers get real strings instead of a type that lies about it.
+  const rows = (await db`
+    SELECT project, manifest_json->>'name' AS name, manifest_json->>'description' AS description
+    FROM tenant_projects WHERE tenant_id = ${tenantId} ORDER BY created_at
+  `) as { project: string; name: string | null; description: string | null }[];
+  return rows.map((r) => ({
+    project: r.project,
+    name: r.name ?? r.project,
+    description: r.description ?? "",
+  }));
+}
+
 export async function createProject(
   tenantId: string,
   project: string,
@@ -39,6 +58,10 @@ export function buildManifest(input: {
   defaultBranch: string;
   weeklyBudgetUsd: number;
   monthlyBudgetUsd: number;
+  owner: string;
+  /** Lifetime (never-resetting) spend cap — set only for free-tier sandbox
+   * tenants. See budget.evaluate() on the Python side. */
+  sandboxBudgetUsd?: number;
 }): Record<string, unknown> {
   return {
     name: input.name,
@@ -50,5 +73,9 @@ export function buildManifest(input: {
     },
     weekly_budget_usd: input.weeklyBudgetUsd,
     monthly_budget_usd: input.monthlyBudgetUsd,
+    owner: input.owner,
+    ...(input.sandboxBudgetUsd !== undefined
+      ? { sandbox_budget_usd: input.sandboxBudgetUsd }
+      : {}),
   };
 }

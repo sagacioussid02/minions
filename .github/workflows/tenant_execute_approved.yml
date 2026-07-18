@@ -1,0 +1,25 @@
+name: Tenant execute-approved
+
+# Dispatched by the web app right when a tenant approves a decision (see
+# web/app/api/decisions/[id]/approve/route.ts), so their real draft PR
+# appears in minutes instead of waiting for the founder's own Mon/Wed/Fri
+# shared execute_approved cron.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tenant_id:
+        description: 'Tenant UUID to sweep.'
+        required: true
+        type: string
+
+concurrency:
+  group: minions-cron
+  cancel-in-progress: false
+
+jobs:
+  execute-approved:
+    uses: ./.github/workflows/_cron-shared.yml
+    with:
+      command: execute-approved-tenant --tenant ${{ inputs.tenant_id }}
+    secrets: inherit

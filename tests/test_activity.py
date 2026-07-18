@@ -160,3 +160,59 @@ def test_crew_run_yields_unique_ids() -> None:
     with crew_run(crew="planning", project="p", agents=["manager"]) as id2:
         pass
     assert id1 != id2
+
+
+class _FakeCursor:
+    def __init__(self, sink: list[tuple[str, tuple]]) -> None:
+        self._sink = sink
+
+    def execute(self, sql: str, params: tuple) -> None:
+        self._sink.append((sql, params))
+
+    def __enter__(self) -> _FakeCursor:
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        return None
+
+
+class _FakeConn:
+    def __init__(self, sink: list[tuple[str, tuple]]) -> None:
+        self._sink = sink
+
+    def cursor(self) -> _FakeCursor:
+        return _FakeCursor(self._sink)
+
+    def __enter__(self) -> _FakeConn:
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        return None
+
+
+def test_pg_append_includes_tenant_id_column_when_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tenant entries get tenant_id explicitly inserted; founder entries omit
+    the column entirely so the DB's own DEFAULT (-> founder tenant) applies."""
+    sink: list[tuple[str, tuple]] = []
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _fake_connect():
+        yield _FakeConn(sink)
+
+    import minions.db.connection as db_conn
+
+    monkeypatch.setattr(db_conn, "connect", _fake_connect)
+    import minions.activity as activity_mod
+
+    tenant_entry = _entry(tenant_id="11111111-1111-1111-1111-111111111111")
+    activity_mod._pg_append(tenant_entry)
+    sql, params = sink[-1]
+    assert "tenant_id" in sql
+    assert params[-1] == "11111111-1111-1111-1111-111111111111"
+
+    founder_entry = _entry()
+    activity_mod._pg_append(founder_entry)
+    sql, params = sink[-1]
+    assert "tenant_id" not in sql

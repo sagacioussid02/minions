@@ -144,6 +144,104 @@ def test_executes_marks_decision_and_persists_run(tmp_path: Path) -> None:
     assert runs.get(str(d.id)) is not None
 
 
+def test_resolves_tenant_manifest_by_name_not_compound_key(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Decision.project stores manifest.name (plain), but tenant manifests
+    are keyed "tenant_id:project" in load_active_manifests's dict — the sweep
+    must resolve by name, not by dict key, or every tenant decision would
+    silently error as "not found in active manifests"."""
+    from minions.models.manifest import Manifest
+    from minions.scheduled import execute_approved as mod
+
+    tenant_manifest = Manifest.model_validate(
+        {
+            "name": "Acme",
+            "description": "test",
+            "source": {"kind": "github", "repo": "acme/repo", "default_branch": "main"},
+            "weekly_budget_usd": 1.0,
+            "monthly_budget_usd": 4.0,
+            "owner": "owner@example.com",
+            "tenant_id": "11111111-1111-1111-1111-111111111111",
+        }
+    )
+    monkeypatch.setattr(
+        mod,
+        "load_active_manifests",
+        lambda _dir: {"11111111-1111-1111-1111-111111111111:acme": tenant_manifest},
+    )
+
+    store = DecisionStore(tmp_path / "decisions.json")
+    runs = EngineerRunStore(tmp_path / "engineer_runs.json")
+    d = _decision("Acme")  # matches manifest.name, not the compound dict key
+    store.save(d)
+
+    report = run_execute_approved(
+        projects_dir=tmp_path,
+        store=store,
+        engineer_runs_store=runs,
+        open_github_client=_fake_github_client,
+        dry_run=False,
+        runner=_success_runner("https://example/pr/9"),
+    )
+
+    assert report.executed == 1
+    assert store.get(d.id).status is DecisionStatus.EXECUTED  # type: ignore[union-attr]
+
+
+def test_execute_approved_projects_filter_ignores_other_tenants(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """A tenant-scoped dispatch (projects=[...]) only touches that tenant's
+    own decisions, not every other pending approved decision globally."""
+    from minions.models.manifest import Manifest
+    from minions.scheduled import execute_approved as mod
+
+    def _m(name: str, tenant: str) -> Manifest:
+        return Manifest.model_validate(
+            {
+                "name": name,
+                "description": "test",
+                "source": {"kind": "github", "repo": "acme/repo", "default_branch": "main"},
+                "weekly_budget_usd": 1.0,
+                "monthly_budget_usd": 4.0,
+                "owner": "owner@example.com",
+                "tenant_id": tenant,
+            }
+        )
+
+    tenant_a, tenant_b = (
+        "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+    )
+    monkeypatch.setattr(
+        mod,
+        "load_active_manifests",
+        lambda _dir: {
+            f"{tenant_a}:proj": _m("ProjA", tenant_a),
+            f"{tenant_b}:proj": _m("ProjB", tenant_b),
+        },
+    )
+
+    store = DecisionStore(tmp_path / "decisions.json")
+    runs = EngineerRunStore(tmp_path / "engineer_runs.json")
+    store.save(_decision("ProjA"))
+    store.save(_decision("ProjB"))
+
+    report = run_execute_approved(
+        projects_dir=tmp_path,
+        store=store,
+        engineer_runs_store=runs,
+        open_github_client=_fake_github_client,
+        dry_run=False,
+        runner=_success_runner(),
+        projects=[f"{tenant_a}:proj"],
+    )
+
+    assert report.executed == 1
+    assert [o.project for o in report.outcomes] == ["ProjA"]
+
+
 def test_dry_run_does_not_persist_run_or_mark_executed(tmp_path: Path) -> None:
     store = DecisionStore(tmp_path / "decisions.json")
     runs = EngineerRunStore(tmp_path / "engineer_runs.json")

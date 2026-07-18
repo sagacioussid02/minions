@@ -109,6 +109,61 @@ def test_evaluate_only_counts_current_month(tmp_path: Path) -> None:
     assert state.month_to_date_usd == pytest.approx(1.0)
 
 
+# ---- sandbox lifetime cap ----------------------------------------------
+
+
+def _make_sandbox_manifest(
+    name: str, monthly_budget: float, sandbox_budget: float, tmp_path: Path
+) -> Manifest:
+    return Manifest.model_validate(
+        {
+            "name": name,
+            "description": "test",
+            "source": {"kind": "local", "path": str(tmp_path), "default_branch": "main"},
+            "weekly_budget_usd": monthly_budget / 4,
+            "monthly_budget_usd": monthly_budget,
+            "owner": "owner@example.com",
+            "sandbox_budget_usd": sandbox_budget,
+        }
+    )
+
+
+def test_sandbox_cap_breaches_even_though_monthly_fraction_is_fine(tmp_path: Path) -> None:
+    """A huge monthly cap alone wouldn't throttle; the small lifetime cap does."""
+    m = _make_sandbox_manifest(
+        "sandbox", monthly_budget=1000.0, sandbox_budget=2.0, tmp_path=tmp_path
+    )
+    _seed_cost("sandbox", 2.0)  # 0.2% of monthly cap, but == 100% of sandbox cap
+    state = evaluate(m)
+    assert state.state == "breach"
+    assert state.is_breached
+
+
+def test_sandbox_cap_is_lifetime_not_monthly(tmp_path: Path) -> None:
+    """Spend from a prior month still counts against the sandbox cap, unlike
+    the monthly cap which resets — a sandbox can't be re-farmed by waiting."""
+    m = _make_sandbox_manifest(
+        "sandbox", monthly_budget=10.0, sandbox_budget=2.0, tmp_path=tmp_path
+    )
+    last_month = datetime.now(tz=UTC).replace(day=1) - timedelta(days=5)
+    _seed_cost("sandbox", 1.5, when=last_month)
+    _seed_cost("sandbox", 1.0)  # this month alone: 10% of monthly cap — fine
+    state = evaluate(m)
+    # lifetime: 2.5 / 2.0 = 125% -> breach, even though month-to-date is only 10%
+    assert state.month_to_date_usd == pytest.approx(1.0)
+    assert state.state == "breach"
+
+
+def test_no_sandbox_cap_means_only_monthly_cap_applies(tmp_path: Path) -> None:
+    """Regression guard: manifests without sandbox_budget_usd are unaffected."""
+    m = _make_manifest("p", 10.0, tmp_path)
+    assert m.sandbox_budget_usd is None
+    _seed_cost("p", 1.0)
+    state = evaluate(m)
+    assert state.state == "ok"
+    assert state.fraction == pytest.approx(0.1)
+
+
 def test_evaluate_isolates_by_project(tmp_path: Path) -> None:
     m_a = _make_manifest("a", 4.0, tmp_path)
     m_b = _make_manifest("b", 4.0, tmp_path)

@@ -98,6 +98,10 @@ class ActivityEntry:
     decision_id: str
     agents: tuple[str, ...]
     error: str | None = None
+    # Set for tenant-project runs (from Manifest.tenant_id); None means the
+    # founder — the activity_log.tenant_id column DEFAULT already resolves
+    # that case, so we simply omit the column from the INSERT.
+    tenant_id: str | None = None
     # Free-form per-event context that round-trips through ``payload`` so the
     # UI feed can render real content (e.g. scrum summary + blockers) instead
     # of a generic "shared a daily scrum update" placeholder. Keep small —
@@ -179,6 +183,26 @@ def _pg_append(entry: ActivityEntry) -> None:
     from minions.db.connection import connect
 
     with connect() as conn, conn.cursor() as cur:
+        if entry.tenant_id is not None:
+            cur.execute(
+                """
+                INSERT INTO activity_log (
+                    ts, event, project, decision_id, crew, run_id, error, payload, tenant_id
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)
+                """,
+                (
+                    entry.timestamp,
+                    entry.event,
+                    entry.project or None,
+                    entry.decision_id or None,
+                    entry.crew or None,
+                    entry.run_id or None,
+                    entry.error,
+                    json.dumps(entry.to_dict()),
+                    entry.tenant_id,
+                ),
+            )
+            return
         cur.execute(
             """
             INSERT INTO activity_log (
