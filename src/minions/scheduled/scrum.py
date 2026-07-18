@@ -88,7 +88,7 @@ def run_scrum(
             open_questions = [q for q in questions if q.status.value in {"open", "escalated"}]
             blockers = _blockers(decisions, runs, open_questions)
             next_actions = _next_actions(decisions, runs, open_questions)
-            summary = _summary(project, decisions, runs, open_questions, blockers, next_actions)
+            summary = _summary(lookup_name, decisions, runs, open_questions, blockers, next_actions)
             record = AgileRitualRecord(
                 project=project,
                 ritual="scrum",

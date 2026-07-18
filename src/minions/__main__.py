@@ -1415,8 +1415,10 @@ def _open_github_client(manifest: Manifest) -> GitHubClient | None:
         try:
             token = get_installation_token(manifest.tenant_id)
         except Exception as e:  # noqa: BLE001 — surfaced to the operator, not a crash
-            rprint(f"[red]Could not mint GitHub App installation token for tenant "
-                   f"{manifest.tenant_id}:[/red] {e}")
+            rprint(
+                f"[red]Could not mint GitHub App installation token for tenant "
+                f"{manifest.tenant_id}:[/red] {e}"
+            )
             raise typer.Exit(1) from e
         return GitHubClient(token=token, repo=repo)
 
@@ -1604,7 +1606,9 @@ def bootstrap_tenant(
         projects = [row[0] for row in cur.fetchall()]
 
     if not projects:
-        rprint(f"[yellow]Tenant {tenant_id} has no tenant_projects rows — nothing to bootstrap.[/yellow]")
+        rprint(
+            f"[yellow]Tenant {tenant_id} has no tenant_projects rows — nothing to bootstrap.[/yellow]"
+        )
         raise typer.Exit(1)
 
     for project in projects:
@@ -1649,7 +1653,9 @@ def bootstrap_tenant(
     )
     for o in report.outcomes:
         status_icon = "✓" if o.status == "submitted" else "✗"
-        rprint(f"  [{'green' if o.status == 'submitted' else 'red'}]{status_icon}[/] {o.project} — {o.status}")
+        rprint(
+            f"  [{'green' if o.status == 'submitted' else 'red'}]{status_icon}[/] {o.project} — {o.status}"
+        )
 
     scrum_report = run_scrum(
         projects_dir=PROJECTS_DIR,
@@ -1689,7 +1695,9 @@ def execute_approved_tenant(
         projects = [row[0] for row in cur.fetchall()]
 
     if not projects:
-        rprint(f"[yellow]Tenant {tenant_id} has no tenant_projects rows — nothing to execute.[/yellow]")
+        rprint(
+            f"[yellow]Tenant {tenant_id} has no tenant_projects rows — nothing to execute.[/yellow]"
+        )
         raise typer.Exit(1)
 
     try:

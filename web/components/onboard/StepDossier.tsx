@@ -56,6 +56,8 @@ export function StepDossier({
         return;
       }
       setError("Could not save — try again.");
+    } catch {
+      setError("Could not reach the server — check your connection and try again.");
     } finally {
       setBusy(false);
     }

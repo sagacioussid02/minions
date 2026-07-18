@@ -16,7 +16,7 @@ export async function dispatchTenantWorkflow(
   const token = process.env.MINIONS_ACTIONS_DISPATCH_TOKEN;
   if (!token) return;
   try {
-    await fetch(
+    const res = await fetch(
       `https://api.github.com/repos/${DISPATCH_REPO}/actions/workflows/${workflow}/dispatches`,
       {
         method: "POST",
@@ -24,11 +24,16 @@ export async function dispatchTenantWorkflow(
           Authorization: `Bearer ${token}`,
           Accept: "application/vnd.github+json",
           "X-GitHub-Api-Version": "2022-11-28",
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({ ref: "main", inputs }),
       },
     );
-  } catch {
-    // best-effort — see comment above
+    if (!res.ok) {
+      console.error(`[actions-dispatch] ${workflow} -> ${res.status}: ${await res.text()}`);
+    }
+  } catch (err) {
+    // best-effort — see comment above, but still worth logging for diagnosis
+    console.error(`[actions-dispatch] ${workflow} threw:`, err);
   }
 }

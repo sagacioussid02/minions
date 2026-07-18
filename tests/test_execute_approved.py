@@ -210,7 +210,10 @@ def test_execute_approved_projects_filter_ignores_other_tenants(
             }
         )
 
-    tenant_a, tenant_b = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    tenant_a, tenant_b = (
+        "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+    )
     monkeypatch.setattr(
         mod,
         "load_active_manifests",

@@ -130,7 +130,9 @@ def _make_sandbox_manifest(
 
 def test_sandbox_cap_breaches_even_though_monthly_fraction_is_fine(tmp_path: Path) -> None:
     """A huge monthly cap alone wouldn't throttle; the small lifetime cap does."""
-    m = _make_sandbox_manifest("sandbox", monthly_budget=1000.0, sandbox_budget=2.0, tmp_path=tmp_path)
+    m = _make_sandbox_manifest(
+        "sandbox", monthly_budget=1000.0, sandbox_budget=2.0, tmp_path=tmp_path
+    )
     _seed_cost("sandbox", 2.0)  # 0.2% of monthly cap, but == 100% of sandbox cap
     state = evaluate(m)
     assert state.state == "breach"
@@ -140,7 +142,9 @@ def test_sandbox_cap_breaches_even_though_monthly_fraction_is_fine(tmp_path: Pat
 def test_sandbox_cap_is_lifetime_not_monthly(tmp_path: Path) -> None:
     """Spend from a prior month still counts against the sandbox cap, unlike
     the monthly cap which resets — a sandbox can't be re-farmed by waiting."""
-    m = _make_sandbox_manifest("sandbox", monthly_budget=10.0, sandbox_budget=2.0, tmp_path=tmp_path)
+    m = _make_sandbox_manifest(
+        "sandbox", monthly_budget=10.0, sandbox_budget=2.0, tmp_path=tmp_path
+    )
     last_month = datetime.now(tz=UTC).replace(day=1) - timedelta(days=5)
     _seed_cost("sandbox", 1.5, when=last_month)
     _seed_cost("sandbox", 1.0)  # this month alone: 10% of monthly cap — fine

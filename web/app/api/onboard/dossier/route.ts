@@ -46,11 +46,25 @@ export async function POST(req: NextRequest) {
   }
 
   const db = sql();
+
+  // Authoritative slug -> display-name map for this tenant, from the DB —
+  // never trust the client's project id. dossier_drafts.project must be the
+  // manifest's display *name* (what build_profile()/dossier_store.latest_merged
+  // look up by), not the URL slug the client sends; they can differ.
+  const owned = (await db`
+    SELECT project, manifest_json->>'name' AS name
+    FROM tenant_projects WHERE tenant_id = ${tenant.tenant_id}
+  `) as { project: string; name: string | null }[];
+  const nameBySlug = new Map(owned.map((r) => [r.project, r.name ?? r.project]));
+
   for (const a of answers) {
+    const name = nameBySlug.get(a.project);
+    if (!name) continue; // not this tenant's project — skip silently
+
     const markdown = composeMarkdown(a);
     const payload = {
       id: crypto.randomUUID(),
-      project: a.project,
+      project: name,
       commit_sha: "onboarding",
       generated_at: new Date().toISOString(),
       status: "drafted",
@@ -60,7 +74,7 @@ export async function POST(req: NextRequest) {
     };
     await db`
       INSERT INTO dossier_drafts (id, project, commit_sha, status, generated_at, payload, tenant_id)
-      VALUES (${payload.id}, ${a.project}, ${payload.commit_sha}, ${payload.status},
+      VALUES (${payload.id}, ${name}, ${payload.commit_sha}, ${payload.status},
               ${payload.generated_at}, ${JSON.stringify(payload)}::jsonb, ${tenant.tenant_id})
     `;
   }

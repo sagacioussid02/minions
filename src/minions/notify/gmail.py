@@ -60,12 +60,19 @@ class GmailNotifier:
 
     def _recipient_for(self, decision: Decision) -> str:
         """Tenant decisions notify the real customer; founder decisions keep
-        the fixed ``self.recipient``. Never blocks a send — falls back on any
-        lookup failure (missing CLERK_SECRET_KEY, Clerk API error, etc.)."""
+        the fixed ``self.recipient``. Never blocks a send: any lookup failure
+        (missing CLERK_SECRET_KEY, Clerk API error, DB unreachable, etc.)
+        falls back to ``self.recipient`` (the operator/portfolio owner this
+        notifier was constructed with) — GmailNotifier has no per-project
+        ``manifest.owner`` to fall back to, only its own fixed recipient.
+        """
         if decision.tenant_id is not None:
             from minions.notify.clerk_users import get_tenant_email
 
-            email = get_tenant_email(decision.tenant_id)
+            try:
+                email = get_tenant_email(decision.tenant_id)
+            except Exception:  # noqa: BLE001 — never let notify fail on this
+                email = None
             if email:
                 return email
         return self.recipient

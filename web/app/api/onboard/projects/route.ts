@@ -44,7 +44,14 @@ export async function POST(req: NextRequest) {
   // Clerk email lookup fails at run time) — resolve it once here rather than
   // leaving it unset and failing Manifest validation for every tenant project.
   const user = await currentUser();
-  const owner = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses[0]?.emailAddress ?? tenant.clerk_user_id;
+  // Clerk should always have an email (GitHub OAuth requires one), but if it
+  // somehow doesn't, fall back to a clearly-non-deliverable placeholder
+  // (RFC 2606 .invalid TLD) rather than the Clerk user id, which isn't
+  // email-shaped and would break the Python-side notify fallback silently.
+  const owner =
+    user?.primaryEmailAddress?.emailAddress ??
+    user?.emailAddresses[0]?.emailAddress ??
+    `${tenant.clerk_user_id}@no-email.invalid`;
 
   // Free tier = capped sandbox: a small lifetime spend cap (never resets —
   // see budget.evaluate() Python-side) is the real limiter, so the
