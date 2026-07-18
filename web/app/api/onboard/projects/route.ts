@@ -46,6 +46,12 @@ export async function POST(req: NextRequest) {
   const user = await currentUser();
   const owner = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses[0]?.emailAddress ?? tenant.clerk_user_id;
 
+  // Free tier = capped sandbox: a small lifetime spend cap (never resets —
+  // see budget.evaluate() Python-side) is the real limiter, so the
+  // per-project monthly/weekly figures just need to be sane, not trusted.
+  const isSandbox = tenant.plan === "free";
+  const SANDBOX_LIFETIME_BUDGET_USD = 2.0;
+
   for (const p of projects) {
     const project = slug(p.name);
     await createProject(
@@ -56,9 +62,14 @@ export async function POST(req: NextRequest) {
         description: p.description ?? "",
         repoFullName: p.repoFullName,
         defaultBranch: p.defaultBranch || "main",
-        weeklyBudgetUsd: Number(p.weeklyBudgetUsd) || 25,
-        monthlyBudgetUsd: Number(p.monthlyBudgetUsd) || 100,
+        weeklyBudgetUsd: isSandbox
+          ? SANDBOX_LIFETIME_BUDGET_USD
+          : Number(p.weeklyBudgetUsd) || 25,
+        monthlyBudgetUsd: isSandbox
+          ? SANDBOX_LIFETIME_BUDGET_USD
+          : Number(p.monthlyBudgetUsd) || 100,
         owner,
+        sandboxBudgetUsd: isSandbox ? SANDBOX_LIFETIME_BUDGET_USD : undefined,
       }),
     );
   }

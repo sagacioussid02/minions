@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentTenant } from "@/lib/tenant";
 import { saveOnboardingStep } from "@/lib/onboarding";
 import { sql } from "@/lib/db";
+import { dispatchTenantWorkflow } from "@/lib/actions-dispatch";
 
 type DossierAnswers = {
   project: string;
@@ -10,8 +11,6 @@ type DossierAnswers = {
   topFeatures: string;
   nonGoals: string;
 };
-
-const DISPATCH_REPO = "sagacioussid02/minions";
 
 function composeMarkdown(a: DossierAnswers): string {
   return [
@@ -71,25 +70,7 @@ export async function POST(req: NextRequest) {
   // Kick off the tenant's first real sprint now instead of waiting for the
   // Monday cron. Best-effort: a dispatch failure shouldn't block onboarding
   // completion — the founder can always trigger it manually.
-  const dispatchToken = process.env.MINIONS_ACTIONS_DISPATCH_TOKEN;
-  if (dispatchToken) {
-    try {
-      await fetch(
-        `https://api.github.com/repos/${DISPATCH_REPO}/actions/workflows/tenant_bootstrap.yml/dispatches`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${dispatchToken}`,
-            Accept: "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-          },
-          body: JSON.stringify({ ref: "main", inputs: { tenant_id: tenant.tenant_id } }),
-        },
-      );
-    } catch {
-      // best-effort — see comment above
-    }
-  }
+  await dispatchTenantWorkflow("tenant_bootstrap.yml", { tenant_id: tenant.tenant_id });
 
   return NextResponse.json({ ok: true });
 }

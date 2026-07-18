@@ -52,6 +52,9 @@ export function buildManifest(input: {
   weeklyBudgetUsd: number;
   monthlyBudgetUsd: number;
   owner: string;
+  /** Lifetime (never-resetting) spend cap — set only for free-tier sandbox
+   * tenants. See budget.evaluate() on the Python side. */
+  sandboxBudgetUsd?: number;
 }): Record<string, unknown> {
   return {
     name: input.name,
@@ -64,5 +67,8 @@ export function buildManifest(input: {
     weekly_budget_usd: input.weeklyBudgetUsd,
     monthly_budget_usd: input.monthlyBudgetUsd,
     owner: input.owner,
+    ...(input.sandboxBudgetUsd !== undefined
+      ? { sandbox_budget_usd: input.sandboxBudgetUsd }
+      : {}),
   };
 }

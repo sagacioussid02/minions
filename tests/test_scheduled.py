@@ -253,6 +253,23 @@ def test_scrum_records_blockers_and_next_actions(
     assert "alpha scrum" in ritual.summary
 
 
+def test_scrum_projects_filter_limits_to_named_projects(
+    fake_portfolio: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """Mirrors run_weekly_planning's existing projects= filter — used by the
+    tenant-scoped bootstrap dispatch so only that tenant's projects run."""
+    projects_dir, _ = fake_portfolio
+    report = run_scrum(
+        projects_dir=projects_dir,
+        store=DecisionStore(tmp_path / "decisions.json"),
+        engineer_runs_store=EngineerRunStore(tmp_path / "runs.json"),
+        agile_store=AgileStore(tmp_path / "agile.json"),
+        activity_log_path=tmp_path / "activity.jsonl",
+        projects=["alpha"],
+    )
+    assert [o.project for o in report.outcomes] == ["alpha"]
+
+
 def test_weekly_planning_can_scan_one_project(
     fake_portfolio: tuple[Path, Path], tmp_path: Path
 ) -> None:

@@ -45,7 +45,7 @@ export default async function OnboardPage({
   }
   if (step === "dossier") {
     const projects = await listProjects(tenant.tenant_id);
-    return <StepDossier projects={projects} />;
+    return <StepDossier projects={projects} isSandbox={tenant.plan === "free"} />;
   }
 
   // step === "repos"

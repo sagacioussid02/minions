@@ -233,6 +233,11 @@ class Manifest(BaseModel):
     # preserves every existing single-tenant code path unchanged.
     tenant_id: str | None = None
 
+    # Lifetime (never resetting) spend cap for the free sandbox tier — set
+    # only for sandbox-tenant projects. None means no lifetime cap (the
+    # existing monthly_budget_usd cap still applies). See budget.evaluate().
+    sandbox_budget_usd: float | None = None
+
     risk_thresholds: dict[str, Any] | None = None
 
     dossier: DossierConfig = Field(default_factory=DossierConfig)

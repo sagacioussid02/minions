@@ -76,6 +76,14 @@ export default async function Home({
           {sp.welcome === "1" && (
             <div className="rounded-md border border-[var(--accent)] bg-[var(--accent)]/10 px-4 py-3 text-sm text-[var(--text-primary)]">
               Your first sprint is being planned. The crew is speaking — welcome.
+              {tenant.plan === "free" && (
+                <span className="text-[var(--text-muted)]">
+                  {" "}
+                  You&apos;re on the free sandbox (one project, a small
+                  one-time budget) — approve the sprint decision by email to
+                  see a real draft PR.
+                </span>
+              )}
             </div>
           )}
           <HeroEvent event={hero} />

@@ -17,7 +17,13 @@ const input =
   "w-full rounded-md border border-[var(--line)] bg-[var(--bg-surface)] px-2 py-1.5 text-sm text-[var(--text-primary)]";
 const labelCls = "mb-1 block text-xs uppercase tracking-wider text-[var(--text-muted)]";
 
-export function StepDossier({ projects }: { projects: TenantProjectSummary[] }) {
+export function StepDossier({
+  projects,
+  isSandbox,
+}: {
+  projects: TenantProjectSummary[];
+  isSandbox: boolean;
+}) {
   const router = useRouter();
   const [answers, setAnswers] = useState<Answers[]>(
     projects.map((p) => ({
@@ -57,10 +63,17 @@ export function StepDossier({ projects }: { projects: TenantProjectSummary[] }) 
 
   return (
     <OnboardShell stepIndex={2} title="Tell the agents about each project">
-      <p className="mb-6 text-sm leading-relaxed text-[var(--text-muted)]">
+      <p className="mb-2 text-sm leading-relaxed text-[var(--text-muted)]">
         A few questions per project, then the crew plans your first sprint —
         no waiting for the weekly cadence.
       </p>
+      {isSandbox && (
+        <p className="mb-6 text-xs text-[var(--text-muted)]">
+          You&apos;re on the free sandbox — one project, a small one-time
+          budget, real planning and a real draft PR. Want more projects or a
+          bigger budget? Watch the repo for the hosted version.
+        </p>
+      )}
       <div className="mb-6 space-y-5">
         {answers.map((a, i) => (
           <div key={a.project} className="rounded-lg border border-[var(--line)] p-4">
