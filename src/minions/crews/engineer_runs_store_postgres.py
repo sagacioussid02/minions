@@ -47,11 +47,14 @@ class PostgresEngineerRunStore:
             capture_engineer_run(record, PostgresAgentLearningStore())
         return record
 
-    def save(self, result: EngineerResult, *, project: str) -> EngineerRunRecord:
+    def save(
+        self, result: EngineerResult, *, project: str, tenant_id: str | None = None
+    ) -> EngineerRunRecord:
         record = EngineerRunRecord(
             decision_id=result.decision_id,
             task_id=result.task_id,
             project=project,
+            tenant_id=tenant_id,
             completed_at=datetime.now(tz=UTC),
             pr_url=result.pr_url,
             pr_number=result.pr_number,
