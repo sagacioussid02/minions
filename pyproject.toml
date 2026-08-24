@@ -29,10 +29,10 @@ dependencies = [
 dev = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
-    "ruff>=0.15.21",
-    "mypy>=2.3.0",
-    "pre-commit>=4.6.0",
-    "types-PyYAML>=6.0.12.20260518",
+    "ruff>=0.16.4",
+    "mypy>=2.3.1",
+    "pre-commit>=4.6.2",
+    "types-PyYAML>=6.0.12.20260815",
 ]
 
 [project.scripts]
