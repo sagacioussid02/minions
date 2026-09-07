@@ -19,7 +19,12 @@ import {
 
 export const dynamic = "force-dynamic"; // always SSR fresh
 
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ welcome?: string }>;
+}) {
+  const sp = await searchParams;
   // Initial paint server-rendered from a single snapshot. Client takes over
   // with TanStack Query 3-second polling after hydration.
   const [tenant, agents, events, cost, headline, questions, hero, meetings] = await Promise.all([
@@ -68,6 +73,19 @@ export default async function Home() {
           </div>
         </header>
         <div className="relative mx-auto flex w-full max-w-[1500px] flex-col gap-4 p-4 xl:p-5">
+          {sp.welcome === "1" && (
+            <div className="rounded-md border border-[var(--accent)] bg-[var(--accent)]/10 px-4 py-3 text-sm text-[var(--text-primary)]">
+              Your first sprint is being planned. The crew is speaking — welcome.
+              {tenant.plan === "free" && (
+                <span className="text-[var(--text-muted)]">
+                  {" "}
+                  You&apos;re on the free sandbox (one project, a small
+                  one-time budget) — approve the sprint decision by email to
+                  see a real draft PR.
+                </span>
+              )}
+            </div>
+          )}
           <HeroEvent event={hero} />
           <CompanyBenchMeetings agents={agents} meetings={meetings} />
           <Floor initial={agents} />

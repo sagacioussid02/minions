@@ -8,6 +8,7 @@ then the secrets resolver under name ``database-url``. Raises
 
 from __future__ import annotations
 
+import contextvars
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -17,6 +18,32 @@ if TYPE_CHECKING:
     from psycopg import Connection
 
 from minions.secrets import SecretNotFound, get_secret
+
+# The tenant whose rows this process's writes should attribute to. ``None``
+# (the default) means "founder" — every existing table's ``tenant_id`` column
+# DEFAULT already falls back to the founder tenant when this GUC is unset, so
+# founder-only code paths need no changes. Tenant-scoped cron/CLI entrypoints
+# enter a scope once per manifest via ``tenant_scope()``.
+_active_tenant: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "minions_active_tenant", default=None
+)
+
+
+@contextmanager
+def tenant_scope(tenant_id: str) -> Iterator[None]:
+    """Scope every ``connect()`` opened in this context to ``tenant_id``.
+
+    Sets the ``app.tenant_id`` Postgres GUC (via ``SET LOCAL``, so it's
+    transaction-scoped and never leaks across connections) on each new
+    connection opened while active, so every INSERT that omits ``tenant_id``
+    picks it up from the column DEFAULT instead of falling back to the
+    founder tenant. Nestable; restores the previous scope on exit.
+    """
+    token = _active_tenant.set(str(tenant_id))
+    try:
+        yield
+    finally:
+        _active_tenant.reset(token)
 
 
 def get_database_url() -> str:
@@ -52,4 +79,8 @@ def connect() -> Iterator[Connection]:
 
     url = get_database_url()
     with psycopg.connect(url) as conn:
+        tenant_id = _active_tenant.get()
+        if tenant_id is not None:
+            with conn.cursor() as cur:
+                cur.execute("SET LOCAL app.tenant_id = %s", (tenant_id,))
         yield conn

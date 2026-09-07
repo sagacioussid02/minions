@@ -26,10 +26,10 @@ const WEB = join(__dirname, "..");
 // The operator-owned tables scoped in migration 0013 + later tenant-scoped
 // tables (e.g. agent_profiles in 0016). Keep in sync with the migrations.
 const SCOPED_TABLES = [
-  "activity_log", "agent_chat_messages", "agent_chat_threads", "agent_learning",
-  "agent_memory", "agent_profiles", "agile_rituals", "audit_findings", "cost_log",
-  "crew_transcripts", "decisions", "deployments", "dossier_drafts",
-  "engineer_runs", "interview_consultations", "interview_messages",
+  "activity_log", "agent_assignments", "agent_chat_messages", "agent_chat_threads",
+  "agent_learning", "agent_memory", "agent_profiles", "agile_rituals",
+  "audit_findings", "cost_log", "crew_transcripts", "decisions", "deployments",
+  "dossier_drafts", "engineer_runs", "interview_consultations", "interview_messages",
   "interview_task_proposals", "interview_threads", "pm_answers", "questions",
   "site_alert_state", "site_health_samples", "sprint_counters", "tasks",
 ];
