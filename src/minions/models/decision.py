@@ -184,6 +184,11 @@ class Decision(BaseModel):
     pr_url: str | None = None
     base_sha: str | None = None  # SHA on main this proposal was based on, for replay/audit
 
+    # Set for tenant-project decisions (from Manifest.tenant_id); None means
+    # the founder — the decisions.tenant_id column DEFAULT already resolves
+    # that case.
+    tenant_id: str | None = None
+
     @model_validator(mode="after")
     def _apply_role_priority_defaults(self) -> Decision:
         """Auto-stamp priority/expedited from ``requested_by_role`` if untouched.
