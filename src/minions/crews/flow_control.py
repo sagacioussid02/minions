@@ -34,16 +34,22 @@ def distinct_open_pr_count(
     *,
     project: str,
     engineer_runs_store: EngineerRunStore,
+    tenant_id: str | None = None,
 ) -> int:
     """Count *distinct* open PR numbers the sweep is aware of for ``project``.
 
     Rows without ``pr_number`` (e.g. dry-runs, skipped runs) do not count.
     Multiple engineer-run rows pointing at the same ``pr_number`` collapse
     to one — that is what makes this the right number to cap on.
+
+    Matches on ``(tenant_id, project)``, not project alone — two different
+    tenants can independently pick the same project display name, and a
+    name-only match would let them share (and throttle each other on) the
+    same open-PR cap.
     """
     open_numbers: set[int] = set()
     for r in engineer_runs_store.list_all():
-        if r.project != project:
+        if r.project != project or r.tenant_id != tenant_id:
             continue
         if r.pr_number is None:
             continue
