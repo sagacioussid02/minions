@@ -25,6 +25,12 @@ export const AgentStateSchema = z.object({
   in_flight: z.boolean(),
   errored: z.boolean(),
   cost_today_usd: z.number(),
+  // Live presence (openspec/changes/live-presence-and-capacity): the single
+  // precedence-ranked answer to "what is this agent doing right now" —
+  // running > blocked > reviewing > assigned > available. Mirrors
+  // src/minions/presence.py's Presence.status/detail on the Python side.
+  status: z.enum(["running", "blocked", "reviewing", "assigned", "available"]),
+  detail: z.string().nullable(),
   recent_events: z.array(
     z.object({
       ts: z.string().datetime(),
