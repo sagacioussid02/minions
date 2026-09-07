@@ -118,8 +118,11 @@ export async function listActiveAgentsAt(asOf: Date): Promise<AgentState[]> {
       cost_today_usd: 0,
       recent_events: [],
       // Replay/as-of mode does not reconstruct the "currently running"
-      // window — that signal is only meaningful for live state.
+      // window, nor the blocked/reviewing/assigned presence signals —
+      // those are only meaningful for live state.
       live_run: null,
+      status: inFlight ? "running" : "available",
+      detail: null,
     };
   });
 }
