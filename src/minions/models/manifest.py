@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+
+logger = logging.getLogger(__name__)
 
 
 class RenewalItem(BaseModel):
@@ -225,6 +228,16 @@ class Manifest(BaseModel):
 
     owner: str
 
+    # Set only for projects loaded from tenant_projects (Postgres), never for
+    # projects/*.yaml on disk. None means "the founder's own portfolio" and
+    # preserves every existing single-tenant code path unchanged.
+    tenant_id: str | None = None
+
+    # Lifetime (never resetting) spend cap for the free sandbox tier — set
+    # only for sandbox-tenant projects. None means no lifetime cap (the
+    # existing monthly_budget_usd cap still applies). See budget.evaluate().
+    sandbox_budget_usd: float | None = None
+
     risk_thresholds: dict[str, Any] | None = None
 
     dossier: DossierConfig = Field(default_factory=DossierConfig)
@@ -271,10 +284,14 @@ def load_manifest(path: Path) -> Manifest:
 
 
 def load_active_manifests(projects_dir: Path) -> dict[str, Manifest]:
-    """Load every active manifest in projects_dir.
+    """Load every active manifest: the founder's projects/*.yaml plus every
+    tenant's manifest from Postgres (tenant_projects).
 
-    Skips entries whose parent directory begins with `_` (e.g., `_deferred/`).
-    Sorted by file name for deterministic ordering.
+    Skips filesystem entries whose parent directory begins with `_` (e.g.,
+    `_deferred/`). Sorted by file name for deterministic ordering. Tenant
+    manifests are merged in on a best-effort basis — a DB error (e.g. no
+    MINIONS_DATABASE_URL in local/CI dev) never blocks the founder's own
+    portfolio from loading.
     """
     manifests: dict[str, Manifest] = {}
     for yaml_path in sorted(projects_dir.glob("*.yaml")):
@@ -282,4 +299,13 @@ def load_active_manifests(projects_dir: Path) -> dict[str, Manifest]:
             continue
         m = load_manifest(yaml_path)
         manifests[m.name] = m
+
+    # Local import: avoids a cycle (portfolio_per_tenant imports Manifest).
+    from minions.config.portfolio_per_tenant import load_tenant_manifests
+
+    try:
+        manifests.update(load_tenant_manifests())
+    except Exception as e:  # noqa: BLE001 — tenant sweep never blocks the founder
+        logger.debug("load_tenant_manifests failed, continuing without it: %s", e)
+
     return manifests

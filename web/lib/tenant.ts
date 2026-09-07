@@ -15,7 +15,6 @@ import { cache } from "react";
 import { auth } from "@clerk/nextjs/server";
 import { sql } from "./db";
 
-const FREE_TRIAL_DAYS = 14; // one sprint
 const FOUNDER_PROJECT_CAP = 9999; // founder is cap-exempt
 const FOUNDER_COST_CAP_USD = 1_000_000;
 
@@ -69,12 +68,16 @@ async function createTenant(clerkUserId: string): Promise<Tenant> {
     return rows[0] ?? ((await getTenantByClerkId(clerkUserId)) as Tenant);
   }
 
+  // Free tier is a permanent capped sandbox, not a countdown trial — the
+  // real limit is the lifetime spend cap on the project's own manifest
+  // (see sandboxBudgetUsd in tenant-projects.ts / budget.evaluate() on the
+  // Python side), not a clock. project_cap=1: one project, one genuine
+  // end-to-end story.
   const rows = (await db`
     INSERT INTO tenants
       (tenant_id, clerk_user_id, plan, founder, cost_cap_daily_usd, project_cap, trial_expires_at)
     VALUES
-      (gen_random_uuid(), ${clerkUserId}, 'free', false, 1.0, 2,
-       NOW() + make_interval(days => ${FREE_TRIAL_DAYS}))
+      (gen_random_uuid(), ${clerkUserId}, 'free', false, 1.0, 1, NULL)
     ON CONFLICT (clerk_user_id) DO NOTHING
     RETURNING tenant_id, clerk_user_id, plan, founder, cost_cap_daily_usd,
               project_cap, trial_expires_at, trial_extensions_used
