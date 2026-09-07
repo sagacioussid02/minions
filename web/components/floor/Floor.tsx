@@ -6,6 +6,9 @@ import { type AgentMemory, type AgentState } from "@/lib/schemas";
 import { agentSeedFor, iconFor, prettyRole, roleShortLabel } from "@/lib/roles";
 import { colorFor, registerProjects } from "@/lib/project-color";
 import { vitalityFromAge } from "@/lib/recency";
+import { computePoolCapacity } from "@/lib/pools";
+import { PoolCapacitySummary } from "@/components/floor/PoolCapacitySummary";
+import { usePresenceFeed } from "@/lib/presence/use-presence-feed";
 import { Avatar } from "@/components/Avatar";
 import { formatDistanceToNowStrict } from "date-fns";
 
@@ -77,6 +80,36 @@ const AUDIT_ROLES = new Set([
   "performance_engineer",
 ]);
 
+/** Avatar mood for a live-presence status (running/blocked/reviewing/assigned/available). */
+function moodForStatus(status: AgentState["status"]): "active" | "leisure" | "idle" {
+  switch (status) {
+    case "running":
+      return "active";
+    case "blocked":
+    case "reviewing":
+    case "assigned":
+      return "leisure";
+    default:
+      return "idle";
+  }
+}
+
+/** Card state label for a live-presence status. */
+function labelForStatus(status: AgentState["status"]): string {
+  switch (status) {
+    case "running":
+      return "working";
+    case "blocked":
+      return "blocked";
+    case "reviewing":
+      return "reviewing";
+    case "assigned":
+      return "assigned";
+    default:
+      return "available";
+  }
+}
+
 async function fetchAgents(): Promise<AgentsResponse> {
   const r = await fetch("/api/agents", { cache: "no-store" });
   if (!r.ok) throw new Error("agents fetch failed");
@@ -121,7 +154,16 @@ export function Floor({
     refetchInterval: referenceNow ? false : 3_000,
   });
 
-  const agents = data.agents;
+  // Presence deltas patch status/detail/in_flight between the 3s polls above
+  // — replay mode (referenceNow set) has no live SSE signal to overlay.
+  const presence = usePresenceFeed(!referenceNow);
+  const agents = useMemo(() => {
+    if (presence.byId.size === 0) return data.agents;
+    return data.agents.map((agent) => {
+      const patch = presence.byId.get(agent.id);
+      return patch ? { ...agent, ...patch } : agent;
+    });
+  }, [data.agents, presence.byId]);
   const refMs = referenceNow ? new Date(referenceNow).getTime() : null;
 
   useEffect(() => {
@@ -156,6 +198,7 @@ export function Floor({
     ? projectGroups
     : projectGroups.filter(([project]) => project === activeProject);
   const capacity = useMemo(() => buildCapacity(agents), [agents]);
+  const poolCapacity = useMemo(() => computePoolCapacity(agents), [agents]);
   const recommendations = useMemo(
     () => buildAllocationRecommendations(agents, capacity),
     [agents, capacity],
@@ -208,6 +251,7 @@ export function Floor({
           </div>
         </div>
         <CapacitySummary capacity={capacity} />
+        <PoolCapacitySummary capacity={poolCapacity} />
         <AllocationRecommendations items={recommendations} />
         {sharedMembers.length > 0 && (
           <SharedBench members={sharedMembers} refMs={refMs} onSelect={setSelected} />
@@ -436,7 +480,7 @@ function BenchCard({
     ? Math.max(0, ((refMs ?? liveNowMs) - new Date(agent.last_event_at).getTime()) / 60_000)
     : null;
   const vitality = vitalityFromAge(ageMinutes);
-  const state = agent.in_flight ? "assigned now" : agent.last_event_at ? "monitoring" : "available";
+  const state = labelForStatus(agent.status);
   return (
     <button
       type="button"
@@ -709,16 +753,8 @@ function AgentCard({
 
   const fallbackName = prettyRole(agent.role).split(" ")[0]; // "Engineer", "Manager"
   const displayName = agent.display_name?.trim() || fallbackName;
-  const mood = agent.in_flight
-    ? "active"
-    : vitality.level === "cold" || vitality.level === "stale"
-      ? "leisure"
-      : "idle";
-  const stateLabel = agent.in_flight
-    ? "working"
-    : vitality.level === "cold" || vitality.level === "stale"
-      ? "available"
-      : "available";
+  const mood = moodForStatus(agent.status);
+  const stateLabel = labelForStatus(agent.status);
 
   return (
     <button
@@ -835,24 +871,11 @@ function AgentInspector({
     initialData: { memory: [] },
   });
   const liveNowMs = useCurrentTime(refMs === null);
-  const eventMs = agent.last_event_at ? new Date(agent.last_event_at).getTime() : null;
-  const ageMinutes =
-    eventMs === null || isNaN(eventMs)
-      ? null
-      : Math.max(0, ((refMs ?? liveNowMs) - eventMs) / 60_000);
-  const vitality = vitalityFromAge(ageMinutes);
   const roleTierColor = `var(--color-role-${agent.role_tier})`;
   const displayName = agent.display_name?.trim() || prettyRole(agent.role);
-  const mood = agent.in_flight
-    ? "active"
-    : vitality.level === "cold" || vitality.level === "stale"
-      ? "leisure"
-      : "idle";
-  const stateLabel = agent.in_flight
-    ? "working now"
-    : vitality.level === "cold" || vitality.level === "stale"
-      ? "available for assignment"
-      : "available";
+  const mood = moodForStatus(agent.status);
+  const stateLabel = labelForStatus(agent.status);
+  const statusDetail = agent.detail;
   const lastSeen = agent.last_event_at
     ? formatDistanceToNowStrict(new Date(agent.last_event_at), {
         addSuffix: true,
@@ -888,6 +911,7 @@ function AgentInspector({
               <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
                 <span className="rounded-full bg-sky-100 px-2 py-1 font-medium text-sky-700">
                   {stateLabel}
+                  {statusDetail ? ` · ${statusDetail}` : ""}
                 </span>
                 <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600">
                   last seen {lastSeen}

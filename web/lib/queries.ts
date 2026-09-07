@@ -185,7 +185,25 @@ export async function listActiveAgents(): Promise<AgentState[]> {
       live.project AS live_project,
       live.decision_id AS live_decision_id,
       live.decision_summary AS live_decision_summary,
-      live.started_at AS live_started_at
+      live.started_at AS live_started_at,
+      -- Live presence (running > blocked > reviewing > assigned > available).
+      -- Precedence mirrors src/minions/presence.py's compute_presence() on
+      -- the Python side — keep both in sync.
+      CASE
+        WHEN live.run_id IS NOT NULL THEN 'running'
+        WHEN blocked.target_role IS NOT NULL THEN 'blocked'
+        WHEN reviewing.decision_id IS NOT NULL THEN 'reviewing'
+        WHEN assigned.reason IS NOT NULL THEN 'assigned'
+        ELSE 'available'
+      END AS status,
+      CASE
+        WHEN live.run_id IS NOT NULL THEN live.crew
+        WHEN blocked.target_role IS NOT NULL THEN 'waiting on ' || blocked.target_role
+        WHEN reviewing.decision_id IS NOT NULL THEN
+          COALESCE('PR #' || reviewing.pr_number, reviewing.pr_url)
+        WHEN assigned.reason IS NOT NULL THEN NULLIF(assigned.reason, '')
+        ELSE NULL
+      END AS detail
     FROM recent r
     LEFT JOIN cost_today c USING (project, role)
     LEFT JOIN display_names dn USING (project, role)
@@ -233,6 +251,39 @@ export async function listActiveAgents(): Promise<AgentState[]> {
       ORDER BY s.ts DESC
       LIMIT 1
     ) live ON TRUE
+    -- Open question this agent asked ("blocked" precedence tier).
+    LEFT JOIN LATERAL (
+      SELECT q.payload->>'target_role' AS target_role
+      FROM questions q
+      WHERE q.status = 'open'
+        AND q.tenant_id = ${tid}
+        AND q.payload->>'asker_agent_id' = (r.role || '@' || COALESCE(r.project, 'shared'))
+      ORDER BY q.created_at DESC
+      LIMIT 1
+    ) blocked ON TRUE
+    -- Engineer-run PR this agent owns, actively in review ("reviewing" tier).
+    -- awaiting_operator_merge_approval and later states are deliberately
+    -- excluded — that reads as "blocked on operator", not "in review".
+    LEFT JOIN LATERAL (
+      SELECT er.decision_id, (er.payload->>'pr_number')::int AS pr_number, er.pr_url
+      FROM engineer_runs er
+      WHERE er.tenant_id = ${tid}
+        AND er.payload->>'owner_agent_id' = (r.role || '@' || COALESCE(r.project, 'shared'))
+        AND er.payload->>'review_status' IN
+          ('assigned', 'reviewing', 'changes_requested', 'creator_responded')
+      ORDER BY er.completed_at DESC
+      LIMIT 1
+    ) reviewing ON TRUE
+    -- Active standup allocation ("assigned" tier).
+    LEFT JOIN LATERAL (
+      SELECT aa.reason
+      FROM agent_assignments aa
+      WHERE aa.tenant_id = ${tid}
+        AND aa.active = TRUE
+        AND aa.agent_id = (r.role || '@' || COALESCE(r.project, 'shared'))
+      ORDER BY aa.started_at DESC
+      LIMIT 1
+    ) assigned ON TRUE
     ORDER BY r.project NULLS FIRST, r.role
   `) as Array<{
     project: string | null;
@@ -251,6 +302,8 @@ export async function listActiveAgents(): Promise<AgentState[]> {
     live_decision_id: string | null;
     live_decision_summary: string | null;
     live_started_at: Date | null;
+    status: AgentState["status"];
+    detail: string | null;
   }>;
 
   const recentEventRows = (await s`
@@ -400,6 +453,8 @@ export async function listActiveAgents(): Promise<AgentState[]> {
       cost_today_usd: r?.cost_today_usd ?? 0,
       recent_events: recentByKey.get(key) ?? [],
       live_run: liveRunFromRow(r),
+      status: r?.status ?? "available",
+      detail: r?.detail ?? null,
     };
   });
 
@@ -428,6 +483,8 @@ export async function listActiveAgents(): Promise<AgentState[]> {
       cost_today_usd: r.cost_today_usd,
       recent_events: recentByKey.get(key) ?? [],
       live_run: liveRunFromRow(r),
+      status: r.status,
+      detail: r.detail,
     });
   }
 
