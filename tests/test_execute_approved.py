@@ -26,6 +26,7 @@ def _decision(
     status: DecisionStatus = DecisionStatus.APPROVED,
     priority: DecisionPriority = "p3",
     expedited: bool = False,
+    tenant_id: str | None = None,
 ) -> Decision:
     return Decision(
         project=project,
@@ -39,6 +40,7 @@ def _decision(
         status=status,
         priority=priority,
         expedited=expedited,
+        tenant_id=tenant_id,
     )
 
 
@@ -173,7 +175,9 @@ def test_resolves_tenant_manifest_by_name_not_compound_key(
 
     store = DecisionStore(tmp_path / "decisions.json")
     runs = EngineerRunStore(tmp_path / "engineer_runs.json")
-    d = _decision("Acme")  # matches manifest.name, not the compound dict key
+    d = _decision(
+        "Acme", tenant_id="11111111-1111-1111-1111-111111111111"
+    )  # matches manifest.name, not the compound dict key
     store.save(d)
 
     report = run_execute_approved(
@@ -193,7 +197,10 @@ def test_execute_approved_projects_filter_ignores_other_tenants(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     """A tenant-scoped dispatch (projects=[...]) only touches that tenant's
-    own decisions, not every other pending approved decision globally."""
+    own decisions, not every other pending approved decision globally --
+    even when two different tenants independently picked the SAME project
+    display name (e.g. both call it "demo"), which a name-only lookup would
+    conflate and let one tenant's approval execute the other's manifest."""
     from minions.models.manifest import Manifest
     from minions.scheduled import execute_approved as mod
 
@@ -218,15 +225,17 @@ def test_execute_approved_projects_filter_ignores_other_tenants(
         mod,
         "load_active_manifests",
         lambda _dir: {
-            f"{tenant_a}:proj": _m("ProjA", tenant_a),
-            f"{tenant_b}:proj": _m("ProjB", tenant_b),
+            f"{tenant_a}:proj": _m("proj", tenant_a),  # same display name...
+            f"{tenant_b}:proj": _m("proj", tenant_b),  # ...as this one
         },
     )
 
     store = DecisionStore(tmp_path / "decisions.json")
     runs = EngineerRunStore(tmp_path / "engineer_runs.json")
-    store.save(_decision("ProjA"))
-    store.save(_decision("ProjB"))
+    decision_a = _decision("proj", tenant_id=tenant_a)
+    decision_b = _decision("proj", tenant_id=tenant_b)
+    store.save(decision_a)
+    store.save(decision_b)
 
     report = run_execute_approved(
         projects_dir=tmp_path,
@@ -239,7 +248,11 @@ def test_execute_approved_projects_filter_ignores_other_tenants(
     )
 
     assert report.executed == 1
-    assert [o.project for o in report.outcomes] == ["ProjA"]
+    # Only tenant_a's decision ran, despite the identical project name --
+    # tenant_b's stays untouched (a name-only lookup would have run one of
+    # them nondeterministically, possibly against the wrong tenant's repo).
+    assert store.get(decision_a.id).status is DecisionStatus.EXECUTED  # type: ignore[union-attr]
+    assert store.get(decision_b.id).status is DecisionStatus.APPROVED  # type: ignore[union-attr]
 
 
 def test_dry_run_does_not_persist_run_or_mark_executed(tmp_path: Path) -> None:
