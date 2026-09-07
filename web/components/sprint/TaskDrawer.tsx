@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { type AgentMemory, type Task } from "@/lib/schemas";
 import { prettyRole } from "@/lib/roles";
@@ -35,15 +36,38 @@ export function TaskDrawer({
     queryFn: () => fetchMemory(task.owner_agent_id),
     initialData: { memory: [] },
   });
+
+  const asideRef = useRef<HTMLElement>(null);
+
+  // Esc to close (mirrors AgentChatPanel).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // Move focus into the drawer on open; restore it to the opener on close so
+  // keyboard users land back on the card they came from.
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    asideRef.current?.focus();
+    return () => opener?.focus?.();
+  }, []);
+
   return (
     <div
       className="fixed inset-0 z-50 flex justify-end bg-slate-950/25 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
+      aria-label={`Task: ${task.title}`}
       onClick={onClose}
     >
       <aside
-        className="h-full w-full max-w-xl overflow-y-auto border-l border-[var(--line)] bg-[var(--bg-elevated)] p-5 shadow-2xl"
+        ref={asideRef}
+        tabIndex={-1}
+        className="h-full w-full max-w-xl overflow-y-auto border-l border-[var(--line)] bg-[var(--bg-elevated)] p-5 shadow-2xl outline-none"
         onClick={(event) => event.stopPropagation()}
       >
         <header className="flex items-start justify-between gap-4">

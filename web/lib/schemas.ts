@@ -25,6 +25,12 @@ export const AgentStateSchema = z.object({
   in_flight: z.boolean(),
   errored: z.boolean(),
   cost_today_usd: z.number(),
+  // Live presence (openspec/changes/live-presence-and-capacity): the single
+  // precedence-ranked answer to "what is this agent doing right now" —
+  // running > blocked > reviewing > assigned > available. Mirrors
+  // src/minions/presence.py's Presence.status/detail on the Python side.
+  status: z.enum(["running", "blocked", "reviewing", "assigned", "available"]),
+  detail: z.string().nullable(),
   recent_events: z.array(
     z.object({
       ts: z.string().datetime(),
@@ -51,6 +57,29 @@ export const AgentStateSchema = z.object({
     .nullable(),
 });
 export type AgentState = z.infer<typeof AgentStateSchema>;
+
+// ---------- Agent profile (persistent identity) ----------
+
+export const AgentStatsSchema = z.object({
+  prs_opened: z.number(),
+  prs_merged: z.number(),
+  reviews_received: z.number(),
+  blockers_hit: z.number(),
+  last_active_at: z.string().nullable(),
+});
+export type AgentStats = z.infer<typeof AgentStatsSchema>;
+
+export const AgentProfileSchema = z.object({
+  agent_id: z.string(),
+  role: z.string(),
+  display_name: z.string().nullable(),
+  persona: z.string(),
+  joined_sprint: z.number().nullable(),
+  specialties: z.array(z.string()),
+  stats: AgentStatsSchema,
+  updated_at: z.string(),
+});
+export type AgentProfile = z.infer<typeof AgentProfileSchema>;
 
 // ---------- Work items ----------
 
@@ -470,126 +499,10 @@ export const MeetingListSchema = z.object({
 });
 export type MeetingList = z.infer<typeof MeetingListSchema>;
 
-// ---------- Spokesperson interviews ----------
-
-export const InterviewCitationSchema = z.object({
-  source_type: z.enum([
-    "manifest",
-    "readme",
-    "docs",
-    "decision",
-    "pull_request",
-    "agile_ritual",
-    "activity",
-    "cost",
-    "role_memory",
-    "code_scan",
-    "consultation",
-  ]),
-  label: z.string(),
-  reference: z.string().nullable(),
-  excerpt: z.string(),
-});
-export type InterviewCitation = z.infer<typeof InterviewCitationSchema>;
-
-export const InterviewThreadSchema = z.object({
-  id: z.string(),
-  scope: z.enum(["project", "organization"]),
-  project: z.string().nullable(),
-  spokesperson_role: z.string(),
-  title: z.string(),
-  created_at: z.string().datetime(),
-  updated_at: z.string().datetime(),
-});
-export type InterviewThread = z.infer<typeof InterviewThreadSchema>;
-
-export const ConsultationStatusSchema = z.enum([
-  "queued",
-  "gathering_memory",
-  "scanning_code",
-  "answered",
-  "blocked",
-]);
-export type ConsultationStatus = z.infer<typeof ConsultationStatusSchema>;
-
-export const ConfidenceSchema = z.enum(["high", "medium", "low", "unknown"]);
-export type Confidence = z.infer<typeof ConfidenceSchema>;
-
-export const ConsultationSchema = z.object({
-  id: z.string(),
-  thread_id: z.string(),
-  message_id: z.string(),
-  project: z.string().nullable(),
-  consulted_role: z.string(),
-  status: ConsultationStatusSchema,
-  memory_summary: z.string().nullable(),
-  code_scan_summary: z.string().nullable(),
-  files_inspected: z.array(z.string()),
-  note: z.string().nullable(),
-  citations: z.array(InterviewCitationSchema),
-  confidence: ConfidenceSchema,
-  created_at: z.string().datetime(),
-  updated_at: z.string().datetime(),
-});
-export type Consultation = z.infer<typeof ConsultationSchema>;
-
-export const InterviewMessageSchema = z.object({
-  id: z.string(),
-  thread_id: z.string(),
-  role: z.enum(["operator", "spokesperson", "consulted_agent"]),
-  agent_role: z.string().nullable(),
-  content: z.string(),
-  citations: z.array(InterviewCitationSchema),
-  consulted_roles: z.array(z.string()),
-  confidence: ConfidenceSchema,
-  follow_up_actions: z.array(z.string()),
-  task_proposal_id: z.string().nullable(),
-  created_at: z.string().datetime(),
-});
-export type InterviewMessage = z.infer<typeof InterviewMessageSchema>;
-
-export const InterviewTaskProposalSchema = z.object({
-  id: z.string(),
-  thread_id: z.string(),
-  message_id: z.string(),
-  project: z.string().nullable(),
-  owner_role: z.string(),
-  title: z.string(),
-  rationale: z.string(),
-  status: z.enum(["pending", "converted", "dismissed"]),
-  decision_id: z.string().nullable(),
-  created_at: z.string().datetime(),
-});
-export type InterviewTaskProposal = z.infer<typeof InterviewTaskProposalSchema>;
-
-export const InterviewBundleSchema = z.object({
-  thread: InterviewThreadSchema,
-  messages: z.array(InterviewMessageSchema),
-  consultations: z.array(ConsultationSchema),
-  tasks: z.array(InterviewTaskProposalSchema),
-});
-export type InterviewBundle = z.infer<typeof InterviewBundleSchema>;
-
-export const SpokespersonRolesSchema = z.object({
-  roles: z.array(z.string()),
-});
-
-export const SpokespersonProjectsSchema = z.object({
-  projects: z.array(z.string()),
-});
-
-export const SpokespersonThreadsSchema = z.object({
-  threads: z.array(InterviewThreadSchema),
-});
-
-export const SpokespersonAnswerSchema = z.object({
-  thread: InterviewThreadSchema,
-  operator_message: InterviewMessageSchema,
-  answer_message: InterviewMessageSchema,
-  consultations: z.array(ConsultationSchema),
-  task: InterviewTaskProposalSchema.nullable(),
-});
-export type SpokespersonAnswer = z.infer<typeof SpokespersonAnswerSchema>;
+// ---------- Spokesperson interviews (removed) ----------
+// The operator-facing Spokesperson console was retired; its schemas,
+// API routes, and UI component were removed. The `spokesperson` *agent
+// role* (PM answerer) still exists server-side and is unaffected.
 
 // ---------- Headline counters ----------
 
@@ -600,3 +513,53 @@ export const HeadlineCountersSchema = z.object({
   queued_fixes: z.number(),
 });
 export type HeadlineCounters = z.infer<typeof HeadlineCountersSchema>;
+
+// ---------- Site Sentry ----------
+
+export const SiteHealthCheckSchema = z.object({
+  check_path: z.string(),
+  ok: z.boolean(),
+  status_code: z.number().nullable(),
+  latency_ms: z.number().nullable(),
+  error: z.string().nullable(),
+  last_check_at: z.string(),
+  last_ok_at: z.string().nullable(),
+  last_failed_at: z.string().nullable(),
+  p50_ms_24h: z.number(),
+  p99_ms_24h: z.number(),
+  uptime_24h: z.number(),
+  samples_24h: z.number(),
+});
+export type SiteHealthCheck = z.infer<typeof SiteHealthCheckSchema>;
+
+export const SiteHealthProjectSchema = z.object({
+  project: z.string(),
+  ok: z.boolean(),
+  checks: z.array(SiteHealthCheckSchema),
+  // TLS cert expiry for the project's host (from the latest probe), plus
+  // days-until and severity computed server-side. null when no https probe.
+  cert_expires_at: z.string().nullable(),
+  cert_days_until: z.number().nullable(),
+  cert_severity: z.enum(["ok", "amber", "red", "overdue"]).nullable(),
+});
+export type SiteHealthProject = z.infer<typeof SiteHealthProjectSchema>;
+
+// Renewal radar: a declared license renewal or credential rotation, with
+// severity computed against today. Dates only — never secret values.
+export const RenewalSchema = z.object({
+  project: z.string(),
+  kind: z.enum(["license", "secret_rotation"]),
+  name: z.string(),
+  due: z.string(), // YYYY-MM-DD
+  url: z.string().nullable(),
+  note: z.string().nullable(),
+  days_until: z.number(),
+  severity: z.enum(["ok", "amber", "red", "overdue"]),
+});
+export type Renewal = z.infer<typeof RenewalSchema>;
+
+export const SiteHealthSchema = z.object({
+  projects: z.array(SiteHealthProjectSchema),
+  renewals: z.array(RenewalSchema),
+});
+export type SiteHealth = z.infer<typeof SiteHealthSchema>;

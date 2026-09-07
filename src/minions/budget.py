@@ -27,7 +27,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from minions.cost import month_to_date_cost
+from minions.cost import cost_by_project, month_to_date_cost
 
 if TYPE_CHECKING:
     from minions.models.manifest import Manifest
@@ -67,10 +67,22 @@ def evaluate(
     cost_log_path: Path | None = None,
     now: datetime | None = None,
 ) -> BudgetState:
-    """Compute the current budget state for a project."""
+    """Compute the current budget state for a project.
+
+    When ``manifest.sandbox_budget_usd`` is set (free-tier sandbox tenants),
+    also checks lifetime (never-resetting) spend against it and returns
+    whichever of {monthly, lifetime} fraction is worse — so a sandbox can't
+    be re-farmed by simply waiting for the monthly cap to reset.
+    """
     cap = manifest.monthly_budget_usd
     mtd = month_to_date_cost(manifest.name, now=now, path=cost_log_path)
     fraction = (mtd / cap) if cap > 0 else 0.0
+
+    if manifest.sandbox_budget_usd is not None and manifest.sandbox_budget_usd > 0:
+        lifetime = cost_by_project(path=cost_log_path).get(manifest.name, 0.0)
+        lifetime_fraction = lifetime / manifest.sandbox_budget_usd
+        fraction = max(fraction, lifetime_fraction)
+
     if fraction >= BREACH_THRESHOLD:
         state: State = "breach"
     elif fraction >= WARN_THRESHOLD:

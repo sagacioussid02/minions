@@ -68,7 +68,9 @@ function parseField(field: string, min: number): (n: number) => boolean {
 }
 
 function parseCron(expr: string): ParsedCron {
-  const [m, h, dom, _mon, dow] = expr.trim().split(/\s+/);
+  // Month field is intentionally skipped (elided slot) — this scheduler
+  // does not constrain on month.
+  const [m, h, dom, , dow] = expr.trim().split(/\s+/);
   return {
     minute: parseField(m, 0),
     hour: parseField(h, 0),

@@ -7,7 +7,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import type { ChatContext } from "./context";
+import { teamMemberLine, type ChatContext } from "./context";
 import type { MessageRow } from "./repo";
 
 export const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
@@ -40,6 +40,18 @@ export function renderSystemPrompt(ctx: ChatContext): string {
         "Use this as background on the project you work on. Do not quote it verbatim; refer to it naturally.\n\n" +
         ctx.dossierExcerpt.trimEnd(),
     );
+  }
+
+  if (ctx.teammates.length > 0) {
+    const lines = [
+      "# Your team",
+      "These are the people you work with — your project teammates and the " +
+        "leadership above you. Refer to them by name when relevant; you know " +
+        "who they are and roughly what they do.",
+      "",
+      ...ctx.teammates.map(teamMemberLine),
+    ];
+    parts.push(lines.join("\n"));
   }
 
   if (ctx.learning.length > 0) {
