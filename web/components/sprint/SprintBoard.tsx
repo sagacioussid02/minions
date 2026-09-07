@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Avatar } from "@/components/Avatar";
 import { TaskDrawer } from "@/components/sprint/TaskDrawer";
@@ -73,6 +74,13 @@ function taskLane(status: Task["status"]): SprintColumn | null {
   }
 }
 
+// A single rendered tile in the board (kanban) view: either one subtask (the
+// common case, shown as a child of its Story) or a whole Story (when it has no
+// subtasks yet or still needs a Story-level action).
+type BoardItem =
+  | { kind: "subtask"; task: Task; parent: SprintCard }
+  | { kind: "story"; card: SprintCard };
+
 const WINDOW_OPTIONS: Array<{ value: SprintWindow; label: string }> = [
   { value: "this_week", label: "This week" },
   { value: "last_week", label: "Last week" },
@@ -88,6 +96,27 @@ async function fetchBoard(project: string | null, window: SprintWindow): Promise
   const r = await fetch(url, { cache: "no-store" });
   if (!r.ok) throw new Error("sprint board fetch failed");
   return r.json();
+}
+
+// Per-story collapse overrides for the swimlane, backed by sessionStorage so
+// they survive the 5s refetch but reset with the tab. Exposed as an external
+// store for useSyncExternalStore (SSR-safe, no setState-in-effect).
+const collapseListeners = new Set<() => void>();
+
+function subscribeCollapse(cb: () => void): () => void {
+  collapseListeners.add(cb);
+  return () => collapseListeners.delete(cb);
+}
+
+function getCollapseOverride(decisionId: string): boolean | null {
+  if (typeof window === "undefined") return null;
+  const v = window.sessionStorage.getItem(`sprint-collapse:${decisionId}`);
+  return v === null ? null : v === "1";
+}
+
+function setCollapseOverride(decisionId: string, collapsed: boolean): void {
+  window.sessionStorage.setItem(`sprint-collapse:${decisionId}`, collapsed ? "1" : "0");
+  collapseListeners.forEach((cb) => cb());
 }
 
 function primaryOwner(card: SprintCard): string | null {
@@ -111,23 +140,90 @@ function primaryOwner(card: SprintCard): string | null {
 
 const CLOSED_REVIEW_STATES = new Set(["closed", "superseded"]);
 
-export function SprintBoard({ initial }: { initial: Board }) {
-  const [tab, setTab] = useState<string | null>(null); // null = All
-  const [window, setWindow] = useState<SprintWindow>("this_week");
-  const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
-  const [sprintFilter, setSprintFilter] = useState<number | null>(null);
-  const [showClosed, setShowClosed] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [view, setView] = useState<"swimlane" | "board">("swimlane");
+const WINDOW_VALUES = new Set<SprintWindow>(WINDOW_OPTIONS.map((o) => o.value));
+
+export function SprintBoard({
+  initial,
+  initialProject = null,
+  initialWindow = "this_week",
+}: {
+  initial: Board;
+  initialProject?: string | null;
+  initialWindow?: SprintWindow;
+}) {
+  // The URL is the single source of truth for navigation state — so views are
+  // shareable, survive the 5s refetch/refresh, and the browser Back button
+  // closes the task drawer instead of leaving the page.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const setParams = useCallback(
+    (mut: (p: URLSearchParams) => void, opts?: { push?: boolean }) => {
+      const p = new URLSearchParams(searchParams.toString());
+      mut(p);
+      const qs = p.toString();
+      const url = qs ? `${pathname}?${qs}` : pathname;
+      if (opts?.push) router.push(url, { scroll: false });
+      else router.replace(url, { scroll: false });
+    },
+    [router, pathname, searchParams],
+  );
+
+  const tab = searchParams.get("project"); // null = All
+  const windowParam = searchParams.get("window") as SprintWindow | null;
+  const window: SprintWindow =
+    windowParam && WINDOW_VALUES.has(windowParam) ? windowParam : "this_week";
+  const view: "swimlane" | "board" =
+    searchParams.get("view") === "board" ? "board" : "swimlane";
+  const ownerFilter = searchParams.get("agent");
+  const sprintParam = searchParams.get("sprint");
+  const sprintFilter = sprintParam && /^\d+$/.test(sprintParam) ? Number(sprintParam) : null;
+  const showClosed = searchParams.get("closed") === "1";
+  const taskId = searchParams.get("task");
+
+  const setTab = (p: string | null) =>
+    setParams((sp) => (p ? sp.set("project", p) : sp.delete("project")));
+  const setWindow = (w: SprintWindow) =>
+    setParams((sp) => (w === "this_week" ? sp.delete("window") : sp.set("window", w)));
+  const setView = (v: "swimlane" | "board") =>
+    setParams((sp) => (v === "swimlane" ? sp.delete("view") : sp.set("view", v)));
+  const setOwnerFilter = (v: string | null) =>
+    setParams((sp) => (v ? sp.set("agent", v) : sp.delete("agent")));
+  const setSprintFilter = (v: number | null) =>
+    setParams((sp) => (v !== null ? sp.set("sprint", String(v)) : sp.delete("sprint")));
+  const setShowClosed = (v: boolean) =>
+    setParams((sp) => (v ? sp.set("closed", "1") : sp.delete("closed")));
+  // Opening a task pushes a history entry so browser Back closes the drawer;
+  // the Close button strips the param in place.
+  const openTask = (t: Task) => setParams((sp) => sp.set("task", t.id), { push: true });
+  const closeTask = () => setParams((sp) => sp.delete("task"));
+  const clearFilters = () =>
+    setParams((sp) => {
+      sp.delete("project");
+      sp.delete("agent");
+      sp.delete("sprint");
+      sp.delete("closed");
+    });
 
   const { data } = useQuery({
     queryKey: ["sprint-board", tab, window],
     queryFn: () => fetchBoard(tab, window),
-    initialData: tab === null && window === "this_week" ? initial : undefined,
+    initialData: tab === initialProject && window === initialWindow ? initial : undefined,
     refetchInterval: 5_000,
   });
 
   const board = data ?? initial;
+
+  // Deep-link / URL-driven drawer: resolve ?task=<id> against the loaded board.
+  const selectedTask = useMemo<Task | null>(() => {
+    if (!taskId) return null;
+    for (const c of board.cards) {
+      const t = c.tasks.find((task) => task.id === taskId);
+      if (t) return t;
+    }
+    return null;
+  }, [taskId, board.cards]);
 
   // Stable palette assignments.
   registerProjects(board.projects);
@@ -162,46 +258,78 @@ export function SprintBoard({ initial }: { initial: Board }) {
     });
   }, [board.cards, showClosed, sprintFilter, ownerFilter]);
 
-  const byColumn = useMemo(() => {
-    const m = new Map<SprintColumn, SprintCard[]>();
+  // Board view: each subtask is its own card, placed in the column matching its
+  // own status (not the Story's overall stage), with a parent-Story chip. A slim
+  // Story card is kept only when the Story has no subtasks yet, or still needs a
+  // decision-level action (approve / auto-merge) that lives at the Story level.
+  const boardItemsByColumn = useMemo(() => {
+    const m = new Map<SprintColumn, BoardItem[]>();
+    const push = (col: SprintColumn, item: BoardItem) => {
+      const arr = m.get(col) ?? [];
+      arr.push(item);
+      m.set(col, arr);
+    };
     for (const c of filteredCards) {
-      const arr = m.get(c.column) ?? [];
-      arr.push(c);
-      m.set(c.column, arr);
+      const laneTasks = c.tasks.filter((t) => {
+        if (taskLane(t.status) === null) return false;
+        if (ownerFilter !== null && t.owner_display_name !== ownerFilter) return false;
+        return true;
+      });
+      const needsStoryCard = c.column === "awaiting_you" || c.can_auto_merge;
+      if (laneTasks.length > 0) {
+        for (const t of laneTasks) {
+          push(taskLane(t.status)!, { kind: "subtask", task: t, parent: c });
+        }
+        if (needsStoryCard) push(c.column, { kind: "story", card: c });
+      } else {
+        push(c.column, { kind: "story", card: c });
+      }
     }
     return m;
-  }, [filteredCards]);
+  }, [filteredCards, ownerFilter]);
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Condensed control bar: project tabs on the left; window, filters and
+          the view toggle share one wrapping row on the right so the board sits
+          higher up the page. */}
       <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
         <Tabs current={tab} projects={board.projects} onChange={setTab} />
-        <WindowFilter current={window} onChange={setWindow} />
+        <div className="flex flex-wrap items-center gap-2">
+          <FilterRow
+            ownerOptions={ownerOptions}
+            owner={ownerFilter}
+            onOwnerChange={setOwnerFilter}
+            sprintOptions={sprintOptions}
+            sprint={sprintFilter}
+            onSprintChange={setSprintFilter}
+            showClosed={showClosed}
+            onShowClosedChange={setShowClosed}
+          />
+          <WindowFilter current={window} onChange={setWindow} />
+          <ViewToggle view={view} onChange={setView} />
+        </div>
       </div>
-      <FilterRow
-        ownerOptions={ownerOptions}
-        owner={ownerFilter}
-        onOwnerChange={setOwnerFilter}
-        sprintOptions={sprintOptions}
-        sprint={sprintFilter}
-        onSprintChange={setSprintFilter}
-        showClosed={showClosed}
-        onShowClosedChange={setShowClosed}
-      />
-      <div className="flex items-center justify-between gap-2">
-        <SprintHeaderStrip cards={filteredCards} />
-        <ViewToggle view={view} onChange={setView} />
-      </div>
-      {view === "swimlane" ? (
-        <SwimlaneBoard cards={filteredCards} onTaskSelect={setSelectedTask} />
+      <SprintHeaderStrip cards={filteredCards} activeProject={tab} onSelectProject={setTab} />
+      {filteredCards.length === 0 ? (
+        <EmptyBoard
+          window={window}
+          tab={tab}
+          ownerFilter={ownerFilter}
+          sprintFilter={sprintFilter}
+          onClear={clearFilters}
+          onWiden={() => setWindow("last_30d")}
+        />
+      ) : view === "swimlane" ? (
+        <SwimlaneBoard cards={filteredCards} onTaskSelect={openTask} />
       ) : (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 xl:grid-cols-5">
           {COLUMN_ORDER.map((col) => (
             <Column
               key={col}
               column={col}
-              cards={byColumn.get(col) ?? []}
-              onTaskSelect={setSelectedTask}
+              items={boardItemsByColumn.get(col) ?? []}
+              onTaskSelect={openTask}
             />
           ))}
         </div>
@@ -214,7 +342,7 @@ export function SprintBoard({ initial }: { initial: Board }) {
             board.cards.find((card) => card.decision_id === selectedTask.decision_id)
               ?.structured_plan?.discussion ?? []
           }
-          onClose={() => setSelectedTask(null)}
+          onClose={closeTask}
         />
       )}
     </div>
@@ -367,7 +495,15 @@ function TabButton({
   );
 }
 
-function SprintHeaderStrip({ cards }: { cards: SprintCard[] }) {
+function SprintHeaderStrip({
+  cards,
+  activeProject,
+  onSelectProject,
+}: {
+  cards: SprintCard[];
+  activeProject: string | null;
+  onSelectProject: (project: string | null) => void;
+}) {
   const byProject = useMemo(() => {
     const map = new Map<string, SprintCard[]>();
     for (const card of cards) {
@@ -391,15 +527,29 @@ function SprintHeaderStrip({ cards }: { cards: SprintCard[] }) {
         const review = tasks.filter((task) => task.status === "review").length;
         const blocked = tasks.filter((task) => task.status === "blocked").length;
         const goal = projectCards.find((card) => card.structured_plan)?.structured_plan?.goal;
+        const isActive = activeProject === project;
         return (
-          <div key={project} className="rounded-xl border border-[var(--line)] bg-[var(--bg-surface)] p-3">
-            <div className="flex items-center gap-2">
+          <div
+            key={project}
+            className={`rounded-xl border bg-[var(--bg-surface)] p-3 ${
+              isActive ? "border-[var(--accent)]/50" : "border-[var(--line)]"
+            }`}
+          >
+            {/* Clicking the header focuses this project (toggles back to All). */}
+            <button
+              type="button"
+              onClick={() => onSelectProject(isActive ? null : project)}
+              className="flex w-full items-center gap-2 text-left"
+              title={isActive ? "Show all projects" : `Focus ${project}`}
+            >
               <span className="size-2 rounded-full" style={{ backgroundColor: colorFor(project) }} />
-              <span className="font-semibold text-[var(--text-primary)]">{project}</span>
+              <span className="font-semibold text-[var(--text-primary)] hover:text-[var(--accent)]">
+                {project}
+              </span>
               <span className="ml-auto text-xs text-[var(--text-muted)]">
                 Sprint {sprint ?? "?"}
               </span>
-            </div>
+            </button>
             <div className="mt-1 line-clamp-2 text-xs text-[var(--text-muted)]">
               {goal ?? "No structured sprint goal recorded yet."}
             </div>
@@ -415,6 +565,73 @@ function SprintHeaderStrip({ cards }: { cards: SprintCard[] }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// Shown when the current filter/window combination hides every story — names
+// the active filters and offers one-click ways out instead of a dead end.
+function EmptyBoard({
+  window,
+  tab,
+  ownerFilter,
+  sprintFilter,
+  onClear,
+  onWiden,
+}: {
+  window: SprintWindow;
+  tab: string | null;
+  ownerFilter: string | null;
+  sprintFilter: number | null;
+  onClear: () => void;
+  onWiden: () => void;
+}) {
+  const active: string[] = [];
+  if (tab) active.push(`project: ${tab}`);
+  if (ownerFilter) active.push(`agent: ${ownerFilter}`);
+  if (sprintFilter !== null) active.push(`sprint ${sprintFilter}`);
+  const hasFilters = active.length > 0;
+  const windowLabel = WINDOW_OPTIONS.find((o) => o.value === window)?.label ?? window;
+  const canWiden = window === "this_week" || window === "last_week";
+  return (
+    <div className="rounded-lg border border-dashed border-[var(--line)] p-8 text-center">
+      <div className="text-sm text-[var(--text-muted)]">
+        {hasFilters
+          ? "No stories match the current filters."
+          : `No stories in the “${windowLabel}” window.`}
+      </div>
+      {hasFilters && (
+        <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+          {active.map((a) => (
+            <span
+              key={a}
+              className="rounded bg-[var(--bg-surface)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]"
+            >
+              {a}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="mt-3 flex flex-wrap justify-center gap-2 text-xs">
+        {hasFilters && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="rounded-md border border-[var(--line)] px-3 py-1 text-[var(--text-primary)] hover:border-[var(--accent)]/50"
+          >
+            Clear filters
+          </button>
+        )}
+        {canWiden && (
+          <button
+            type="button"
+            onClick={onWiden}
+            className="rounded-md border border-[var(--line)] px-3 py-1 text-[var(--text-muted)] hover:border-[var(--accent)]/50 hover:text-[var(--text-primary)]"
+          >
+            Widen to 30 days
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -518,97 +735,203 @@ function SwimlaneRow({
     byLane.set(lane, arr);
   }
   const hasSubtasks = card.tasks.some((t) => taskLane(t.status) !== null);
+
+  // Fully-shipped stories collapse by default so active work isn't buried in
+  // wide windows; the operator can override per-row (persisted for the tab
+  // session via sessionStorage). useSyncExternalStore keeps SSR and the first
+  // client paint agreeing on the auto default, then swaps in the stored value.
+  const active = card.tasks.filter((t) => t.status !== "cancelled");
+  const allDone = active.length > 0 && active.every((t) => t.status === "done");
+  const override = useSyncExternalStore(
+    subscribeCollapse,
+    () => getCollapseOverride(card.decision_id),
+    () => null,
+  );
+  const collapsed = override ?? allDone;
+  const toggle = () => setCollapseOverride(card.decision_id, !collapsed);
+
   return (
     <div className="relative rounded-lg border border-[var(--line)] bg-[var(--bg-surface)]/40 p-2">
-      {/* Dotted lineage spine across the lane area. */}
-      <div
-        className="pointer-events-none absolute left-[240px] right-2 top-7 border-t border-dashed border-[var(--line)]"
-        aria-hidden
-      />
-      <ul className="grid items-start gap-3" style={{ gridTemplateColumns: gridCols }}>
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={!collapsed}
+        title={collapsed ? "Expand story" : "Collapse story"}
+        className="absolute right-1 top-1 z-10 rounded px-1 text-[10px] leading-none text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+      >
+        {collapsed ? "▸" : "▾"}
+      </button>
+      {/* Dotted lineage spine across the lane area (expanded only). */}
+      {!collapsed && (
+        <div
+          className="pointer-events-none absolute left-[240px] right-2 top-7 border-t border-dashed border-[var(--line)]"
+          aria-hidden
+        />
+      )}
+      <ul
+        className="grid items-start gap-3"
+        style={{ gridTemplateColumns: collapsed ? "minmax(240px, 1.1fr) 3fr" : gridCols }}
+      >
         {/* Rail: the story card (inline task list suppressed). */}
         <Card card={card} onTaskSelect={onTaskSelect} hideInlineTasks />
-        {/* Lane cells. */}
-        {SWIMLANE_LANES.map((lane) => {
-          const tasks = byLane.get(lane.key) ?? [];
-          return (
-            <li key={lane.key} className="space-y-2">
-              {tasks.map((t) => (
-                <SubtaskCard key={t.id} task={t} onSelect={onTaskSelect} />
-              ))}
-              {tasks.length === 0 && lane.key === "approved" && !hasSubtasks && (
-                <div className="rounded border border-dashed border-[var(--line)] px-2 py-3 text-center text-[9px] text-[var(--text-muted)]">
-                  no subtasks yet
-                </div>
-              )}
-            </li>
-          );
-        })}
+        {collapsed ? (
+          <CollapsedLaneSummary byLane={byLane} allDone={allDone} onExpand={toggle} />
+        ) : (
+          /* Lane cells. */
+          SWIMLANE_LANES.map((lane) => {
+            const tasks = byLane.get(lane.key) ?? [];
+            return (
+              <li key={lane.key} className="space-y-2">
+                {tasks.map((t) => (
+                  <SubtaskCard key={t.id} task={t} onSelect={onTaskSelect} />
+                ))}
+                {tasks.length === 0 && lane.key === "approved" && !hasSubtasks && (
+                  <div className="rounded border border-dashed border-[var(--line)] px-2 py-3 text-center text-[9px] text-[var(--text-muted)]">
+                    no subtasks yet
+                  </div>
+                )}
+              </li>
+            );
+          })
+        )}
       </ul>
     </div>
+  );
+}
+
+// Collapsed swimlane row: one-line lane tallies instead of the full grid.
+function CollapsedLaneSummary({
+  byLane,
+  allDone,
+  onExpand,
+}: {
+  byLane: Map<SprintColumn, Task[]>;
+  allDone: boolean;
+  onExpand: () => void;
+}) {
+  return (
+    <li className="flex items-center gap-2 self-center">
+      {allDone && (
+        <span className="rounded bg-[var(--state-success)]/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-[var(--state-success)]">
+          shipped
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={onExpand}
+        className="flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+      >
+        {SWIMLANE_LANES.map((lane) => {
+          const n = (byLane.get(lane.key) ?? []).length;
+          return (
+            <span
+              key={lane.key}
+              className={n === 0 ? "opacity-40" : undefined}
+            >
+              {lane.label} {n}
+            </span>
+          );
+        })}
+        <span className="text-[var(--accent)]">· expand</span>
+      </button>
+    </li>
   );
 }
 
 function SubtaskCard({
   task,
   onSelect,
+  parent,
 }: {
   task: Task;
   onSelect: (task: Task) => void;
+  // When set (board view), a slim parent-Story chip is shown above the card so
+  // each subtask reads as a child of its Story. Omitted in the swimlane, where
+  // the parent is already the row's left rail.
+  parent?: SprintCard;
 }) {
   const isUnassigned = task.status === "unassigned";
   const isBlocked = task.status === "blocked";
   const owner = task.owner_display_name;
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(task)}
-      className={`block w-full rounded-md border p-2 text-left transition hover:border-[var(--accent)]/50 ${
-        isBlocked
-          ? "border-[var(--state-danger)]/50 bg-[var(--state-danger)]/5"
-          : isUnassigned
-            ? "border-dashed border-amber-300/70 bg-amber-50/40"
-            : "border-[var(--line)] bg-[var(--bg-elevated)]"
-      }`}
-      title={task.description || task.title}
-    >
-      <div className="line-clamp-2 text-[11px] font-medium leading-snug text-[var(--text-primary)]">
-        {task.title}
-      </div>
-      <div className="mt-1 flex flex-wrap items-center gap-1 text-[9px] text-[var(--text-muted)]">
-        <span className="rounded bg-[var(--bg-surface)] px-1 font-mono uppercase">
-          {task.estimated_effort}
-        </span>
-        {isBlocked && (
-          <span className="rounded bg-[var(--state-danger)]/15 px-1 uppercase text-[var(--state-danger)]">
-            blocked
+    <div className={parent ? "border-l-2 border-[var(--line)] pl-2" : undefined}>
+      {parent && <ParentChip card={parent} />}
+      <button
+        type="button"
+        onClick={() => onSelect(task)}
+        className={`block w-full rounded-md border p-2 text-left transition hover:border-[var(--accent)]/50 ${
+          isBlocked
+            ? "border-[var(--state-danger)]/50 bg-[var(--state-danger)]/5"
+            : isUnassigned
+              ? "border-dashed border-amber-300/70 bg-amber-50/40"
+              : "border-[var(--line)] bg-[var(--bg-elevated)]"
+        }`}
+        title={task.description || task.title}
+      >
+        <div className="line-clamp-2 text-[11px] font-medium leading-snug text-[var(--text-primary)]">
+          {task.title}
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-1 text-[9px] text-[var(--text-muted)]">
+          <span className="rounded bg-[var(--bg-surface)] px-1 font-mono uppercase">
+            {task.estimated_effort}
           </span>
-        )}
-        <span className="truncate">
-          {owner ? `👤 ${owner}` : isUnassigned ? "⏳ auto-assigned" : "—"}
-        </span>
-      </div>
-    </button>
+          {isBlocked && (
+            <span className="rounded bg-[var(--state-danger)]/15 px-1 uppercase text-[var(--state-danger)]">
+              blocked
+            </span>
+          )}
+          <span className="truncate">
+            {owner ? `👤 ${owner}` : isUnassigned ? "⏳ auto-assigned" : "—"}
+          </span>
+        </div>
+      </button>
+    </div>
+  );
+}
+
+// Slim lineage header above a subtask card in the board view: the project dot +
+// the parent Story's goal/summary, so the subtask reads as that Story's child.
+function ParentChip({ card }: { card: SprintCard }) {
+  const color = colorFor(card.project);
+  const label = card.structured_plan?.goal || card.summary;
+  return (
+    <div
+      className="mb-1 flex items-center gap-1 truncate text-[9px] uppercase tracking-wider text-[var(--text-muted)]"
+      title={card.summary}
+    >
+      <span
+        className="h-1.5 w-1.5 shrink-0 rounded-full"
+        style={{ background: color }}
+        aria-hidden
+      />
+      <span className="truncate">{truncate(label, 42)}</span>
+    </div>
   );
 }
 
 function Column({
   column,
-  cards,
+  items,
   onTaskSelect,
 }: {
   column: SprintColumn;
-  cards: SprintCard[];
+  items: BoardItem[];
   onTaskSelect: (task: Task) => void;
 }) {
-  const stalled = cards.filter((c) => c.stalled).length;
+  const stalled = items.filter(
+    (it) =>
+      (it.kind === "story" && it.card.stalled) ||
+      (it.kind === "subtask" && it.task.status === "blocked"),
+  ).length;
   return (
     <div className="rounded-xl border border-[var(--line)] bg-[var(--bg-surface)] p-3">
-      <header className="mb-2 flex items-center gap-2">
+      {/* Sticky so the column label stays visible while scrolling a long lane
+          (the document is the vertical scroller on this page). */}
+      <header className="sticky top-0 z-10 -mx-3 -mt-3 mb-2 flex items-center gap-2 rounded-t-xl border-b border-[var(--line)] bg-[var(--bg-surface)]/95 px-3 py-2 backdrop-blur">
         <h3 className="text-xs font-medium uppercase tracking-wider text-[var(--text-primary)]">
           {COLUMN_LABEL[column]}
         </h3>
-        <span className="text-[10px] text-[var(--text-muted)]">{cards.length}</span>
+        <span className="text-[10px] text-[var(--text-muted)]">{items.length}</span>
         {stalled > 0 && (
           <span className="ml-auto rounded bg-[var(--state-warn)]/15 px-1 text-[9px] uppercase tracking-wider text-[var(--state-warn)]">
             {stalled} stalled
@@ -617,12 +940,28 @@ function Column({
       </header>
       <p className="mb-3 text-[10px] text-[var(--text-muted)]">{COLUMN_HINT[column]}</p>
       <ul className="flex flex-col gap-2">
-        {cards.length === 0 ? (
+        {items.length === 0 ? (
           <li className="rounded-md border border-dashed border-[var(--line)] p-3 text-center text-[10px] text-[var(--text-muted)]">
             empty
           </li>
         ) : (
-          cards.map((c) => <Card key={c.decision_id} card={c} onTaskSelect={onTaskSelect} />)
+          items.map((it) =>
+            it.kind === "subtask" ? (
+              <li key={`t-${it.task.id}`}>
+                <SubtaskCard task={it.task} parent={it.parent} onSelect={onTaskSelect} />
+              </li>
+            ) : (
+              // Story-level tile (no subtasks yet, or needs approve/merge): keep
+              // the full card but suppress the inline subtask list — subtasks are
+              // their own cards now.
+              <Card
+                key={`c-${it.card.decision_id}`}
+                card={it.card}
+                onTaskSelect={onTaskSelect}
+                hideInlineTasks
+              />
+            ),
+          )
         )}
       </ul>
     </div>

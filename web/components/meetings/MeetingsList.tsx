@@ -73,7 +73,7 @@ function MeetingCard({ meeting, live }: { meeting: MeetingSummary; live: boolean
     : "border-[var(--line)]";
   return (
     <Link
-      href={`/meetings/${meeting.run_id}`}
+      href={`/hq/meetings/${meeting.run_id}`}
       className={`block rounded-lg border ${accent} bg-[var(--bg-surface)] p-4 transition hover:border-[var(--accent)]/60 hover:bg-[var(--bg-elevated)]`}
     >
       <div className="flex items-start justify-between gap-3">

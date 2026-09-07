@@ -27,10 +27,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=9.0.3",
+    "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
-    "ruff>=0.15.14",
-    "mypy>=2.1.0",
+    "ruff>=0.15.21",
+    "mypy>=2.3.0",
     "pre-commit>=4.6.0",
     "types-PyYAML>=6.0.12.20260518",
 ]

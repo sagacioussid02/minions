@@ -290,12 +290,24 @@ export function AgentChatPanel({
           ref={scrollerRef}
           className="flex-1 space-y-3 overflow-y-auto px-4 py-3 text-sm"
         >
-          {activeThreadId === null && rendered.length === 0 && (
-            <div className="rounded border border-dashed border-[var(--line)] p-4 text-center text-xs text-[var(--text-muted)]">
-              Start a new conversation with {displayName} — they can speak to
-              their own recent work, learnings, and project context.
+          {(threadsQuery.error || messagesQuery.error) && (
+            <div className="rounded border border-rose-400/40 bg-rose-400/10 px-3 py-2 text-xs text-rose-600">
+              Couldn’t load this conversation:{" "}
+              {(threadsQuery.error ?? messagesQuery.error) instanceof Error
+                ? (threadsQuery.error ?? messagesQuery.error)!.message
+                : "request failed"}
+              . If this says “Failed to fetch,” your sign-in session likely
+              expired — reload the page (or sign in again) and retry.
             </div>
           )}
+          {activeThreadId === null &&
+            rendered.length === 0 &&
+            !threadsQuery.error && (
+              <div className="rounded border border-dashed border-[var(--line)] p-4 text-center text-xs text-[var(--text-muted)]">
+                Start a new conversation with {displayName} — they can speak to
+                their own recent work, learnings, and project context.
+              </div>
+            )}
           {rendered.map((m) => (
             <MessageBubble key={m.id} message={m} agentDisplayName={displayName} />
           ))}
@@ -320,7 +332,7 @@ export function AgentChatPanel({
             }}
             placeholder={`Ask ${displayName} something…`}
             rows={2}
-            className="block w-full resize-none rounded border border-[var(--line)] bg-[var(--surface-1)] px-2 py-1.5 text-sm outline-none focus:border-[var(--accent)]/60"
+            className="block w-full resize-none rounded border border-[var(--line)] bg-[var(--surface-1)] px-2 py-1.5 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]/60"
             disabled={sendMutation.isPending}
           />
           <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-[var(--text-muted)]">

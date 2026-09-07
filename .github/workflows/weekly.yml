@@ -1,18 +1,16 @@
 name: Weekly planning
 
-# Monday 09:00 UTC. Real LLM run: profiles each active project, runs the
-# (grounded) planning crew, attaches a Devil's Advocate critique on
-# risk>=medium proposals, and emails the operator one Decision per project
-# via the approval pipeline.
+# Monday 09:00 UTC. Real LLM run: profiles one project, runs the (grounded)
+# planning crew, attaches a Devil's Advocate critique on risk>=medium
+# proposals, and emails the operator a Decision via the approval pipeline.
 
 on:
   schedule:
-    # Fire daily Mon–Fri at 09:00 UTC. The actual gate is each manifest's
-    # `planning_day` field — projects without it fall through and run every
-    # day (legacy behavior); projects with it only run on the matching
-    # weekday. Net effect: at most one proposal per weekday instead of all
-    # five on Monday.
-    - cron: '0 9 * * 1-5'
+    # Budget mode: once a week (Monday). `--rotate` plans exactly one project
+    # per run, cycling the portfolio by ISO week — so each project is planned
+    # roughly once every N weeks. Caps both Actions minutes (one run/week) and
+    # LLM spend (one project/run).
+    - cron: '0 9 * * 1'
   workflow_dispatch:
     inputs:
       dry-run:
@@ -21,7 +19,7 @@ on:
         type: boolean
         default: false
       project:
-        description: 'Limit to a single project (omit to run all).'
+        description: 'Limit to a single project (omit to rotate one per week).'
         required: false
         type: string
         default: ''
@@ -36,6 +34,6 @@ jobs:
     with:
       command: >-
         ${{ inputs.dry-run
-            && format('cron weekly{0}', inputs.project && format(' --project {0}', inputs.project) || '')
-            || format('cron weekly --no-dry-run{0}', inputs.project && format(' --project {0}', inputs.project) || '') }}
+            && format('cron weekly{0}', inputs.project && format(' --project {0}', inputs.project) || ' --rotate')
+            || format('cron weekly --no-dry-run{0}', inputs.project && format(' --project {0}', inputs.project) || ' --rotate') }}
     secrets: inherit
