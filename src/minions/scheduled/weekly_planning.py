@@ -197,6 +197,7 @@ def run_weekly_planning(
                     profile=profile,
                     sprint_number=sprint_number,
                 )
+                decision.tenant_id = manifest.tenant_id
             except PlanningRefusedStaleError as refused:
                 # Plant the queued-discovery decision so the next cron-discovery
                 # sweep picks it up; record an outcome and move on.
@@ -268,6 +269,7 @@ def run_weekly_planning(
                         project=name,
                         decision_id=str(ritual.id),
                         agents=("product_owner", "principal_engineer", "manager"),
+                        tenant_id=manifest.tenant_id,
                     ),
                     path=activity_log_path,
                 )

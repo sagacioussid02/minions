@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { currentUser } from "@clerk/nextjs/server";
 import { getCurrentTenant } from "@/lib/tenant";
 import { saveOnboardingStep } from "@/lib/onboarding";
 import { buildManifest, countProjects, createProject } from "@/lib/tenant-projects";
@@ -39,6 +40,25 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Manifest.owner is required Python-side (used as a notify fallback if the
+  // Clerk email lookup fails at run time) — resolve it once here rather than
+  // leaving it unset and failing Manifest validation for every tenant project.
+  const user = await currentUser();
+  // Clerk should always have an email (GitHub OAuth requires one), but if it
+  // somehow doesn't, fall back to a clearly-non-deliverable placeholder
+  // (RFC 2606 .invalid TLD) rather than the Clerk user id, which isn't
+  // email-shaped and would break the Python-side notify fallback silently.
+  const owner =
+    user?.primaryEmailAddress?.emailAddress ??
+    user?.emailAddresses[0]?.emailAddress ??
+    `${tenant.clerk_user_id}@no-email.invalid`;
+
+  // Free tier = capped sandbox: a small lifetime spend cap (never resets —
+  // see budget.evaluate() Python-side) is the real limiter, so the
+  // per-project monthly/weekly figures just need to be sane, not trusted.
+  const isSandbox = tenant.plan === "free";
+  const SANDBOX_LIFETIME_BUDGET_USD = 2.0;
+
   for (const p of projects) {
     const project = slug(p.name);
     await createProject(
@@ -49,8 +69,14 @@ export async function POST(req: NextRequest) {
         description: p.description ?? "",
         repoFullName: p.repoFullName,
         defaultBranch: p.defaultBranch || "main",
-        weeklyBudgetUsd: Number(p.weeklyBudgetUsd) || 25,
-        monthlyBudgetUsd: Number(p.monthlyBudgetUsd) || 100,
+        weeklyBudgetUsd: isSandbox
+          ? SANDBOX_LIFETIME_BUDGET_USD
+          : Number(p.weeklyBudgetUsd) || 25,
+        monthlyBudgetUsd: isSandbox
+          ? SANDBOX_LIFETIME_BUDGET_USD
+          : Number(p.monthlyBudgetUsd) || 100,
+        owner,
+        sandboxBudgetUsd: isSandbox ? SANDBOX_LIFETIME_BUDGET_USD : undefined,
       }),
     );
   }

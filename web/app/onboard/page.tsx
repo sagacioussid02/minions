@@ -8,7 +8,7 @@ import {
   listInstallationRepos,
 } from "@/lib/github-app";
 import { saveInstallation } from "@/lib/github-installations";
-import type { PickedRepo } from "@/lib/tenant-projects";
+import { listProjects, type PickedRepo } from "@/lib/tenant-projects";
 import { StepRepos } from "@/components/onboard/StepRepos";
 import { StepManifest } from "@/components/onboard/StepManifest";
 import { StepDossier } from "@/components/onboard/StepDossier";
@@ -44,7 +44,8 @@ export default async function OnboardPage({
     return <StepManifest repos={repos} />;
   }
   if (step === "dossier") {
-    return <StepDossier />;
+    const projects = await listProjects(tenant.tenant_id);
+    return <StepDossier projects={projects} isSandbox={tenant.plan === "free"} />;
   }
 
   // step === "repos"

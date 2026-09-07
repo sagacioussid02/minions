@@ -27,6 +27,8 @@ on:
         required: true
       MINIONS_DATABASE_URL:
         required: true
+      CLERK_SECRET_KEY:
+        required: false
 
 permissions:
   contents: read
@@ -72,6 +74,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.MINIONS_GH_PAT }}
           # All stores route through Neon when this is set. Required.
           MINIONS_DATABASE_URL: ${{ secrets.MINIONS_DATABASE_URL }}
+          # Resolves tenant approval-email recipients (src/minions/notify/clerk_users.py).
+          # Optional: unset just means tenant decisions fall back to manifest.owner.
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
         run: |
           echo "Running: minions ${{ inputs.command }}"
           {

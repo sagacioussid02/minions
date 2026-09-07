@@ -23,6 +23,38 @@ class PostgresDecisionStore:
             else None
         )
         with connect() as conn, conn.cursor() as cur:
+            if decision.tenant_id is not None:
+                cur.execute(
+                    """
+                    INSERT INTO decisions (
+                        id, project, status, type, risk, created_at, resolved_at,
+                        sprint_number, structured_plan, payload, tenant_id
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO UPDATE SET
+                        project = EXCLUDED.project,
+                        status = EXCLUDED.status,
+                        type = EXCLUDED.type,
+                        risk = EXCLUDED.risk,
+                        resolved_at = EXCLUDED.resolved_at,
+                        sprint_number = EXCLUDED.sprint_number,
+                        structured_plan = EXCLUDED.structured_plan,
+                        payload = EXCLUDED.payload
+                    """,
+                    (
+                        str(decision.id),
+                        decision.project,
+                        decision.status.value,
+                        decision.type.value,
+                        decision.risk,
+                        decision.created_at,
+                        decision.resolved_at,
+                        decision.sprint_number,
+                        structured_plan_jsonb,
+                        Jsonb(payload),
+                        decision.tenant_id,
+                    ),
+                )
+                return
             cur.execute(
                 """
                 INSERT INTO decisions (
