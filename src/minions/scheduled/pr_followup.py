@@ -218,6 +218,7 @@ def run_pr_followup(
                 open_prs = distinct_open_pr_count(
                     project=record.project,
                     engineer_runs_store=engineer_runs_store,
+                    tenant_id=manifest.tenant_id,
                 )
                 cap = manifest.flow_control.max_open_prs
                 if open_prs >= cap:
