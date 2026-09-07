@@ -19,6 +19,20 @@
   --bg-canvas: #eaf1fb;
   --bg-surface: #f8fbff;
   --bg-elevated: #ffffff;
+
+  /*
+   * Surface ramp used by cards, panels and the agent-chat drawer. These were
+   * previously referenced (var(--surface-0/1/2)) but never defined, so every
+   * card and the chat input rendered transparent over the page gradient —
+   * which made the roster background muddy and the chat textarea unreadable.
+   *   --surface-0 : opaque panel / drawer (chat aside, modals)
+   *   --surface-1 : cards + inputs (sits above the canvas)
+   *   --surface-2 : nested rows / hover (sits above surface-1)
+   */
+  --surface-0: #ffffff;
+  --surface-1: #f4f8ff;
+  --surface-2: #e3ecf9;
+
   --line: #cbd7e6;
   --text-primary: #172033;
   --text-muted: #64748b;
@@ -47,6 +61,9 @@
   --color-muted: var(--text-muted);
   --color-surface: var(--bg-surface);
   --color-elevated: var(--bg-elevated);
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
   --color-line: var(--line);
   --color-accent: var(--accent);
 

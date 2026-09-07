@@ -18,9 +18,10 @@ from pydantic import BaseModel, Field
 
 from minions.approval.store import DecisionStore
 from minions.models.decision import Decision, DecisionStatus
-from minions.models.manifest import Manifest
+from minions.models.manifest import Manifest, load_active_manifests
 from minions.notify.base import Notifier
 from minions.scheduled.daily_monitor import DailyMonitorReport, run_daily_monitor
+from minions.scheduled.site_sentry import RenewalStatus, renewal_statuses
 
 if TYPE_CHECKING:
     from minions.github.client import GitHubClient
@@ -60,6 +61,12 @@ def run_friday_digest(
 
     monitor = run_daily_monitor(projects_dir=projects_dir, open_github_client=open_github_client)
 
+    # Renewal radar: licenses + credential rotations due within the amber
+    # window (≤30d) or already overdue. Dates only — no secret access.
+    upcoming_renewals = [
+        r for r in renewal_statuses(load_active_manifests(projects_dir)) if r.severity != "ok"
+    ]
+
     body = _render_digest(
         pending=pending,
         approved=approved,
@@ -68,6 +75,7 @@ def run_friday_digest(
         in_window=in_window,
         monitor=monitor,
         window_days=week_window_days,
+        renewals=upcoming_renewals,
     )
 
     if send:
@@ -99,6 +107,7 @@ def _render_digest(
     in_window: Sequence[Decision],
     monitor: DailyMonitorReport,
     window_days: int,
+    renewals: Sequence[RenewalStatus] = (),
 ) -> str:
     lines: list[str] = [
         f"# Minions weekly digest — last {window_days}d",
@@ -111,6 +120,13 @@ def _render_digest(
         "## Portfolio snapshot",
         monitor.to_markdown(),
     ]
+    if renewals:
+        lines.append("\n## Renewals & rotations due\n")
+        for r in renewals:
+            when = f"in {r.days_until}d" if r.days_until >= 0 else f"**{-r.days_until}d overdue**"
+            label = "🔑 rotate" if r.kind == "secret_rotation" else "📄 renew"
+            link = f" ([link]({r.url}))" if r.url else ""
+            lines.append(f"- {label} **{r.name}** ({r.project}) — {r.due} · {when}{link}")
     if pending:
         lines.append("\n## Awaiting your review\n")
         for d in in_window:

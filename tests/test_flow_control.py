@@ -37,11 +37,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _run(
-    decision_id: str, *, pr_number: int | None, pr_state: str | None, project: str = "p"
+    decision_id: str,
+    *,
+    pr_number: int | None,
+    pr_state: str | None,
+    project: str = "p",
+    tenant_id: str | None = None,
 ) -> EngineerRunRecord:
     return EngineerRunRecord(
         decision_id=decision_id,
         project=project,
+        tenant_id=tenant_id,
         completed_at=datetime.now(UTC),
         pr_url=f"https://x/{project}/{pr_number}" if pr_number else None,
         pr_number=pr_number,
@@ -76,6 +82,24 @@ def test_distinct_open_pr_count_filters_by_project(tmp_path: Path) -> None:
     runs.update(_run("a", pr_number=1, pr_state="open", project="p1"))
     runs.update(_run("b", pr_number=2, pr_state="open", project="p2"))
     assert distinct_open_pr_count(project="p1", engineer_runs_store=runs) == 1
+
+
+def test_distinct_open_pr_count_does_not_cross_tenants_with_same_project_name(
+    tmp_path: Path,
+) -> None:
+    """Two different tenants independently naming their project "demo"
+    shouldn't share (or throttle each other on) the same open-PR cap."""
+    runs = EngineerRunStore(tmp_path / "runs.json")
+    runs.update(_run("a", pr_number=1, pr_state="open", project="demo", tenant_id="tenant-a"))
+    runs.update(_run("b", pr_number=2, pr_state="open", project="demo", tenant_id="tenant-b"))
+    assert (
+        distinct_open_pr_count(project="demo", engineer_runs_store=runs, tenant_id="tenant-a") == 1
+    )
+    assert (
+        distinct_open_pr_count(project="demo", engineer_runs_store=runs, tenant_id="tenant-b") == 1
+    )
+    # Founder (tenant_id=None) sees neither -- they belong to tenant-a/tenant-b.
+    assert distinct_open_pr_count(project="demo", engineer_runs_store=runs) == 0
 
 
 # --------------------------- has_open_fix_decision_for_pr -------------------

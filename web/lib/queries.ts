@@ -11,15 +11,18 @@
  */
 
 import { sql } from "./db";
+import { getTenantId } from "./tenant";
 import {
   type ActivityEvent,
   type AgileArtifact,
   type AgilePanel,
+  type AgentProfile,
   type AgentState,
   type CostSummary,
   type HeadlineCounters,
   type HeroEvent,
   type Question,
+  type SiteHealth,
   type WorkItem,
   type WorkItemStage,
 } from "./schemas";
@@ -35,6 +38,48 @@ import {
 
 // ---------- Agents ----------
 
+/** Persistent profile for one agent — stable identity + rolling track record. */
+export async function getAgentProfile(agentId: string): Promise<AgentProfile | null> {
+  const s = sql();
+  const tid = await getTenantId();
+  const rows = (await s`
+    SELECT agent_id, role, display_name, persona, joined_sprint,
+           specialties, stats, updated_at
+    FROM agent_profiles
+    WHERE tenant_id = ${tid}
+      AND agent_id = ${agentId}
+    LIMIT 1
+  `) as Array<{
+    agent_id: string;
+    role: string;
+    display_name: string | null;
+    persona: string;
+    joined_sprint: number | null;
+    specialties: unknown;
+    stats: Record<string, unknown> | null;
+    updated_at: Date | string;
+  }>;
+  if (rows.length === 0) return null;
+  const r = rows[0];
+  const stats = (r.stats ?? {}) as Record<string, unknown>;
+  return {
+    agent_id: r.agent_id,
+    role: r.role,
+    display_name: r.display_name,
+    persona: r.persona,
+    joined_sprint: r.joined_sprint,
+    specialties: Array.isArray(r.specialties) ? r.specialties.map(String) : [],
+    stats: {
+      prs_opened: Number(stats.prs_opened ?? 0),
+      prs_merged: Number(stats.prs_merged ?? 0),
+      reviews_received: Number(stats.reviews_received ?? 0),
+      blockers_hit: Number(stats.blockers_hit ?? 0),
+      last_active_at: stats.last_active_at ? String(stats.last_active_at) : null,
+    },
+    updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at),
+  };
+}
+
 /**
  * Derive live agent state from activity_log + cost_log.
  *
@@ -45,6 +90,7 @@ import {
  */
 export async function listActiveAgents(): Promise<AgentState[]> {
   const s = sql();
+  const tid = await getTenantId();
   // The Python side writes role per-LLM-call into cost_log (most authoritative
   // for "who exists"), and per-event into activity_log.role when it has it. For
   // the many crew events where activity_log.role is null, derive role from
@@ -55,6 +101,7 @@ export async function listActiveAgents(): Promise<AgentState[]> {
       SELECT project, role, ts, event, decision_id, error
       FROM activity_log
       WHERE ts > NOW() - INTERVAL '30 days' AND role IS NOT NULL
+        AND tenant_id = ${tid}
       UNION ALL
       SELECT
         al.project,
@@ -69,10 +116,12 @@ export async function listActiveAgents(): Promise<AgentState[]> {
       ) AS agent_role
       WHERE al.ts > NOW() - INTERVAL '30 days'
         AND al.payload ? 'agents'
+        AND al.tenant_id = ${tid}
       UNION ALL
       SELECT project, role, ts, NULL::text AS event, decision_id, NULL::text AS error
       FROM cost_log
       WHERE ts > NOW() - INTERVAL '30 days' AND role IS NOT NULL
+        AND tenant_id = ${tid}
     ),
     recent AS (
       SELECT
@@ -88,7 +137,7 @@ export async function listActiveAgents(): Promise<AgentState[]> {
     cost_today AS (
       SELECT project, role, SUM(cost_usd)::float8 AS cost_today_usd
       FROM cost_log
-      WHERE ts >= DATE_TRUNC('day', NOW())
+      WHERE ts >= DATE_TRUNC('day', NOW()) AND tenant_id = ${tid}
       GROUP BY project, role
     ),
     -- Latest decision per (project, proposer_role) gives us a stable display
@@ -107,11 +156,13 @@ export async function listActiveAgents(): Promise<AgentState[]> {
         FROM decisions
         WHERE COALESCE(payload->>'proposer_display_name', '') <> ''
           AND payload->>'proposer_display_name' NOT LIKE '%@%'
+          AND tenant_id = ${tid}
         UNION ALL
         SELECT project, owner_role AS role, owner_display_name AS display_name, created_at
         FROM tasks
         WHERE COALESCE(owner_display_name, '') <> ''
           AND owner_display_name NOT LIKE '%@%'
+          AND tenant_id = ${tid}
       ) name_sources
       ORDER BY project, role, created_at DESC
     )
@@ -134,7 +185,25 @@ export async function listActiveAgents(): Promise<AgentState[]> {
       live.project AS live_project,
       live.decision_id AS live_decision_id,
       live.decision_summary AS live_decision_summary,
-      live.started_at AS live_started_at
+      live.started_at AS live_started_at,
+      -- Live presence (running > blocked > reviewing > assigned > available).
+      -- Precedence mirrors src/minions/presence.py's compute_presence() on
+      -- the Python side — keep both in sync.
+      CASE
+        WHEN live.run_id IS NOT NULL THEN 'running'
+        WHEN blocked.target_role IS NOT NULL THEN 'blocked'
+        WHEN reviewing.decision_id IS NOT NULL THEN 'reviewing'
+        WHEN assigned.reason IS NOT NULL THEN 'assigned'
+        ELSE 'available'
+      END AS status,
+      CASE
+        WHEN live.run_id IS NOT NULL THEN live.crew
+        WHEN blocked.target_role IS NOT NULL THEN 'waiting on ' || blocked.target_role
+        WHEN reviewing.decision_id IS NOT NULL THEN
+          COALESCE('PR #' || reviewing.pr_number, reviewing.pr_url)
+        WHEN assigned.reason IS NOT NULL THEN NULLIF(assigned.reason, '')
+        ELSE NULL
+      END AS detail
     FROM recent r
     LEFT JOIN cost_today c USING (project, role)
     LEFT JOIN display_names dn USING (project, role)
@@ -144,6 +213,7 @@ export async function listActiveAgents(): Promise<AgentState[]> {
       SELECT payload->>'summary' AS summary
       FROM decisions d
       WHERE d.id::text = r.last_decision_id
+        AND d.tenant_id = ${tid}
       LIMIT 1
     ) ld ON TRUE
     -- Most recent crew_started for this agent (last 10 min, no finish/fail).
@@ -158,9 +228,10 @@ export async function listActiveAgents(): Promise<AgentState[]> {
         s.project,
         s.ts AS started_at,
         s.decision_id,
-        (SELECT payload->>'summary' FROM decisions WHERE id::text = s.decision_id LIMIT 1) AS decision_summary
+        (SELECT payload->>'summary' FROM decisions WHERE id::text = s.decision_id AND tenant_id = ${tid} LIMIT 1) AS decision_summary
       FROM activity_log s
       WHERE s.event = 'crew_started'
+        AND s.tenant_id = ${tid}
         AND s.ts > NOW() - INTERVAL '10 minutes'
         AND (r.project IS NULL OR s.project = r.project)
         AND (
@@ -175,10 +246,44 @@ export async function listActiveAgents(): Promise<AgentState[]> {
           SELECT 1 FROM activity_log f
           WHERE f.run_id = s.run_id
             AND f.event IN ('crew_finished', 'crew_failed')
+            AND f.tenant_id = ${tid}
         )
       ORDER BY s.ts DESC
       LIMIT 1
     ) live ON TRUE
+    -- Open question this agent asked ("blocked" precedence tier).
+    LEFT JOIN LATERAL (
+      SELECT q.payload->>'target_role' AS target_role
+      FROM questions q
+      WHERE q.status = 'open'
+        AND q.tenant_id = ${tid}
+        AND q.payload->>'asker_agent_id' = (r.role || '@' || COALESCE(r.project, 'shared'))
+      ORDER BY q.created_at DESC
+      LIMIT 1
+    ) blocked ON TRUE
+    -- Engineer-run PR this agent owns, actively in review ("reviewing" tier).
+    -- awaiting_operator_merge_approval and later states are deliberately
+    -- excluded — that reads as "blocked on operator", not "in review".
+    LEFT JOIN LATERAL (
+      SELECT er.decision_id, (er.payload->>'pr_number')::int AS pr_number, er.pr_url
+      FROM engineer_runs er
+      WHERE er.tenant_id = ${tid}
+        AND er.payload->>'owner_agent_id' = (r.role || '@' || COALESCE(r.project, 'shared'))
+        AND er.payload->>'review_status' IN
+          ('assigned', 'reviewing', 'changes_requested', 'creator_responded')
+      ORDER BY er.completed_at DESC
+      LIMIT 1
+    ) reviewing ON TRUE
+    -- Active standup allocation ("assigned" tier).
+    LEFT JOIN LATERAL (
+      SELECT aa.reason
+      FROM agent_assignments aa
+      WHERE aa.tenant_id = ${tid}
+        AND aa.active = TRUE
+        AND aa.agent_id = (r.role || '@' || COALESCE(r.project, 'shared'))
+      ORDER BY aa.started_at DESC
+      LIMIT 1
+    ) assigned ON TRUE
     ORDER BY r.project NULLS FIRST, r.role
   `) as Array<{
     project: string | null;
@@ -197,6 +302,8 @@ export async function listActiveAgents(): Promise<AgentState[]> {
     live_decision_id: string | null;
     live_decision_summary: string | null;
     live_started_at: Date | null;
+    status: AgentState["status"];
+    detail: string | null;
   }>;
 
   const recentEventRows = (await s`
@@ -204,6 +311,7 @@ export async function listActiveAgents(): Promise<AgentState[]> {
       SELECT project, role, ts, event, decision_id, payload
       FROM activity_log
       WHERE ts > NOW() - INTERVAL '30 days' AND role IS NOT NULL
+        AND tenant_id = ${tid}
       UNION ALL
       SELECT
         al.project,
@@ -218,6 +326,7 @@ export async function listActiveAgents(): Promise<AgentState[]> {
       ) AS agent_role
       WHERE al.ts > NOW() - INTERVAL '30 days'
         AND al.payload ? 'agents'
+        AND al.tenant_id = ${tid}
     ),
     ranked AS (
       SELECT
@@ -233,7 +342,7 @@ export async function listActiveAgents(): Promise<AgentState[]> {
     )
     SELECT
       ranked.project, ranked.role, ranked.ts, ranked.event, ranked.decision_id, ranked.payload,
-      (SELECT payload->>'summary' FROM decisions WHERE id::text = ranked.decision_id LIMIT 1)
+      (SELECT payload->>'summary' FROM decisions WHERE id::text = ranked.decision_id AND tenant_id = ${tid} LIMIT 1)
         AS decision_summary
     FROM ranked
     WHERE rn <= 5
@@ -276,11 +385,11 @@ export async function listActiveAgents(): Promise<AgentState[]> {
   // SHARED_*.
   const projectRows = (await s`
     SELECT DISTINCT project FROM (
-      SELECT project FROM decisions
+      SELECT project FROM decisions WHERE tenant_id = ${tid}
       UNION ALL
-      SELECT project FROM activity_log
+      SELECT project FROM activity_log WHERE tenant_id = ${tid}
       UNION ALL
-      SELECT project FROM cost_log
+      SELECT project FROM cost_log WHERE tenant_id = ${tid}
     ) all_projects
     WHERE project IS NOT NULL
       AND project NOT IN ('p', '')
@@ -344,6 +453,8 @@ export async function listActiveAgents(): Promise<AgentState[]> {
       cost_today_usd: r?.cost_today_usd ?? 0,
       recent_events: recentByKey.get(key) ?? [],
       live_run: liveRunFromRow(r),
+      status: r?.status ?? "available",
+      detail: r?.detail ?? null,
     };
   });
 
@@ -372,6 +483,8 @@ export async function listActiveAgents(): Promise<AgentState[]> {
       cost_today_usd: r.cost_today_usd,
       recent_events: recentByKey.get(key) ?? [],
       live_run: liveRunFromRow(r),
+      status: r.status,
+      detail: r.detail,
     });
   }
 
@@ -454,6 +567,7 @@ function prettyAgentRole(role: string): string {
 
 export async function listOpenWorkItems(): Promise<WorkItem[]> {
   const s = sql();
+  const tid = await getTenantId();
   // The Neon serverless template-tag only handles bound values; raw SQL
   // fragments are inlined directly in the query string. The stage CASE
   // stays inline.
@@ -480,8 +594,9 @@ export async function listOpenWorkItems(): Promise<WorkItem[]> {
       er.payload->>'ci_conclusion' AS ci_conclusion,
       GREATEST(d.created_at, d.resolved_at, er.completed_at) AS stage_since
     FROM decisions d
-    LEFT JOIN engineer_runs er ON er.decision_id = d.id::text
-    WHERE d.status IN ('pending', 'approved', 'executed')
+    LEFT JOIN engineer_runs er ON er.decision_id = d.id::text AND er.tenant_id = ${tid}
+    WHERE d.tenant_id = ${tid}
+      AND d.status IN ('pending', 'approved', 'executed')
       AND COALESCE(er.pr_state, 'open') IN ('open', 'closed')
       AND COALESCE(d.payload->>'summary', '') NOT LIKE '%[DRY RUN]%'
     ORDER BY GREATEST(d.created_at, d.resolved_at, er.completed_at) DESC NULLS LAST
@@ -535,6 +650,7 @@ export async function listRecentEvents(opts: {
   windowMinutes?: number;
 }): Promise<ActivityEvent[]> {
   const s = sql();
+  const tid = await getTenantId();
   const limit = Math.min(opts.limit ?? 100, 500);
   const sinceId = opts.sinceId ?? 0;
   const windowMinutes = Math.min(Math.max(opts.windowMinutes ?? 60, 1), 24 * 60);
@@ -554,8 +670,9 @@ export async function listRecentEvents(opts: {
       al.error,
       al.payload
     FROM activity_log al
-    LEFT JOIN decisions d ON d.id::text = al.decision_id
-    WHERE al.id > ${sinceId}
+    LEFT JOIN decisions d ON d.id::text = al.decision_id AND d.tenant_id = ${tid}
+    WHERE al.tenant_id = ${tid}
+      AND al.id > ${sinceId}
       AND al.ts > NOW() - (${windowMinutes}::text || ' minutes')::interval
       AND (${opts.project ?? null}::text IS NULL OR al.project = ${opts.project ?? null})
       AND (${opts.role ?? null}::text IS NULL OR al.role = ${opts.role ?? null})
@@ -597,12 +714,13 @@ const WEEKLY_CAP_USD = Number(process.env.MINIONS_WEEKLY_CAP_USD ?? "50");
 
 export async function costSummary(): Promise<CostSummary> {
   const s = sql();
+  const tid = await getTenantId();
   const rows = (await s`
     SELECT
       COALESCE(SUM(CASE WHEN ts >= DATE_TRUNC('day', NOW()) THEN cost_usd ELSE 0 END), 0)::float8 AS today_usd,
       COALESCE(SUM(CASE WHEN ts >= DATE_TRUNC('week', NOW()) THEN cost_usd ELSE 0 END), 0)::float8 AS week_to_date_usd
     FROM cost_log
-    WHERE ts >= DATE_TRUNC('week', NOW())
+    WHERE ts >= DATE_TRUNC('week', NOW()) AND tenant_id = ${tid}
   `) as Array<{ today_usd: number; week_to_date_usd: number }>;
 
   const row = rows[0] ?? { today_usd: 0, week_to_date_usd: 0 };
@@ -620,6 +738,7 @@ export async function costSummary(): Promise<CostSummary> {
 
 export async function listOpenQuestions(): Promise<Question[]> {
   const s = sql();
+  const tid = await getTenantId();
   const rows = (await s`
     SELECT
       id,
@@ -635,7 +754,7 @@ export async function listOpenQuestions(): Promise<Question[]> {
       created_at,
       (payload->>'escalated_at')::timestamptz AS escalated_at
     FROM questions
-    WHERE status IN ('open', 'escalated')
+    WHERE status IN ('open', 'escalated') AND tenant_id = ${tid}
     ORDER BY created_at DESC
     LIMIT 50
   `) as Array<{
@@ -685,10 +804,12 @@ const MEANINGFUL_EVENTS = [
 /** Most attention-worthy recent event for the page hero strip. */
 export async function getHeroEvent(): Promise<HeroEvent> {
   const s = sql();
+  const tid = await getTenantId();
   let rows = (await s`
     SELECT ts, event, project, role, decision_id, crew, run_id, error, payload
     FROM activity_log
-    WHERE event = ANY(${MEANINGFUL_EVENTS})
+    WHERE tenant_id = ${tid}
+      AND event = ANY(${MEANINGFUL_EVENTS})
     ORDER BY ts DESC
     LIMIT 1
   `) as Array<{
@@ -708,7 +829,8 @@ export async function getHeroEvent(): Promise<HeroEvent> {
     rows = (await s`
       SELECT ts, event, project, role, decision_id, crew, run_id, error, payload
       FROM activity_log
-      WHERE event = 'crew_finished'
+      WHERE tenant_id = ${tid}
+        AND event = 'crew_finished'
       ORDER BY ts DESC
       LIMIT 1
     `) as typeof rows;
@@ -825,6 +947,7 @@ export async function listSprintBoard(
   window: SprintWindow = "this_week",
 ): Promise<SprintBoard> {
   const s = sql();
+  const tid = await getTenantId();
   const { since, until } = sprintWindowBounds(window);
 
   // Projects strip for the tab UI — projects with at least one non-dry-run
@@ -832,7 +955,8 @@ export async function listSprintBoard(
   const projectRows = (await s`
     SELECT DISTINCT project
     FROM decisions
-    WHERE COALESCE(payload->>'summary', '') NOT LIKE '%[DRY RUN]%'
+    WHERE tenant_id = ${tid}
+      AND COALESCE(payload->>'summary', '') NOT LIKE '%[DRY RUN]%'
     ORDER BY project
   `) as Array<{ project: string }>;
   const projects = projectRows.map((r) => r.project);
@@ -918,7 +1042,7 @@ export async function listSprintBoard(
       lc.run_id AS live_crew_run_id,
       GREATEST(d.created_at, d.resolved_at, er.completed_at) AS stage_since
     FROM decisions d
-    LEFT JOIN engineer_runs er ON er.decision_id = d.id::text
+    LEFT JOIN engineer_runs er ON er.decision_id = d.id::text AND er.tenant_id = ${tid}
     LEFT JOIN LATERAL (
       -- Most recent crew_started for this Decision with no matching
       -- crew_finished/crew_failed in the last 10 minutes. Mirrors the
@@ -929,18 +1053,21 @@ export async function listSprintBoard(
         COALESCE(s.payload->'agents', '[]'::jsonb) AS agents,
         s.run_id
       FROM activity_log s
-      WHERE s.decision_id = d.id::text
+      WHERE s.tenant_id = ${tid}
+        AND s.decision_id = d.id::text
         AND s.event = 'crew_started'
         AND s.ts > NOW() - INTERVAL '10 minutes'
         AND NOT EXISTS (
           SELECT 1 FROM activity_log f
-          WHERE f.run_id = s.run_id
+          WHERE f.tenant_id = ${tid}
+            AND f.run_id = s.run_id
             AND f.event IN ('crew_finished', 'crew_failed')
         )
       ORDER BY s.ts DESC
       LIMIT 1
     ) lc ON TRUE
-    WHERE COALESCE(d.payload->>'summary', '') NOT LIKE '%[DRY RUN]%'
+    WHERE d.tenant_id = ${tid}
+      AND COALESCE(d.payload->>'summary', '') NOT LIKE '%[DRY RUN]%'
       AND (${project ?? null}::text IS NULL OR d.project = ${project ?? null})
       AND (
         ${since}::timestamptz IS NULL
@@ -1111,6 +1238,7 @@ function parseStructuredPlan(raw: unknown): SprintCard["structured_plan"] {
 async function listTasksForDecisions(decisionIds: string[]): Promise<Task[]> {
   if (decisionIds.length === 0) return [];
   const s = sql();
+  const tid = await getTenantId();
   const rows = (await s`
     SELECT
       id::text,
@@ -1133,7 +1261,8 @@ async function listTasksForDecisions(decisionIds: string[]): Promise<Task[]> {
       completed_at,
       payload
     FROM tasks
-    WHERE decision_id::text = ANY(${decisionIds})
+    WHERE tenant_id = ${tid}
+      AND decision_id::text = ANY(${decisionIds})
     ORDER BY created_at ASC
   `) as Array<{
     id: string;
@@ -1165,6 +1294,7 @@ export async function listTasksForDecision(decisionId: string): Promise<Task[]> 
 
 export async function listTasksForProject(project: string, sprintNumber?: number): Promise<Task[]> {
   const s = sql();
+  const tid = await getTenantId();
   const rows = (await s`
     SELECT
       id::text,
@@ -1187,7 +1317,8 @@ export async function listTasksForProject(project: string, sprintNumber?: number
       completed_at,
       payload
     FROM tasks
-    WHERE project = ${project}
+    WHERE tenant_id = ${tid}
+      AND project = ${project}
       AND (${sprintNumber ?? null}::int IS NULL OR sprint_number = ${sprintNumber ?? null})
     ORDER BY sprint_number DESC NULLS LAST, created_at ASC
     LIMIT 200
@@ -1200,6 +1331,7 @@ export async function listAgentMemory(
   includeCold = false,
 ): Promise<AgentMemory[]> {
   const s = sql();
+  const tid = await getTenantId();
   const rows = (await s`
     SELECT
       id::text,
@@ -1214,7 +1346,8 @@ export async function listAgentMemory(
       created_at,
       tier
     FROM agent_memory
-    WHERE agent_id = ${agentId}
+    WHERE tenant_id = ${tid}
+      AND agent_id = ${agentId}
       AND (${includeCold}::boolean OR tier = 'hot')
     ORDER BY created_at DESC
     LIMIT 50
@@ -1598,17 +1731,19 @@ function mapReviewLastAction(
 
 export async function headlineCounters(): Promise<HeadlineCounters> {
   const s = sql();
+  const tid = await getTenantId();
   const rows = (await s`
     SELECT
-      (SELECT COUNT(*)::int FROM engineer_runs WHERE pr_state = 'open') AS open_prs,
-      (SELECT COUNT(*)::int FROM decisions WHERE status = 'pending'
+      (SELECT COUNT(*)::int FROM engineer_runs WHERE tenant_id = ${tid} AND pr_state = 'open') AS open_prs,
+      (SELECT COUNT(*)::int FROM decisions WHERE tenant_id = ${tid} AND status = 'pending'
         AND COALESCE(payload->>'summary', '') NOT LIKE '%[DRY RUN]%'
       ) AS pending_approvals,
       (SELECT COUNT(DISTINCT project || ':' || role)::int FROM activity_log
-        WHERE ts > NOW() - INTERVAL '5 minutes' AND role IS NOT NULL
+        WHERE tenant_id = ${tid} AND ts > NOW() - INTERVAL '5 minutes' AND role IS NOT NULL
       ) AS agents_active_5min,
       (SELECT COUNT(*)::int FROM decisions
-        WHERE status = 'approved'
+        WHERE tenant_id = ${tid}
+          AND status = 'approved'
           AND payload->>'proposer_role' = 'pr_followup'
       ) AS queued_fixes
   `) as Array<HeadlineCounters>;
@@ -1626,13 +1761,14 @@ export async function headlineCounters(): Promise<HeadlineCounters> {
 
 export async function listAgilePanel(project?: string): Promise<AgilePanel> {
   const s = sql();
+  const tid = await getTenantId();
   const projectRows = (await s`
     SELECT DISTINCT project FROM (
-      SELECT project FROM decisions
+      SELECT project FROM decisions WHERE tenant_id = ${tid}
       UNION ALL
-      SELECT project FROM activity_log
+      SELECT project FROM activity_log WHERE tenant_id = ${tid}
       UNION ALL
-      SELECT project FROM cost_log
+      SELECT project FROM cost_log WHERE tenant_id = ${tid}
     ) all_projects
     WHERE project IS NOT NULL
       AND project NOT IN ('p', '')
@@ -1650,7 +1786,8 @@ export async function listAgilePanel(project?: string): Promise<AgilePanel> {
   const artifactRows = (await s`
     SELECT payload
     FROM agile_rituals
-    WHERE (${project ?? null}::text IS NULL OR project = ${project ?? null})
+    WHERE tenant_id = ${tid}
+      AND (${project ?? null}::text IS NULL OR project = ${project ?? null})
     ORDER BY created_at DESC
     LIMIT 24
   `) as Array<{ payload: Record<string, unknown> }>;
@@ -1680,7 +1817,8 @@ export async function listAgilePanel(project?: string): Promise<AgilePanel> {
   const answerRows = (await s`
     SELECT payload
     FROM pm_answers
-    WHERE (${project ?? null}::text IS NULL OR project = ${project ?? null})
+    WHERE tenant_id = ${tid}
+      AND (${project ?? null}::text IS NULL OR project = ${project ?? null})
     ORDER BY created_at DESC
     LIMIT 12
   `) as Array<{ payload: Record<string, unknown> }>;
@@ -1737,13 +1875,15 @@ export async function listTranscriptByRun(
   runId: string,
 ): Promise<CrewTranscriptMessage[]> {
   const s = sql();
+  const tid = await getTenantId();
   const hasTable = (await s`
     SELECT to_regclass('public.crew_transcripts') IS NOT NULL AS ok
   `) as Array<{ ok: boolean }>;
   if (!hasTable[0]?.ok) return [];
   const rows = (await s`
     SELECT payload FROM crew_transcripts
-    WHERE run_id = ${runId}
+    WHERE tenant_id = ${tid}
+      AND run_id = ${runId}
     ORDER BY sequence ASC
   `) as Array<{ payload: Record<string, unknown> }>;
   return rows.map(({ payload }) => _mapTranscriptRow(payload));
@@ -1754,13 +1894,15 @@ export async function listTranscriptsForProject(
   limit = 50,
 ): Promise<CrewTranscriptMessage[]> {
   const s = sql();
+  const tid = await getTenantId();
   const hasTable = (await s`
     SELECT to_regclass('public.crew_transcripts') IS NOT NULL AS ok
   `) as Array<{ ok: boolean }>;
   if (!hasTable[0]?.ok) return [];
   const rows = (await s`
     SELECT payload FROM crew_transcripts
-    WHERE project = ${project}
+    WHERE tenant_id = ${tid}
+      AND project = ${project}
     ORDER BY created_at DESC
     LIMIT ${Math.min(Math.max(limit, 1), 200)}
   `) as Array<{ payload: Record<string, unknown> }>;
@@ -1938,6 +2080,7 @@ export async function listMeetings(opts?: {
   const windowMinutes = opts?.windowMinutes ?? MEETINGS_WINDOW_MINUTES_DEFAULT;
   const project = opts?.project ?? null;
   const s = sql();
+  const tid = await getTenantId();
   const hasTable = (await s`
     SELECT to_regclass('public.crew_transcripts') IS NOT NULL AS ok
   `) as Array<{ ok: boolean }>;
@@ -1956,7 +2099,8 @@ export async function listMeetings(opts?: {
         MAX(ct.created_at) AS last_turn_at,
         COUNT(*)::int AS turn_count
       FROM crew_transcripts ct
-      WHERE ct.created_at > NOW() - (${windowMinutes}::int || ' minutes')::interval
+      WHERE ct.tenant_id = ${tid}
+        AND ct.created_at > NOW() - (${windowMinutes}::int || ' minutes')::interval
         AND (${project}::text IS NULL OR ct.project = ${project}::text)
       GROUP BY ct.run_id
     ),
@@ -1969,7 +2113,8 @@ export async function listMeetings(opts?: {
         BOOL_OR(event = 'crew_failed') AS failed,
         MAX(decision_id) AS decision_id
       FROM activity_log
-      WHERE ts > NOW() - (${windowMinutes}::int || ' minutes')::interval
+      WHERE tenant_id = ${tid}
+        AND ts > NOW() - (${windowMinutes}::int || ' minutes')::interval
         AND run_id IS NOT NULL
       GROUP BY run_id
     )
@@ -2019,7 +2164,8 @@ export async function listMeetings(opts?: {
   const latestTurns = (await s`
     SELECT DISTINCT ON (run_id) run_id, payload
     FROM crew_transcripts
-    WHERE run_id = ANY(${runIds})
+    WHERE tenant_id = ${tid}
+      AND run_id = ANY(${runIds})
     ORDER BY run_id, sequence DESC
   `) as Array<{ run_id: string; payload: Record<string, unknown> }>;
   const latestByRun = new Map(latestTurns.map((t) => [t.run_id, _mapTurnRow(t.payload)]));
@@ -2034,7 +2180,8 @@ export async function listMeetings(opts?: {
       agent_role,
       payload
     FROM crew_transcripts
-    WHERE run_id = ANY(${runIds})
+    WHERE tenant_id = ${tid}
+      AND run_id = ANY(${runIds})
     ORDER BY run_id, agent_role, sequence DESC
   `) as Array<{ run_id: string; agent_role: string; payload: Record<string, unknown> }>;
   const rosterByRun = new Map<string, MeetingTurn[]>();
@@ -2098,6 +2245,7 @@ export async function listMeetings(opts?: {
 /** Full meeting detail — every turn in conversation order. */
 export async function getMeeting(runId: string): Promise<MeetingDetail | null> {
   const s = sql();
+  const tid = await getTenantId();
   const hasTable = (await s`
     SELECT to_regclass('public.crew_transcripts') IS NOT NULL AS ok
   `) as Array<{ ok: boolean }>;
@@ -2106,7 +2254,8 @@ export async function getMeeting(runId: string): Promise<MeetingDetail | null> {
   const turnRows = (await s`
     SELECT payload
     FROM crew_transcripts
-    WHERE run_id = ${runId}
+    WHERE tenant_id = ${tid}
+      AND run_id = ${runId}
     ORDER BY sequence ASC
   `) as Array<{ payload: Record<string, unknown> }>;
   if (turnRows.length === 0) return null;
@@ -2127,7 +2276,8 @@ export async function getMeeting(runId: string): Promise<MeetingDetail | null> {
       BOOL_OR(event = 'crew_failed') AS failed,
       MAX(decision_id) AS decision_id
     FROM activity_log
-    WHERE run_id = ${runId}
+    WHERE tenant_id = ${tid}
+      AND run_id = ${runId}
   `) as Array<{
     started_at: Date | null;
     last_event_at: Date | null;
@@ -2168,4 +2318,195 @@ export async function getMeeting(runId: string): Promise<MeetingDetail | null> {
   });
 
   return { ...summary, turns };
+}
+
+// ---------- Site Sentry ----------
+
+/**
+ * Per-project + per-check site-health summary for the /sentry console page.
+ *
+ * One row per (project, check_path) joining:
+ *   - the latest sample (for current status + last status_code/latency/error),
+ *   - last_ok_at / last_failed_at across all history,
+ *   - rolling 24h p50 / p99 latency + uptime fraction.
+ *
+ * Aggregated to a project's overall ``ok`` flag (any failing check =>
+ * project not ok) for the Sidebar tile.
+ */
+export async function listSiteHealth(): Promise<SiteHealth> {
+  const s = sql();
+  const tid = await getTenantId();
+  const rows = (await s`
+    WITH latest AS (
+      SELECT DISTINCT ON (project, check_path)
+        project, check_path, ts, ok, status_code, latency_ms, error, cert_expires_at
+      FROM site_health_samples
+      WHERE tenant_id = ${tid}
+      ORDER BY project, check_path, ts DESC
+    ),
+    last_ok AS (
+      SELECT project, check_path, MAX(ts) AS last_ok_at
+      FROM site_health_samples WHERE tenant_id = ${tid} AND ok
+      GROUP BY project, check_path
+    ),
+    last_failed AS (
+      SELECT project, check_path, MAX(ts) AS last_failed_at
+      FROM site_health_samples WHERE tenant_id = ${tid} AND NOT ok
+      GROUP BY project, check_path
+    ),
+    last_24h AS (
+      SELECT
+        project,
+        check_path,
+        percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms)::int AS p50_ms,
+        percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ms)::int AS p99_ms,
+        COUNT(*)::int AS samples_24h,
+        (SUM(CASE WHEN ok THEN 1 ELSE 0 END)::float8
+          / NULLIF(COUNT(*), 0))::float8 AS uptime_24h
+      FROM site_health_samples
+      WHERE tenant_id = ${tid} AND ts >= NOW() - INTERVAL '24 hours' AND latency_ms IS NOT NULL
+      GROUP BY project, check_path
+    )
+    SELECT
+      l.project,
+      l.check_path,
+      l.ok,
+      l.status_code,
+      l.latency_ms,
+      l.error,
+      l.cert_expires_at,
+      l.ts AS last_check_at,
+      ok_row.last_ok_at,
+      fail_row.last_failed_at,
+      COALESCE(w.p50_ms, 0)::int AS p50_ms_24h,
+      COALESCE(w.p99_ms, 0)::int AS p99_ms_24h,
+      COALESCE(w.uptime_24h, 1.0)::float8 AS uptime_24h,
+      COALESCE(w.samples_24h, 0)::int AS samples_24h
+    FROM latest l
+    LEFT JOIN last_ok ok_row USING (project, check_path)
+    LEFT JOIN last_failed fail_row USING (project, check_path)
+    LEFT JOIN last_24h w USING (project, check_path)
+    ORDER BY l.project, l.check_path
+  `) as Array<{
+    project: string;
+    check_path: string;
+    ok: boolean;
+    status_code: number | null;
+    latency_ms: number | null;
+    error: string | null;
+    cert_expires_at: Date | string | null;
+    last_check_at: Date | string;
+    last_ok_at: Date | string | null;
+    last_failed_at: Date | string | null;
+    p50_ms_24h: number;
+    p99_ms_24h: number;
+    uptime_24h: number;
+    samples_24h: number;
+  }>;
+
+  const byProject = new Map<
+    string,
+    {
+      project: string;
+      ok: boolean;
+      checks: SiteHealth["projects"][number]["checks"];
+      cert_expires_at: string | null;
+    }
+  >();
+  for (const r of rows) {
+    let bucket = byProject.get(r.project);
+    if (!bucket) {
+      bucket = { project: r.project, ok: true, checks: [], cert_expires_at: null };
+      byProject.set(r.project, bucket);
+    }
+    if (!r.ok) bucket.ok = false;
+    // Cert expiry is the same across a host's checks; keep the earliest seen.
+    if (r.cert_expires_at) {
+      const iso = _iso(r.cert_expires_at);
+      if (!bucket.cert_expires_at || iso < bucket.cert_expires_at) {
+        bucket.cert_expires_at = iso;
+      }
+    }
+    bucket.checks.push({
+      check_path: r.check_path,
+      ok: r.ok,
+      status_code: r.status_code,
+      latency_ms: r.latency_ms,
+      error: r.error,
+      last_check_at: _iso(r.last_check_at),
+      last_ok_at: r.last_ok_at ? _iso(r.last_ok_at) : null,
+      last_failed_at: r.last_failed_at ? _iso(r.last_failed_at) : null,
+      p50_ms_24h: r.p50_ms_24h,
+      p99_ms_24h: r.p99_ms_24h,
+      uptime_24h: r.uptime_24h,
+      samples_24h: r.samples_24h,
+    });
+  }
+
+  const projects = Array.from(byProject.values()).map((b) => {
+    const certDays =
+      b.cert_expires_at !== null ? _daysUntil(b.cert_expires_at) : null;
+    return {
+      project: b.project,
+      ok: b.ok,
+      checks: b.checks,
+      cert_expires_at: b.cert_expires_at,
+      cert_days_until: certDays,
+      cert_severity: certDays !== null ? _renewalSeverity(certDays) : null,
+    };
+  });
+
+  const renewals = await listRenewals(tid);
+  return { projects, renewals };
+}
+
+// Renewal severity thresholds mirror the Python collector (site_sentry.py).
+const _RENEWAL_RED_DAYS = 7;
+const _RENEWAL_AMBER_DAYS = 30;
+
+function _renewalSeverity(daysUntil: number): "ok" | "amber" | "red" | "overdue" {
+  if (daysUntil < 0) return "overdue";
+  if (daysUntil <= _RENEWAL_RED_DAYS) return "red";
+  if (daysUntil <= _RENEWAL_AMBER_DAYS) return "amber";
+  return "ok";
+}
+
+function _daysUntil(iso: string): number {
+  const MS_PER_DAY = 86_400_000;
+  return Math.floor((new Date(iso).getTime() - Date.now()) / MS_PER_DAY);
+}
+
+async function listRenewals(tid: string): Promise<SiteHealth["renewals"]> {
+  const s = sql();
+  const rows = (await s`
+    SELECT project, kind, name, due, url, note
+    FROM renewal_reminders
+    WHERE tenant_id = ${tid}
+    ORDER BY due ASC
+  `) as Array<{
+    project: string;
+    kind: "license" | "secret_rotation";
+    name: string;
+    due: Date | string;
+    url: string | null;
+    note: string | null;
+  }>;
+  return rows.map((r) => {
+    const dueIso = _iso(r.due);
+    const days = _daysUntil(dueIso);
+    return {
+      project: r.project,
+      kind: r.kind,
+      name: r.name,
+      due: dueIso.slice(0, 10), // YYYY-MM-DD
+      url: r.url,
+      note: r.note,
+      days_until: days,
+      severity: _renewalSeverity(days),
+    };
+  });
+}
+
+function _iso(v: Date | string): string {
+  return v instanceof Date ? v.toISOString() : String(v);
 }

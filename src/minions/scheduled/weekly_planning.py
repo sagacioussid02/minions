@@ -92,6 +92,7 @@ def run_weekly_planning(
     budget_notifications_path: Path | None = None,
     portfolio: PortfolioConfig | None = None,
     projects: list[str] | None = None,
+    rotate: bool = False,
     agile_store: AgileStoreLike | None = None,
     activity_log_path: Path | None = None,
     sprints_path: Path | None = None,
@@ -115,6 +116,16 @@ def run_weekly_planning(
         manifests = {
             name: manifest for name, manifest in manifests.items() if name.lower() in wanted
         }
+    elif rotate:
+        # Budget mode: plan exactly one project per run, cycling through the
+        # portfolio by ISO week number so each project is planned once every
+        # N weeks. Pairs with a once-a-week cron to cap both Actions minutes
+        # and LLM spend.
+        ordered = sorted(manifests)
+        if ordered:
+            iso_week = started_dt.isocalendar().week
+            pick = ordered[iso_week % len(ordered)]
+            manifests = {pick: manifests[pick]}
     else:
         # Stagger-by-day filter: when a manifest sets ``planning_day``, only
         # run it on the matching UTC weekday. Explicit --project overrides
@@ -186,6 +197,7 @@ def run_weekly_planning(
                     profile=profile,
                     sprint_number=sprint_number,
                 )
+                decision.tenant_id = manifest.tenant_id
             except PlanningRefusedStaleError as refused:
                 # Plant the queued-discovery decision so the next cron-discovery
                 # sweep picks it up; record an outcome and move on.
@@ -254,9 +266,10 @@ def run_weekly_planning(
                         event="sprint_planned",
                         run_id=f"sprint-planning-{name}-{uuid.uuid4().hex}",
                         crew="weekly_planning",
-                        project=name,
+                        project=manifest.name,
                         decision_id=str(ritual.id),
                         agents=("product_owner", "principal_engineer", "manager"),
+                        tenant_id=manifest.tenant_id,
                     ),
                     path=activity_log_path,
                 )

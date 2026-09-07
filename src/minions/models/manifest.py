@@ -2,11 +2,31 @@
 
 from __future__ import annotations
 
+import logging
+from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+
+logger = logging.getLogger(__name__)
+
+
+class RenewalItem(BaseModel):
+    """A dated obligation Site Sentry watches — a license/subscription
+    renewal or a scheduled credential rotation.
+
+    Only the *date* is tracked, never the secret itself: this stays inside
+    the "agents never read secrets" guarantee. Site Sentry flags each item
+    as its ``due`` date approaches (amber ≤30d, red ≤7d / overdue) on the
+    Sentry page and rolls upcoming ones into the Friday digest.
+    """
+
+    name: str  # human label, e.g. "Vercel Pro" or "ANTHROPIC_API_KEY"
+    due: date  # YYYY-MM-DD the license renews / the secret must be rotated by
+    url: str | None = None  # optional link to the renewal/rotation console
+    note: str | None = None  # optional free text ("annual", "PCI requirement")
 
 
 class ManifestSource(BaseModel):
@@ -208,12 +228,28 @@ class Manifest(BaseModel):
 
     owner: str
 
+    # Set only for projects loaded from tenant_projects (Postgres), never for
+    # projects/*.yaml on disk. None means "the founder's own portfolio" and
+    # preserves every existing single-tenant code path unchanged.
+    tenant_id: str | None = None
+
+    # Lifetime (never resetting) spend cap for the free sandbox tier — set
+    # only for sandbox-tenant projects. None means no lifetime cap (the
+    # existing monthly_budget_usd cap still applies). See budget.evaluate().
+    sandbox_budget_usd: float | None = None
+
     risk_thresholds: dict[str, Any] | None = None
 
     dossier: DossierConfig = Field(default_factory=DossierConfig)
     flow_control: FlowControl = Field(default_factory=FlowControl)
     preflight: PreflightConfig = Field(default_factory=lambda: _default_preflight())
     deploy: DeployConfig = Field(default_factory=DeployConfig)
+
+    # Site Sentry "renewal radar": dated obligations to watch. Dates only —
+    # never the secret values (see RenewalItem). ``renewals`` = licenses /
+    # subscriptions; ``secret_rotations`` = credentials due for rotation.
+    renewals: list[RenewalItem] = Field(default_factory=list)
+    secret_rotations: list[RenewalItem] = Field(default_factory=list)
 
     @field_validator("agents", mode="before")
     @classmethod
@@ -248,10 +284,14 @@ def load_manifest(path: Path) -> Manifest:
 
 
 def load_active_manifests(projects_dir: Path) -> dict[str, Manifest]:
-    """Load every active manifest in projects_dir.
+    """Load every active manifest: the founder's projects/*.yaml plus every
+    tenant's manifest from Postgres (tenant_projects).
 
-    Skips entries whose parent directory begins with `_` (e.g., `_deferred/`).
-    Sorted by file name for deterministic ordering.
+    Skips filesystem entries whose parent directory begins with `_` (e.g.,
+    `_deferred/`). Sorted by file name for deterministic ordering. Tenant
+    manifests are merged in on a best-effort basis — a DB error (e.g. no
+    MINIONS_DATABASE_URL in local/CI dev) never blocks the founder's own
+    portfolio from loading.
     """
     manifests: dict[str, Manifest] = {}
     for yaml_path in sorted(projects_dir.glob("*.yaml")):
@@ -259,4 +299,13 @@ def load_active_manifests(projects_dir: Path) -> dict[str, Manifest]:
             continue
         m = load_manifest(yaml_path)
         manifests[m.name] = m
+
+    # Local import: avoids a cycle (portfolio_per_tenant imports Manifest).
+    from minions.config.portfolio_per_tenant import load_tenant_manifests
+
+    try:
+        manifests.update(load_tenant_manifests())
+    except Exception as e:  # noqa: BLE001 — tenant sweep never blocks the founder
+        logger.debug("load_tenant_manifests failed, continuing without it: %s", e)
+
     return manifests

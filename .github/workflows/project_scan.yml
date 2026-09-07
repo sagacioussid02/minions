@@ -1,17 +1,15 @@
 name: Project planning scan
 
-# Weekday project-specific planning scans. Each run invokes the planning crew
+# On-demand project-specific planning scan. Each run invokes the planning crew
 # for one project: Product Owner scouts value, Principal Engineer checks
 # feasibility, and Manager packages the Decision.
+#
+# Budget mode: the scheduled weekday scans were removed — they duplicated the
+# weekly planner and cost 5 runs/week. Sprint planning now runs once a week in
+# weekly.yml (`--rotate`, one project per week). Use this workflow's manual
+# trigger to scan a specific project on demand.
 
 on:
-  schedule:
-    # 15:00 UTC is morning in US Mountain time for most of the year.
-    - cron: '0 15 * * 1' # Monday — Demo
-    - cron: '0 15 * * 2' # Tuesday — demo_five
-    - cron: '0 15 * * 3' # Wednesday — demo_two
-    - cron: '0 15 * * 4' # Thursday — demo_four
-    - cron: '0 15 * * 5' # Friday — demo_three
   workflow_dispatch:
     inputs:
       project:
@@ -35,41 +33,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  monday-demo:
-    if: github.event_name == 'schedule' && github.event.schedule == '0 15 * * 1'
-    uses: ./.github/workflows/_cron-shared.yml
-    with:
-      command: cron weekly --no-dry-run --project Demo
-    secrets: inherit
-
-  tuesday-demo_five:
-    if: github.event_name == 'schedule' && github.event.schedule == '0 15 * * 2'
-    uses: ./.github/workflows/_cron-shared.yml
-    with:
-      command: cron weekly --no-dry-run --project demo_five
-    secrets: inherit
-
-  wednesday-demo_two:
-    if: github.event_name == 'schedule' && github.event.schedule == '0 15 * * 3'
-    uses: ./.github/workflows/_cron-shared.yml
-    with:
-      command: cron weekly --no-dry-run --project demo_two
-    secrets: inherit
-
-  thursday-demo_four:
-    if: github.event_name == 'schedule' && github.event.schedule == '0 15 * * 4'
-    uses: ./.github/workflows/_cron-shared.yml
-    with:
-      command: cron weekly --no-dry-run --project demo_four
-    secrets: inherit
-
-  friday-demo_three:
-    if: github.event_name == 'schedule' && github.event.schedule == '0 15 * * 5'
-    uses: ./.github/workflows/_cron-shared.yml
-    with:
-      command: cron weekly --no-dry-run --project demo_three
-    secrets: inherit
-
   manual:
     if: github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/_cron-shared.yml

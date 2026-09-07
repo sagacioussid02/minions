@@ -6,10 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check:tenant-scoping": "MINIONS_ENFORCE_TENANT_SCOPING=1 node scripts/check-tenant-scoping.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",
+    "@clerk/nextjs": "^7.5.2",
     "@dicebear/collection": "^9.4.2",
     "@dicebear/core": "^9.4.2",
     "@neondatabase/serverless": "^1.1.0",
@@ -17,7 +19,7 @@
     "@react-three/fiber": "^9.6.1",
     "@tanstack/react-query": "^5.100.9",
     "date-fns": "^4.1.0",
-    "next": "16.2.6",
+    "next": "15.5.20",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "three": "^0.184.0",
@@ -30,7 +32,7 @@
     "@types/react-dom": "^19",
     "@types/three": "^0.184.1",
     "eslint": "^9",
-    "eslint-config-next": "16.2.6",
+    "eslint-config-next": "15.5.20",
     "tailwindcss": "^4",
     "typescript": "^5"
   },

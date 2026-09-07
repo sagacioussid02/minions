@@ -106,6 +106,7 @@ def run_execute_approved(
     task_store: TaskStoreLike | None = None,
     memory_store: AgentMemoryStoreLike | None = None,
     dossier_store: DossierStoreLike | None = None,
+    projects: list[str] | None = None,
 ) -> ExecuteApprovedReport:
     """Iterate approved Decisions and run the engineer crew on each.
 
@@ -122,6 +123,11 @@ def run_execute_approved(
     the 6-hour cron cadence). Off by default; enable via ``--only-expedited``
     on ``cron-execute-approved`` or from an out-of-band ``workflow_dispatch``.
 
+    ``projects`` filters to specific ``load_active_manifests`` dict keys
+    (e.g. tenant-scoped ``"<tenant_id>:<project>"`` compound keys) — used by
+    the tenant-scoped dispatch so a visitor's approval isn't stuck waiting
+    for the founder's own shared cron.
+
     ``runner`` defaults to ``run_engineer_crew`` and is injectable for tests.
     """
     from datetime import UTC, datetime
@@ -130,9 +136,27 @@ def run_execute_approved(
     started = datetime.now(tz=UTC).isoformat()
 
     manifests = load_active_manifests(projects_dir)
+    if projects:
+        wanted = {p.lower() for p in projects}
+        manifests = {
+            name: manifest for name, manifest in manifests.items() if name.lower() in wanted
+        }
+    # Decision.project stores manifest.name (the plain display name), not
+    # this dict's key — which is a compound "tenant_id:project" for tenant
+    # manifests (see load_tenant_manifests). Resolve by (tenant_id, name),
+    # not name alone — two different tenants can independently pick the same
+    # project display name (e.g. both call it "demo"), and a name-only
+    # lookup would let one tenant's approved decision execute against the
+    # other tenant's manifest/repo.
+    manifests_by_key = {(m.tenant_id, m.name): m for m in manifests.values()}
     approved = store.list_by_status(DecisionStatus.APPROVED)
     if only_expedited:
         approved = [d for d in approved if d.expedited]
+    if projects:
+        # Scoped dispatch (e.g. tenant-triggered) — only touch decisions
+        # whose project resolved into the (already-filtered) manifests above,
+        # rather than iterating every other tenant's pending decisions too.
+        approved = [d for d in approved if (d.tenant_id, d.project) in manifests_by_key]
     approved.sort(key=_approved_sort_key)
 
     outcomes: list[ExecuteOutcome] = []
@@ -185,7 +209,7 @@ def run_execute_approved(
             )
             continue
 
-        manifest = manifests.get(decision.project)
+        manifest = manifests_by_key.get((decision.tenant_id, decision.project))
         if manifest is None:
             outcomes.append(
                 ExecuteOutcome(
@@ -208,8 +232,9 @@ def run_execute_approved(
             open_prs = distinct_open_pr_count(
                 project=decision.project,
                 engineer_runs_store=engineer_runs_store,
+                tenant_id=decision.tenant_id,
             )
-            cap = manifests.get(decision.project)
+            cap = manifests_by_key.get((decision.tenant_id, decision.project))
             cap_value = cap.flow_control.max_open_prs if cap is not None else 5
             if open_prs >= cap_value:
                 outcomes.append(
@@ -347,7 +372,9 @@ def run_execute_approved(
         # picking the Decision up later.
         if not dry_run:
             with suppress(Exception):
-                engineer_runs_store.save(result, project=manifest.name)
+                engineer_runs_store.save(
+                    result, project=manifest.name, tenant_id=manifest.tenant_id
+                )
 
             if task is not None:
                 with suppress(Exception):
