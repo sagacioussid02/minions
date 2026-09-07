@@ -2,6 +2,12 @@
 
 Thanks for your interest. This project lives or dies by its safety guarantees, so contributions in the safety-critical layers go through extra review — but everything else is open game and we'd love help.
 
+## This repo's relationship to the core engine
+
+This repo hosts two things: the shared `src/minions/` engine (planning/approval/engineer crews, the safety layer, the CLI) and this repo's own product layer built on top of it (multi-tenant SaaS hosting — Clerk auth, GitHub App installs, per-tenant billing/onboarding). The shared engine periodically pulls updates from a private sister repo where the core is developed day-to-day; this repo's product layer is developed independently, here.
+
+What this means for contributors: PRs touching the product layer (`web/` app routes under tenant/onboarding/billing concerns, `src/minions/config/portfolio_per_tenant.py`, `src/minions/github/app_auth.py`, `src/minions/notify/clerk_users.py`) are straightforward — normal review, no special coordination needed. PRs making **large or speculative changes to shared engine files** (most of `src/minions/crews/`, `src/minions/scheduled/`, `src/minions/models/`) carry some risk of colliding with an upcoming sync from the private core — not because they're unwelcome, but because a big rewrite there is more to reconcile later. For anything larger than a small, scoped fix in the shared engine, open an issue or comment on an existing one first so we can coordinate timing. Small fixes and `good first issue`/`help wanted` labeled work don't need this — just send the PR.
+
 ## Quick setup
 
 ```bash
