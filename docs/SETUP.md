@@ -9,7 +9,7 @@ The setup is **modular**. Every external service (Anthropic, Postgres, Gmail, La
 ```bash
 git clone https://github.com/sagacioussid02/minions
 cd minions
-uv pip install -e ".[dev]"
+uv pip install -e ".[dev]"      # contributors; users can use plain `-e .`
 pytest                              # all tests should pass
 minions check                       # validates the demo portfolio
 minions org                         # prints org topology
@@ -28,21 +28,15 @@ cp .env.example .env
 minions anthropic                   # verifies the key works
 ```
 
-Add your first project. Create `projects/myapp.yaml` (use `projects/demo.yaml` as a template) and edit:
+Add your first project:
 
-```yaml
-name: myapp
-source:
-  kind: github
-  path: /absolute/path/to/your/repo
-  repo: your-org/myapp
-  default_branch: main
-weekly_budget_usd: 1.00
-monthly_budget_usd: 4.00
-delivery_targets:
-  scope: portfolio
-  share_weight: 0.5
+```bash
+minions projects add your-org/myapp --owner you@yourdomain.com
+# optional: --name, --path /abs/path/to/checkout, --branch, --budget 4
+minions check
 ```
+
+This writes `projects/myapp.yaml` (see `projects/demo.yaml` for every available option, e.g. named agents and budgets).
 
 Run a real planning sweep for that project:
 
@@ -149,7 +143,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
-      - run: uv pip install -e ".[dev]"
+      - run: uv pip install -e .
       - run: minions cron weekly --no-dry-run
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
