@@ -30,8 +30,6 @@ You watch it all happen in a live operator console: a **meeting room** where you
 
 ## Screenshots
 
-> 📸 _Drop images into `docs/screenshots/` with the filenames below and they'll render here._
-
 | Live meeting room (2D round-table) | 3D round-table |
 |---|---|
 | ![Meetings](docs/screenshots/meetings.png) | ![3D meeting](docs/screenshots/meeting-3d.png) |
@@ -84,6 +82,8 @@ minions is two pieces: the **Python orchestrator** (the agent org + CLI) and the
 
 ### 1. The agent org (Python)
 
+Prerequisites: Python 3.12+, [`uv`](https://docs.astral.sh/uv/getting-started/installation/) (recommended; `pip` works too), and — for the web console only — Node 20+ with [`pnpm`](https://pnpm.io/installation).
+
 ```bash
 git clone https://github.com/sagacioussid02/minions
 cd minions
@@ -97,7 +97,7 @@ minions org                   # print the full org topology + model tiers
 minions roster                # see the named agents
 
 # Run the full plan → decision → approve loop with ZERO spend:
-minions plan demo             # dry-run by default — no LLM calls, $0
+minions plan demo             # dry-run by default — no LLM calls, $0 (no GitHub token needed; runs ungrounded without one)
 minions decisions list        # the Decision it produced
 minions decisions approve <id-prefix>
 ```
@@ -109,16 +109,18 @@ export ANTHROPIC_API_KEY=sk-ant-...
 minions plan demo --no-dry-run
 ```
 
+To point it at **your own repos**, see [docs/SETUP.md](docs/SETUP.md) (adding project manifests, GitHub access, Postgres, scheduling).
+
 ### 2. The operator console (web dashboard)
 
 ```bash
 cd web
 pnpm install
-cp ../.env.example .env.local   # set DATABASE_URL (Neon Postgres) — see below
+cp ../.env.example .env.local   # set MINIONS_DATABASE_URL (Neon Postgres) — see below
 pnpm dev                        # → http://localhost:3000
 ```
 
-The dashboard reads from the same Postgres the orchestrator writes to. Point `DATABASE_URL` at a [Neon](https://neon.tech) database (free tier is plenty). With an empty DB the UI renders cleanly with empty states; run the orchestrator to populate live meetings, roster, and the sprint board.
+The dashboard reads from the same Postgres the orchestrator writes to. Point `MINIONS_DATABASE_URL` (`DATABASE_URL` also works) at a [Neon](https://neon.tech) database (free tier is plenty). With an empty DB the UI renders cleanly with empty states; run the orchestrator to populate live meetings, roster, and the sprint board.
 
 That's it — clone, install, run. No required external services for the dry-run path.
 
@@ -155,7 +157,7 @@ minions/
 
 ## Contributing
 
-**We'd genuinely love your help** — and there's a comfortable on-ramp: most of the codebase runs locally with no API keys, and the test suite runs in seconds.
+**We'd genuinely love your help** — and there's a comfortable on-ramp: most of the codebase runs locally with no API keys, and the test suite runs in about two minutes.
 
 ```bash
 uv pip install -e ".[dev]"

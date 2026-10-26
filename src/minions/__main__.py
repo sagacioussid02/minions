@@ -546,7 +546,11 @@ def plan(
     if grounded:
         from minions.dossiers.store_factory import make_dossier_store
 
-        gh = _open_github_client(manifest) if manifest.source.kind == "github" else None
+        gh = (
+            _open_github_client(manifest, required=False)
+            if manifest.source.kind == "github"
+            else None
+        )
         try:
             profile = build_profile(
                 manifest,
@@ -1396,7 +1400,13 @@ def secrets_check(
 # =============================================================================
 
 
-def _open_github_client(manifest: Manifest) -> GitHubClient | None:
+def _open_github_client(manifest: Manifest, *, required: bool = True) -> GitHubClient | None:
+    """Open a GitHub client for the manifest's repo.
+
+    With ``required=False`` a missing/unusable token degrades to ``None`` (one
+    yellow line) instead of exiting, so grounding-only callers can carry on
+    ungrounded.
+    """
     if manifest.source.kind != "github":
         rprint(
             f"[yellow]Project {manifest.name} is local-only "
@@ -1417,6 +1427,11 @@ def _open_github_client(manifest: Manifest) -> GitHubClient | None:
         try:
             token = get_installation_token(manifest.tenant_id)
         except Exception as e:  # noqa: BLE001 — surfaced to the operator, not a crash
+            if not required:
+                rprint(
+                    f"[yellow]No GitHub access for {manifest.name} ({e}) — running ungrounded.[/yellow]"
+                )
+                return None
             rprint(
                 f"[red]Could not mint GitHub App installation token for tenant "
                 f"{manifest.tenant_id}:[/red] {e}"
@@ -1427,6 +1442,12 @@ def _open_github_client(manifest: Manifest) -> GitHubClient | None:
     try:
         token = get_github_token()
     except SecretNotFound as e:
+        if not required:
+            rprint(
+                "[yellow]No GitHub token found (set GITHUB_TOKEN or run "
+                "`export GITHUB_TOKEN=$(gh auth token)`) — running ungrounded.[/yellow]"
+            )
+            return None
         rprint(f"[red]Missing GitHub token:[/red] {e}")
         rprint("[dim]Set GITHUB_TOKEN env or create AWS secret minions/github-token.[/dim]")
         raise typer.Exit(1) from e
@@ -1547,7 +1568,7 @@ def cron_weekly(
         notifier=_notifier(),
         api_key=api_key,
         dry_run=dry_run,
-        open_github_client=_open_github_client,
+        open_github_client=lambda m: _open_github_client(m, required=False),
         cost_log_path=COST_LOG_PATH,
         budget_notifications_path=BUDGET_NOTIFICATIONS_PATH,
         portfolio=load_portfolio_config(CONFIG_PATH),
@@ -1568,8 +1589,14 @@ def cron_weekly(
             rprint(f"  [green]✓[/green] {o.project} — decision {str(o.decision_id)[:8]}{extra}")
         elif o.status == "throttled":
             rprint(f"  [yellow]⊘[/yellow] {o.project} — {o.error}")
-        else:
-            rprint(f"  [red]✗[/red] {o.project} — {o.error}")
+    errors: dict[str, list[str]] = {}
+    for o in report.outcomes:
+        if o.status not in ("submitted", "throttled"):
+            errors.setdefault(str(o.error), []).append(o.project)
+    for err, projects in errors.items():
+        rprint(f"  [red]✗[/red] {', '.join(projects)} — {err}")
+    if report.errored:
+        raise typer.Exit(1)
 
 
 @app.command("bootstrap-tenant")
