@@ -223,7 +223,15 @@ def get_anthropic_api_key() -> str:
     direct = os.environ.get("ANTHROPIC_API_KEY")
     if direct:
         return direct
-    return get_secret("anthropic-api-key")
+    try:
+        return get_secret("anthropic-api-key")
+    except SecretNotFound as e:
+        raise SecretNotFound(
+            f"Anthropic API key not found. Tried env var ANTHROPIC_API_KEY, "
+            f"{_env_name('anthropic-api-key')}, and AWS Secrets Manager "
+            f"(key 'minions/anthropic-api-key'). Quickest fix: "
+            f"export ANTHROPIC_API_KEY=sk-ant-..."
+        ) from e
 
 
 def get_vercel_token(project: str | None = None) -> str:
@@ -271,10 +279,16 @@ def get_token_signing_key() -> str:
     try:
         return get_secret("token-signing-key")
     except Exception as e:
-        logger.warning(
-            "token-signing-key not retrievable (%s: %s) — falling back to dev-only key. "
-            "Set MINIONS_TOKEN_SECRET or grant IAM access to 'minions/token-signing-key'.",
-            type(e).__name__,
-            e,
-        )
+        if isinstance(e, SecretNotFound):
+            logger.info(
+                "MINIONS_TOKEN_SECRET not set — using the dev-only approval-link signing key "
+                "(fine locally; set MINIONS_TOKEN_SECRET in production)."
+            )
+        else:
+            logger.warning(
+                "token-signing-key not retrievable (%s: %s) — falling back to dev-only key. "
+                "Set MINIONS_TOKEN_SECRET or grant IAM access to 'minions/token-signing-key'.",
+                type(e).__name__,
+                e,
+            )
         return "dev-only-do-not-use-in-prod"
