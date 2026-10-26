@@ -23,18 +23,18 @@ dependencies = [
 
 [project.optional-dependencies]
 # Heavy, feature-specific deps live in extras so `pip install .` stays lean.
-dashboard = ["streamlit>=1.40.0"]                       # `minions dashboard`
-webhook = ["fastapi>=0.115.0", "uvicorn[standard]>=0.32.0"]  # magic-link approval server
-aws = ["boto3>=1.35.0"]                                 # AWS Secrets Manager backend
+dashboard = ["streamlit>=1.66.1"]                       # `minions dashboard`
+webhook = ["fastapi>=0.161.1", "uvicorn[standard]>=0.54.0"]  # magic-link approval server
+aws = ["boto3>=1.43.118"]                                 # AWS Secrets Manager backend
 all = ["minions[dashboard,webhook,aws]"]
 dev = [
     "minions[webhook,aws]",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
-    "ruff>=0.15.21",
-    "mypy>=2.3.0",
-    "pre-commit>=4.6.0",
-    "types-PyYAML>=6.0.12.20260518",
+    "ruff>=0.17.2",
+    "mypy>=2.4.0",
+    "pre-commit>=4.7.0",
+    "types-PyYAML>=6.0.12.20260906",
 ]
 
 [project.scripts]
