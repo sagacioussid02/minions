@@ -292,7 +292,7 @@ def org() -> None:
 
     table = Table(title="Minions Org Topology (v0 frugal)", show_lines=False)
     table.add_column("Layer", style="bold")
-    table.add_column("Role")
+    table.add_column("Role", no_wrap=True)
     table.add_column("Name", style="green")
     table.add_column("Project")
     table.add_column("Tier", style="cyan")
@@ -308,14 +308,14 @@ def org() -> None:
     for agent in build_shared_agents(portfolio, AUDIT, "v0_frugal"):
         table.add_row("Audit", agent.role.value, agent.display_name or "—", "—", agent.tier.value)
     for project_name, manifest in manifests.items():
+        # One row per (role, tier) so a 5-engineer project isn't five near-identical lines.
+        grouped: dict[tuple[str, str], list[str]] = {}
         for agent in build_project_agents(manifest, manifest.cadence_profile):
-            table.add_row(
-                "Project",
-                agent.role.value,
-                agent.display_name or "—",
-                project_name,
-                agent.tier.value,
+            grouped.setdefault((agent.role.value, agent.tier.value), []).append(
+                agent.display_name or "—"
             )
+        for (role, tier), names in grouped.items():
+            table.add_row("Project", role, ", ".join(names), project_name, tier)
     console.print(table)
 
 
@@ -3222,7 +3222,7 @@ def cost_tail(n: int = typer.Option(20, help="Show the last N entries.")) -> Non
     table = Table(title=f"Cost log — last {min(n, len(entries))}")
     table.add_column("When (UTC)")
     table.add_column("Project")
-    table.add_column("Role")
+    table.add_column("Role", no_wrap=True)
     table.add_column("Model")
     table.add_column("In", justify="right")
     table.add_column("Out", justify="right")

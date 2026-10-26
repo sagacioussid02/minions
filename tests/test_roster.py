@@ -38,10 +38,15 @@ def _write_manifest(tmp_path: Path, agents_block: dict) -> Manifest:
     return load_manifest(p)
 
 
-def test_default_roster_has_no_display_names():
-    manifest = load_manifest(REPO_ROOT / "projects" / "demo.yaml")
+def test_default_roster_has_no_display_names(tmp_path):
+    manifest = _write_manifest(tmp_path, {})
     agents = build_project_agents(manifest)
     assert all(a.display_name is None for a in agents)
+
+
+def test_demo_manifest_ships_with_named_agents():
+    manifest = load_manifest(REPO_ROOT / "projects" / "demo.yaml")
+    assert all(a.display_name for a in build_project_agents(manifest))
 
 
 def test_seat_index_for_multi_seat_roles():
