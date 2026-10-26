@@ -28,21 +28,15 @@ cp .env.example .env
 minions anthropic                   # verifies the key works
 ```
 
-Add your first project. Create `projects/myapp.yaml` (use `projects/demo.yaml` as a template) and edit:
+Add your first project:
 
-```yaml
-name: myapp
-source:
-  kind: github
-  path: /absolute/path/to/your/repo
-  repo: your-org/myapp
-  default_branch: main
-weekly_budget_usd: 1.00
-monthly_budget_usd: 4.00
-delivery_targets:
-  scope: portfolio
-  share_weight: 0.5
+```bash
+minions projects add your-org/myapp --owner you@yourdomain.com
+# optional: --name, --path /abs/path/to/checkout, --branch, --budget 4
+minions check
 ```
+
+This writes `projects/myapp.yaml` (see `projects/demo.yaml` for every available option, e.g. named agents and budgets).
 
 Run a real planning sweep for that project:
 

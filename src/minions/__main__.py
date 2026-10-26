@@ -102,6 +102,11 @@ transcripts_app = typer.Typer(
     help="Inspect per-run crew transcripts (what each agent said in a session).",
     no_args_is_help=True,
 )
+projects_app = typer.Typer(
+    help="Manage project manifests (projects/*.yaml).",
+    no_args_is_help=True,
+)
+app.add_typer(projects_app, name="projects")
 app.add_typer(decisions_app, name="decisions")
 app.add_typer(secrets_app, name="secrets")
 app.add_typer(github_app, name="github")
@@ -317,6 +322,41 @@ def org() -> None:
         for (role, tier), names in grouped.items():
             table.add_row("Project", role, ", ".join(names), project_name, tier)
     console.print(table)
+
+
+@projects_app.command("add")
+def projects_add(
+    repo: str = typer.Argument(..., help="GitHub repo as owner/name."),
+    name: str | None = typer.Option(None, "--name", help="Project name (default: repo name)."),
+    owner: str = typer.Option("you@example.com", "--owner", help="Owner email for approvals."),
+    path: str | None = typer.Option(None, "--path", help="Local checkout path (optional)."),
+    branch: str = typer.Option("main", "--branch", help="Default branch."),
+    budget: float = typer.Option(4.0, "--budget", help="Monthly budget in USD."),
+) -> None:
+    """Scaffold projects/<name>.yaml for one of your repos."""
+    from minions.onboarding.scaffold import build_manifest_dict, write_manifest
+
+    try:
+        data = build_manifest_dict(
+            repo,
+            name=name,
+            owner=owner,
+            path=path,
+            default_branch=branch,
+            monthly_budget_usd=budget,
+        )
+        target = write_manifest(PROJECTS_DIR, data)
+    except ValueError as e:
+        rprint(f"[red]{e}[/red]")
+        raise typer.Exit(1) from e
+    except FileExistsError as e:
+        rprint(f"[red]{e} already exists — edit it directly or pick another --name.[/red]")
+        raise typer.Exit(1) from e
+    rprint(f"[green]Created[/green] {target}")
+    rprint(
+        f"Next: [bold]minions check[/bold], then [bold]minions plan {data['name']}[/bold] "
+        "(dry-run) or add [bold]--no-dry-run[/bold] for real planning."
+    )
 
 
 @app.command()

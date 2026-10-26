@@ -109,7 +109,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 minions plan demo --no-dry-run
 ```
 
-To point it at **your own repos**, see [docs/SETUP.md](docs/SETUP.md) (adding project manifests, GitHub access, Postgres, scheduling).
+To point it at **your own repos**, run `minions projects add your-org/your-repo` and see [docs/SETUP.md](docs/SETUP.md) (project manifests, GitHub access, Postgres, scheduling).
 
 ### 2. The operator console (web dashboard)
 
