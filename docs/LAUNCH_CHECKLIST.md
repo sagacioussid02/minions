@@ -8,6 +8,16 @@ Steps to flip the repo public. Most can only be done via the GitHub web UI or af
 - [ ] Skim the auto-generated `good first issue` tickets; close any that don't apply.
 - [ ] Optional: write a launch post / tweet draft. The hook is the four-layer safety model.
 
+## Onboarding walkthrough (before any launch post)
+
+Run the README Quickstart verbatim as a first-time user, on a machine with no `GITHUB_TOKEN`, no `ANTHROPIC_API_KEY` and no `.env`:
+
+- [ ] `minions check`, `minions org`, `minions roster`, `minions plan demo` all succeed (CI runs this as the `quickstart smoke` job).
+- [ ] `minions cron weekly` exits non-zero when a project errors.
+- [ ] Every command and env var named in the README exists under that exact name.
+- [ ] README screenshots render and the stated timings (install, tests) are honest.
+- [ ] The Medium/launch post's setup steps match the README.
+
 ## Flip to public
 
 GitHub: **Settings → General → scroll to "Danger Zone" → Change visibility → Make public.**

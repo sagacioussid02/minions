@@ -102,6 +102,11 @@ transcripts_app = typer.Typer(
     help="Inspect per-run crew transcripts (what each agent said in a session).",
     no_args_is_help=True,
 )
+projects_app = typer.Typer(
+    help="Manage project manifests (projects/*.yaml).",
+    no_args_is_help=True,
+)
+app.add_typer(projects_app, name="projects")
 app.add_typer(decisions_app, name="decisions")
 app.add_typer(secrets_app, name="secrets")
 app.add_typer(github_app, name="github")
@@ -292,7 +297,7 @@ def org() -> None:
 
     table = Table(title="Minions Org Topology (v0 frugal)", show_lines=False)
     table.add_column("Layer", style="bold")
-    table.add_column("Role")
+    table.add_column("Role", no_wrap=True)
     table.add_column("Name", style="green")
     table.add_column("Project")
     table.add_column("Tier", style="cyan")
@@ -308,15 +313,50 @@ def org() -> None:
     for agent in build_shared_agents(portfolio, AUDIT, "v0_frugal"):
         table.add_row("Audit", agent.role.value, agent.display_name or "—", "—", agent.tier.value)
     for project_name, manifest in manifests.items():
+        # One row per (role, tier) so a 5-engineer project isn't five near-identical lines.
+        grouped: dict[tuple[str, str], list[str]] = {}
         for agent in build_project_agents(manifest, manifest.cadence_profile):
-            table.add_row(
-                "Project",
-                agent.role.value,
-                agent.display_name or "—",
-                project_name,
-                agent.tier.value,
+            grouped.setdefault((agent.role.value, agent.tier.value), []).append(
+                agent.display_name or "—"
             )
+        for (role, tier), names in grouped.items():
+            table.add_row("Project", role, ", ".join(names), project_name, tier)
     console.print(table)
+
+
+@projects_app.command("add")
+def projects_add(
+    repo: str = typer.Argument(..., help="GitHub repo as owner/name."),
+    name: str | None = typer.Option(None, "--name", help="Project name (default: repo name)."),
+    owner: str = typer.Option("you@example.com", "--owner", help="Owner email for approvals."),
+    path: str | None = typer.Option(None, "--path", help="Local checkout path (optional)."),
+    branch: str = typer.Option("main", "--branch", help="Default branch."),
+    budget: float = typer.Option(4.0, "--budget", help="Monthly budget in USD."),
+) -> None:
+    """Scaffold projects/<name>.yaml for one of your repos."""
+    from minions.onboarding.scaffold import build_manifest_dict, write_manifest
+
+    try:
+        data = build_manifest_dict(
+            repo,
+            name=name,
+            owner=owner,
+            path=path,
+            default_branch=branch,
+            monthly_budget_usd=budget,
+        )
+        target = write_manifest(PROJECTS_DIR, data)
+    except ValueError as e:
+        rprint(f"[red]{e}[/red]")
+        raise typer.Exit(1) from e
+    except FileExistsError as e:
+        rprint(f"[red]{e} already exists — edit it directly or pick another --name.[/red]")
+        raise typer.Exit(1) from e
+    rprint(f"[green]Created[/green] {target}")
+    rprint(
+        f"Next: [bold]minions check[/bold], then [bold]minions plan {data['name']}[/bold] "
+        "(dry-run) or add [bold]--no-dry-run[/bold] for real planning."
+    )
 
 
 @app.command()
@@ -546,7 +586,11 @@ def plan(
     if grounded:
         from minions.dossiers.store_factory import make_dossier_store
 
-        gh = _open_github_client(manifest) if manifest.source.kind == "github" else None
+        gh = (
+            _open_github_client(manifest, required=False)
+            if manifest.source.kind == "github"
+            else None
+        )
         try:
             profile = build_profile(
                 manifest,
@@ -1396,7 +1440,13 @@ def secrets_check(
 # =============================================================================
 
 
-def _open_github_client(manifest: Manifest) -> GitHubClient | None:
+def _open_github_client(manifest: Manifest, *, required: bool = True) -> GitHubClient | None:
+    """Open a GitHub client for the manifest's repo.
+
+    With ``required=False`` a missing/unusable token degrades to ``None`` (one
+    yellow line) instead of exiting, so grounding-only callers can carry on
+    ungrounded.
+    """
     if manifest.source.kind != "github":
         rprint(
             f"[yellow]Project {manifest.name} is local-only "
@@ -1417,6 +1467,11 @@ def _open_github_client(manifest: Manifest) -> GitHubClient | None:
         try:
             token = get_installation_token(manifest.tenant_id)
         except Exception as e:  # noqa: BLE001 — surfaced to the operator, not a crash
+            if not required:
+                rprint(
+                    f"[yellow]No GitHub access for {manifest.name} ({e}) — running ungrounded.[/yellow]"
+                )
+                return None
             rprint(
                 f"[red]Could not mint GitHub App installation token for tenant "
                 f"{manifest.tenant_id}:[/red] {e}"
@@ -1427,6 +1482,12 @@ def _open_github_client(manifest: Manifest) -> GitHubClient | None:
     try:
         token = get_github_token()
     except SecretNotFound as e:
+        if not required:
+            rprint(
+                "[yellow]No GitHub token found (set GITHUB_TOKEN or run "
+                "`export GITHUB_TOKEN=$(gh auth token)`) — running ungrounded.[/yellow]"
+            )
+            return None
         rprint(f"[red]Missing GitHub token:[/red] {e}")
         rprint("[dim]Set GITHUB_TOKEN env or create AWS secret minions/github-token.[/dim]")
         raise typer.Exit(1) from e
@@ -1547,7 +1608,7 @@ def cron_weekly(
         notifier=_notifier(),
         api_key=api_key,
         dry_run=dry_run,
-        open_github_client=_open_github_client,
+        open_github_client=lambda m: _open_github_client(m, required=False),
         cost_log_path=COST_LOG_PATH,
         budget_notifications_path=BUDGET_NOTIFICATIONS_PATH,
         portfolio=load_portfolio_config(CONFIG_PATH),
@@ -1568,8 +1629,14 @@ def cron_weekly(
             rprint(f"  [green]✓[/green] {o.project} — decision {str(o.decision_id)[:8]}{extra}")
         elif o.status == "throttled":
             rprint(f"  [yellow]⊘[/yellow] {o.project} — {o.error}")
-        else:
-            rprint(f"  [red]✗[/red] {o.project} — {o.error}")
+    errors: dict[str, list[str]] = {}
+    for o in report.outcomes:
+        if o.status not in ("submitted", "throttled"):
+            errors.setdefault(str(o.error), []).append(o.project)
+    for err, projects in errors.items():
+        rprint(f"  [red]✗[/red] {', '.join(projects)} — {err}")
+    if report.errored:
+        raise typer.Exit(1)
 
 
 @app.command("bootstrap-tenant")
@@ -3082,8 +3149,16 @@ def dashboard(
     ),
 ) -> None:
     """Launch the Streamlit operator dashboard (agents grid, decisions, sprint board)."""
+    import importlib.util
     import subprocess
     import sys
+
+    if importlib.util.find_spec("streamlit") is None:
+        rprint(
+            "[red]The dashboard needs Streamlit.[/red] "
+            'Install it with: [bold]uv pip install -e ".\[dashboard]"[/bold]'
+        )
+        raise typer.Exit(1)
 
     app_path = Path(__file__).parent / "dashboard" / "app.py"
     if not app_path.exists():
@@ -3195,7 +3270,7 @@ def cost_tail(n: int = typer.Option(20, help="Show the last N entries.")) -> Non
     table = Table(title=f"Cost log — last {min(n, len(entries))}")
     table.add_column("When (UTC)")
     table.add_column("Project")
-    table.add_column("Role")
+    table.add_column("Role", no_wrap=True)
     table.add_column("Model")
     table.add_column("In", justify="right")
     table.add_column("Out", justify="right")
