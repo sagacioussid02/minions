@@ -25,3 +25,12 @@ def test_add_refuses_overwrite(monkeypatch, tmp_path) -> None:
 def test_bad_repo_rejected() -> None:
     with pytest.raises(ValueError):
         build_manifest_dict("not-a-repo")
+
+
+def test_dashboard_hints_extra_when_streamlit_missing(monkeypatch) -> None:
+    import importlib.util
+
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+    result = CliRunner().invoke(cli.app, ["dashboard"])
+    assert result.exit_code == 1
+    assert "[dashboard]" in result.output

@@ -17,7 +17,7 @@ uv pip install -e ".[dev]"        # or: pip install -e ".[dev]"
 pre-commit install                 # optional but recommended
 
 # Verify your environment:
-pytest                             # ~3 seconds, all tests should pass
+pytest                             # ~2 minutes, all tests should pass
 ruff check src tests
 mypy src
 ```

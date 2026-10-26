@@ -89,8 +89,10 @@ git clone https://github.com/sagacioussid02/minions
 cd minions
 
 # uv recommended (fast); pip works too
-uv venv && uv pip install -e ".[dev]"
-#   or: python3.12 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
+uv venv && uv pip install -e .
+#   or: python3.12 -m venv .venv && source .venv/bin/activate && pip install -e .
+#   optional extras: ".[dashboard]" (Streamlit UI), ".[webhook]" (approval server),
+#   ".[aws]" (Secrets Manager), ".[all]" — contributors use ".[dev]"
 
 minions check                 # validate config + manifests
 minions org                   # print the full org topology + model tiers
