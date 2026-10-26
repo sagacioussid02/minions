@@ -9,7 +9,7 @@ The setup is **modular**. Every external service (Anthropic, Postgres, Gmail, La
 ```bash
 git clone https://github.com/sagacioussid02/minions
 cd minions
-uv pip install -e ".[dev]"
+uv pip install -e ".[dev]"      # contributors; users can use plain `-e .`
 pytest                              # all tests should pass
 minions check                       # validates the demo portfolio
 minions org                         # prints org topology
@@ -143,7 +143,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
-      - run: uv pip install -e ".[dev]"
+      - run: uv pip install -e .
       - run: minions cron weekly --no-dry-run
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

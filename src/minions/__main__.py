@@ -3149,8 +3149,16 @@ def dashboard(
     ),
 ) -> None:
     """Launch the Streamlit operator dashboard (agents grid, decisions, sprint board)."""
+    import importlib.util
     import subprocess
     import sys
+
+    if importlib.util.find_spec("streamlit") is None:
+        rprint(
+            "[red]The dashboard needs Streamlit.[/red] "
+            'Install it with: [bold]uv pip install -e ".\[dashboard]"[/bold]'
+        )
+        raise typer.Exit(1)
 
     app_path = Path(__file__).parent / "dashboard" / "app.py"
     if not app_path.exists():
