@@ -14,10 +14,10 @@ let _sql: NeonQueryFunction<false, false> | null = null;
 
 export function sql(): NeonQueryFunction<false, false> {
   if (_sql) return _sql;
-  const url = process.env.MINIONS_DATABASE_URL;
+  const url = process.env.MINIONS_DATABASE_URL ?? process.env.DATABASE_URL;
   if (!url) {
     throw new Error(
-      "MINIONS_DATABASE_URL is not set. Add it to web/.env.local (same value the Python crews use).",
+      "MINIONS_DATABASE_URL (or DATABASE_URL) is not set. Add it to web/.env.local (same value the Python crews use).",
     );
   }
   _sql = neon(url);
