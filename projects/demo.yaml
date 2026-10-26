@@ -66,9 +66,21 @@ secret_rotations:
     due: 2026-07-10
     note: rotate quarterly
 
-# Optional display names — uncomment to personalize this project's crew.
+# Display names for this project's crew — edit to personalize.
 agents:
-  # product_owner: Tara
+  product_owner: Tara
+  manager: Marcus
+  principal_engineer: Priya
+  tech_team_lead: Theo
+  senior_engineer:
+    - Sasha
+    - Sven
+  engineer:
+    - Eli
+  senior_devops: Dana
+  security_champion: Sam
+
+owner: Tara
   # manager: Marcus
   # principal_engineer: Priya
   # tech_team_lead: Theo
