@@ -13,7 +13,8 @@ import { prettyRole } from "@/lib/roles";
 
 // Every navigable top-level page in the console, in menu order.
 const NAV_ITEMS: ReadonlyArray<readonly [string, string]> = [
-  ["/hq", "Live"],
+  ["/hq/crew", "Crew"],
+  ["/hq", "Activity"],
   ["/hq/sprint", "Sprint"],
   ["/hq/roster", "Roster"],
   ["/hq/meetings", "Meetings"],
