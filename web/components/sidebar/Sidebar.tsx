@@ -16,6 +16,7 @@ const NAV_ITEMS: ReadonlyArray<readonly [string, string]> = [
   ["/hq/crew", "Crew"],
   ["/hq", "Activity"],
   ["/hq/sprint", "Sprint"],
+  ["/hq/requests", "Requests"],
   ["/hq/roster", "Roster"],
   ["/hq/meetings", "Meetings"],
   ["/hq/sentry", "Sentry"],
