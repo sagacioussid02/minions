@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { HeartbeatDot } from "@/components/HeartbeatDot";
 import { CrewBoard } from "@/components/crew/CrewBoard";
+import { QuestionsInbox } from "@/components/crew/QuestionsInbox";
 import { loadCrewDashboard } from "@/lib/crew-dashboard";
 import { describeNextRun, CRON_SCHEDULES } from "@/lib/cron-schedule";
 
@@ -26,7 +27,10 @@ export default async function CrewPage() {
         </div>
       </header>
       <main className="relative mx-auto w-full max-w-5xl flex-1 px-6 py-6">
-        <CrewBoard data={data} meetings={meetings} />
+        <div className="flex flex-col gap-6">
+          <QuestionsInbox />
+          <CrewBoard data={data} meetings={meetings} />
+        </div>
       </main>
     </div>
   );
