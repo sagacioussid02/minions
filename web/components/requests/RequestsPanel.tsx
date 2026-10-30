@@ -46,9 +46,9 @@ const STATUS_LABEL: Record<WorkRequest["status"], string> = {
   failed: "failed",
 };
 
-export function RequestsPanel({ projects }: { projects: string[] }) {
+/** Request box for one project, shown inside that project's row on the Crew dashboard. */
+export function RequestBox({ project }: { project: string }) {
   const qc = useQueryClient();
-  const [project, setProject] = useState(projects[0] ?? "");
   const [text, setText] = useState("");
   const list = useQuery({
     queryKey: ["work-requests"],
@@ -67,43 +67,31 @@ export function RequestsPanel({ projects }: { projects: string[] }) {
     },
   });
 
+  const mine = (list.data?.requests ?? []).filter((r) => r.project === project);
+  const open = mine.some((r) => r.status === "clarifying");
   const tooLong = text.length > MAX_TEXT;
-  const canSubmit = !!project && text.trim().length > 0 && !tooLong && !submit.isPending;
+  const canSubmit = text.trim().length > 0 && !tooLong && !submit.isPending;
 
   return (
-    <div className="flex flex-col gap-8">
+    <details className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--bg-surface)] p-3" open={open}>
+      <summary className="cursor-pointer text-xs uppercase tracking-wider text-[var(--text-muted)]">
+        Ask the crew{mine.length ? ` · ${mine.length} request${mine.length === 1 ? "" : "s"}` : ""}
+      </summary>
       <form
-        className="flex flex-col gap-3 rounded-xl border border-[var(--line)] bg-[var(--bg-elevated)] p-4"
+        className="mt-3 flex flex-col gap-2"
         onSubmit={(e) => {
           e.preventDefault();
           if (canSubmit) submit.mutate();
         }}
       >
-        <label className="flex flex-col gap-1 text-xs uppercase tracking-wider text-[var(--text-muted)]">
-          Project
-          <select
-            value={project}
-            onChange={(e) => setProject(e.target.value)}
-            className="rounded border border-[var(--line)] bg-[var(--bg-surface)] px-2 py-1.5 text-sm normal-case tracking-normal text-[var(--text-primary)]"
-          >
-            {projects.length === 0 && <option value="">no projects yet</option>}
-            {projects.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs uppercase tracking-wider text-[var(--text-muted)]">
-          What do you want?
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            rows={4}
-            placeholder="e.g. add a famous persona to the personas project"
-            className="rounded border border-[var(--line)] bg-[var(--bg-surface)] px-3 py-2 text-sm normal-case tracking-normal text-[var(--text-primary)]"
-          />
-        </label>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={3}
+          aria-label={`What do you want for ${project}?`}
+          placeholder="Describe what you want in plain words, e.g. add a famous persona"
+          className="rounded border border-[var(--line)] bg-[var(--bg-elevated)] px-3 py-2 text-sm"
+        />
         <div className="flex items-center justify-between">
           <span className={`text-xs ${tooLong ? "text-red-400" : "text-[var(--text-muted)]"}`}>
             {text.length}/{MAX_TEXT}
@@ -122,16 +110,17 @@ export function RequestsPanel({ projects }: { projects: string[] }) {
           </p>
         )}
       </form>
-
-      <section aria-label="Your requests" className="flex flex-col gap-3">
-        <h2 className="text-xs uppercase tracking-wider text-[var(--text-muted)]">Your requests</h2>
-        {list.isError && <p className="text-xs text-red-400">Could not load your requests.</p>}
-        {list.data?.requests.length === 0 && (
-          <p className="text-sm text-[var(--text-muted)]">Nothing yet.</p>
-        )}
-        {list.data?.requests.map((r) => <RequestCard key={r.id} req={r} />)}
-      </section>
-    </div>
+      {list.isError && (
+        <p className="mt-3 text-xs text-red-400">
+          Could not load requests. Has the work_requests migration been applied to this database?
+        </p>
+      )}
+      <div className="mt-3 flex flex-col gap-3">
+        {mine.map((r) => (
+          <RequestCard key={r.id} req={r} />
+        ))}
+      </div>
+    </details>
   );
 }
 

@@ -1,5 +1,6 @@
 import type { CrewAgent, CrewDashboard, CrewProject } from "@/lib/crew-dashboard";
 import { prettyRole } from "@/lib/roles";
+import { RequestBox } from "@/components/requests/RequestsPanel";
 
 const QUEUE: [keyof CrewProject["queue"], string][] = [
   ["needs_approval", "need approval"],
@@ -80,6 +81,7 @@ function ProjectRow({ p }: { p: CrewProject }) {
           ))}
         </div>
       )}
+      <RequestBox project={p.project} />
     </section>
   );
 }
