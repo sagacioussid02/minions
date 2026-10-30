@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "invalid id" }, { status: 400 });
   }
   const db = sql();
-  const rows = id
+  const rows = (id
     ? await db`
         SELECT id, project, text, status, question_ids, result, created_at
         FROM work_requests WHERE tenant_id = ${tenant.tenant_id} AND id = ${id}
@@ -90,6 +90,21 @@ export async function GET(req: NextRequest) {
         SELECT id, project, text, status, question_ids, result, created_at
         FROM work_requests WHERE tenant_id = ${tenant.tenant_id}
         ORDER BY created_at DESC LIMIT 50
-      `;
-  return NextResponse.json({ requests: rows });
+      `) as { id: string; question_ids: string[] }[];
+
+  // Attach the crew's clarifying questions so the console can answer them inline.
+  const qids = rows.flatMap((r) => r.question_ids ?? []);
+  const qrows = qids.length
+    ? ((await db`
+        SELECT id, status, payload->>'question' AS question, payload->>'answer' AS answer
+        FROM questions WHERE tenant_id = ${tenant.tenant_id} AND id = ANY(${qids})
+      `) as { id: string; status: string; question: string; answer: string | null }[])
+    : [];
+  const byId = new Map(qrows.map((q) => [q.id, q]));
+  return NextResponse.json({
+    requests: rows.map((r) => ({
+      ...r,
+      questions: (r.question_ids ?? []).flatMap((q) => (byId.has(q) ? [byId.get(q)] : [])),
+    })),
+  });
 }

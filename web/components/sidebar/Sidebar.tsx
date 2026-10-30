@@ -15,6 +15,7 @@ import { prettyRole } from "@/lib/roles";
 const NAV_ITEMS: ReadonlyArray<readonly [string, string]> = [
   ["/hq", "Live"],
   ["/hq/sprint", "Sprint"],
+  ["/hq/requests", "Requests"],
   ["/hq/roster", "Roster"],
   ["/hq/meetings", "Meetings"],
   ["/hq/sentry", "Sentry"],
