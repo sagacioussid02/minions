@@ -22,8 +22,11 @@ export async function POST(req: NextRequest) {
     project?: string;
     text?: string;
   } | null;
-  const text = (body?.text ?? "").trim();
-  const slug = (body?.project ?? "").trim();
+  if (typeof body?.text !== "string" || typeof body?.project !== "string") {
+    return NextResponse.json({ error: "text and project must be strings" }, { status: 400 });
+  }
+  const text = body.text.trim();
+  const slug = body.project.trim();
 
   if (!text) return NextResponse.json({ error: "text required" }, { status: 400 });
   if (text.length > MAX_TEXT) {
