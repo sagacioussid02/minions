@@ -7,6 +7,9 @@ import { NextResponse } from "next/server";
 // added. Everything else requires a Clerk session.
 const isPublicRoute = createRouteMatcher([
   "/",
+  // Zero-signup demo console (sample data only; the page itself renders a
+  // "demo is off" notice when demo mode is disabled — see lib/demo.ts).
+  "/demo(.*)",
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/api/clerk-webhook",
