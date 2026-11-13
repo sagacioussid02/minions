@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import { demoModeEnabled } from "@/lib/demo";
 
 export const metadata: Metadata = {
   title: "minions — your autonomous AI engineering org",
@@ -88,6 +89,14 @@ export default async function MarketingLanding() {
             >
               Sign in
             </Link>
+            {demoModeEnabled() && (
+              <Link
+                href="/demo"
+                className="rounded-md border border-[var(--state-warn)]/60 px-5 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition hover:border-[var(--state-warn)]"
+              >
+                Try the demo — no signup
+              </Link>
+            )}
           </div>
 
           <ConsolePreview />
