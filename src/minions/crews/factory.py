@@ -13,7 +13,7 @@ from crewai import Agent
 from minions.agents.base import MinionAgent
 from minions.agents.memory import recent_work_preamble
 from minions.agents.team import team_roster_preamble
-from minions.llm import llm_for_tier
+from minions.llm import llm_for_role
 
 if TYPE_CHECKING:
     from minions.agents.memory_store_factory import AgentMemoryStoreLike
@@ -54,7 +54,12 @@ def make_crewai_agent(
         role=role_str,
         goal=agent.goal,
         backstory=backstory,
-        llm=llm_for_tier(agent.tier, **llm_kwargs),  # type: ignore[arg-type]
+        llm=llm_for_role(
+            agent.role,
+            tier=agent.tier,
+            cadence=agent.cadence_profile,
+            **llm_kwargs,  # type: ignore[arg-type]
+        ),
         allow_delegation=False,
         verbose=False,
         max_iter=3,  # cost-discipline cap

@@ -89,7 +89,7 @@ def test_make_crewai_agent_injects_recent_work(monkeypatch, tmp_path: Path) -> N
             captured.update(kwargs)
 
     monkeypatch.setattr(factory, "Agent", FakeAgent)
-    monkeypatch.setattr(factory, "llm_for_tier", lambda *_a, **_k: "llm")
+    monkeypatch.setattr(factory, "llm_for_role", lambda *_a, **_k: "llm")
     agent = MinionAgent(
         role=Role.ENGINEER,
         name="engineer@Demo",
