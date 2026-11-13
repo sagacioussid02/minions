@@ -132,7 +132,7 @@ That's it — clone, install, run. No required external services for the dry-run
 
 The system is organized around **Decision Records flowing through an approval graph**. A few load-bearing ideas:
 
-- **Roles → model tiers.** Every role maps to a Claude tier (Opus / Sonnet / Haiku) so cheap work runs cheap and hard work runs strong.
+- **Roles → model tiers.** Every role maps to a Claude tier (Opus / Sonnet / Haiku) so cheap work runs cheap and hard work runs strong. Override any role without code changes via `MODEL_<ROLE>` — a tier nickname or a full model ID, e.g. `MODEL_ENGINEER=opus` (see `.env.example`; registry in `src/minions/models/roles.py`).
 - **Crews.** Sequential [CrewAI](https://crewai.com) crews: planning, engineer, code-audit, security, devil's-advocate, QA, portfolio-review.
 - **Approval pipeline.** Durable Decision store + a [LangGraph](https://www.langchain.com/langgraph) state machine (notify → interrupt → resolve) + HMAC-signed magic-link approvals.
 - **Dual-backend stores.** Every persistent object has a JSON backend (local dev) and a Neon Postgres backend (production), chosen by env. Same interface either way.
