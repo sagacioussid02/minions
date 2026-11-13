@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+from collections.abc import Mapping
 from enum import StrEnum
 from typing import Literal
 
@@ -107,3 +109,55 @@ def resolve_tier(
     if cadence == "v0_frugal":
         return V0_FRUGAL_OVERRIDE[role]
     return TARGET_TIER[role]
+
+
+# --- Model registry: ROLE -> provider + model ID, env-overridable -----------
+
+#: Prefix for the per-role environment override, e.g. ``MODEL_ENGINEER``.
+MODEL_ENV_PREFIX = "MODEL_"
+
+_TIER_BY_NAME: dict[str, ModelTier] = {
+    "haiku": ModelTier.HAIKU,
+    "sonnet": ModelTier.SONNET,
+    "opus": ModelTier.OPUS,
+}
+
+
+def tier_from_name(name: str) -> ModelTier | None:
+    """Map a tier nickname (``haiku``/``sonnet``/``opus``) to its tier, or None."""
+    return _TIER_BY_NAME.get(name.strip().lower())
+
+
+def model_env_var(role: Role) -> str:
+    """Environment variable that overrides one role's model, e.g. ``MODEL_ENGINEER``."""
+    return f"{MODEL_ENV_PREFIX}{role.value.upper()}"
+
+
+def resolve_model_id(
+    role: Role,
+    cadence: CadenceProfile = "v0_frugal",
+    overrides: dict[Role, ModelTier] | None = None,
+    tier: ModelTier | None = None,
+    env: Mapping[str, str] | None = None,
+) -> str:
+    """Resolve the Anthropic model ID a role actually runs on.
+
+    Precedence: ``MODEL_<ROLE>`` env var > explicit ``tier`` (e.g. the
+    manifest-resolved tier already on a ``MinionAgent``) > per-role
+    ``overrides`` > cadence profile > target spec.
+
+    The env value is either a tier nickname (``haiku``/``sonnet``/``opus``)
+    or a full model ID (e.g. ``claude-sonnet-4-6``), passed through verbatim.
+    A blank env value is ignored.
+
+    Defaults preserve current behavior exactly — this is a refactor, not a
+    model swap.
+    """
+    source = os.environ if env is None else env
+    raw = (source.get(model_env_var(role)) or "").strip()
+    if raw:
+        named = tier_from_name(raw)
+        return named.value if named is not None else raw
+    if tier is not None:
+        return tier.value
+    return resolve_tier(role, cadence=cadence, overrides=overrides).value

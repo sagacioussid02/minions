@@ -16,17 +16,11 @@ from minions.models.roles import (
     ModelTier,
     Role,
     resolve_tier,
+    tier_from_name,
 )
 
 if TYPE_CHECKING:
     from minions.models.manifest import Manifest
-
-
-_NAME_TO_TIER: dict[str, ModelTier] = {
-    "haiku": ModelTier.HAIKU,
-    "sonnet": ModelTier.SONNET,
-    "opus": ModelTier.OPUS,
-}
 
 
 @dataclass
@@ -105,7 +99,7 @@ def _coerce_tier_overrides(raw: dict[str, str]) -> dict[Role, ModelTier]:
             role = Role(role_str)
         except ValueError:
             continue
-        tier = _NAME_TO_TIER.get(str(tier_str).lower())
+        tier = tier_from_name(str(tier_str))
         if tier is not None:
             overrides[role] = tier
     return overrides
