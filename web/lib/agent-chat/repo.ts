@@ -8,6 +8,7 @@
 
 import { randomUUID } from "node:crypto";
 import { sql } from "../db";
+import { getTenantId } from "../tenant";
 
 // ---------- Threads + messages (R/W) ----------
 
@@ -42,10 +43,12 @@ async function ensureChatTable(): Promise<boolean> {
 export async function getThread(threadId: string): Promise<ThreadRow | null> {
   if (!(await ensureChatTable())) return null;
   const s = sql();
+  const tid = await getTenantId();
   const rows = (await s`
     SELECT id, agent_id, project, title, created_at, last_message_at
     FROM agent_chat_threads
     WHERE id = ${threadId}
+      AND tenant_id = ${tid}
     LIMIT 1
   `) as Array<{
     id: string;
@@ -67,10 +70,12 @@ export async function getThread(threadId: string): Promise<ThreadRow | null> {
 export async function listThreadsForAgent(agentId: string): Promise<ThreadRow[]> {
   if (!(await ensureChatTable())) return [];
   const s = sql();
+  const tid = await getTenantId();
   const rows = (await s`
     SELECT id, agent_id, project, title, created_at, last_message_at
     FROM agent_chat_threads
     WHERE agent_id = ${agentId}
+      AND tenant_id = ${tid}
     ORDER BY last_message_at DESC
     LIMIT 100
   `) as Array<{
@@ -91,10 +96,12 @@ export async function listThreadsForAgent(agentId: string): Promise<ThreadRow[]>
 export async function listMessages(threadId: string): Promise<MessageRow[]> {
   if (!(await ensureChatTable())) return [];
   const s = sql();
+  const tid = await getTenantId();
   const rows = (await s`
     SELECT id, thread_id, role, content, created_at, model, prompt_tokens, response_tokens
     FROM agent_chat_messages
     WHERE thread_id = ${threadId}
+      AND tenant_id = ${tid}
     ORDER BY created_at ASC
   `) as Array<{
     id: string;
@@ -118,6 +125,7 @@ export async function createThread(args: {
   title: string | null;
 }): Promise<ThreadRow> {
   const s = sql();
+  const tid = await getTenantId();
   const id = randomUUID();
   const now = new Date();
   const payload = {
@@ -130,9 +138,9 @@ export async function createThread(args: {
   };
   await s`
     INSERT INTO agent_chat_threads (
-      id, agent_id, project, title, created_at, last_message_at, payload
+      id, agent_id, project, title, created_at, last_message_at, payload, tenant_id
     ) VALUES (
-      ${id}, ${args.agentId}, ${args.project}, ${args.title}, ${now}, ${now}, ${JSON.stringify(payload)}::jsonb
+      ${id}, ${args.agentId}, ${args.project}, ${args.title}, ${now}, ${now}, ${JSON.stringify(payload)}::jsonb, ${tid}
     )
   `;
   return {
@@ -154,6 +162,7 @@ export async function appendMessage(args: {
   responseTokens?: number | null;
 }): Promise<MessageRow> {
   const s = sql();
+  const tid = await getTenantId();
   const id = randomUUID();
   const now = new Date();
   const payload = {
@@ -169,15 +178,16 @@ export async function appendMessage(args: {
   await s`
     INSERT INTO agent_chat_messages (
       id, thread_id, role, content, created_at,
-      model, prompt_tokens, response_tokens, payload
+      model, prompt_tokens, response_tokens, payload, tenant_id
     ) VALUES (
       ${id}, ${args.threadId}, ${args.role}, ${args.content}, ${now},
       ${args.model ?? null}, ${args.promptTokens ?? null}, ${args.responseTokens ?? null},
-      ${JSON.stringify(payload)}::jsonb
+      ${JSON.stringify(payload)}::jsonb, ${tid}
     )
   `;
   await s`
-    UPDATE agent_chat_threads SET last_message_at = ${now} WHERE id = ${args.threadId}
+    UPDATE agent_chat_threads SET last_message_at = ${now}
+    WHERE id = ${args.threadId} AND tenant_id = ${tid}
   `;
   return {
     id,
@@ -208,11 +218,13 @@ export async function listLearningForAgent(
     SELECT to_regclass('public.agent_learning') IS NOT NULL AS ok
   `) as Array<{ ok: boolean }>;
   if (!hasTable[0]?.ok) return [];
+  const tid = await getTenantId();
   // Active records only — exclude superseded + expired. Confidence first, recency second.
   const rows = (await s`
     SELECT payload
     FROM agent_learning
     WHERE agent_id = ${agentId}
+      AND tenant_id = ${tid}
       AND superseded_by IS NULL
       AND (expires_at IS NULL OR expires_at > NOW())
     ORDER BY
@@ -243,17 +255,20 @@ export async function listRecentTranscripts(
   `) as Array<{ ok: boolean }>;
   if (!hasTable[0]?.ok) return [];
   const capped = Math.min(Math.max(limit, 1), 25);
+  const tid = await getTenantId();
   const rows = (project
     ? ((await s`
         SELECT crew, agent_role, payload->>'content' AS content
         FROM crew_transcripts
         WHERE project = ${project}
+          AND tenant_id = ${tid}
         ORDER BY created_at DESC
         LIMIT ${capped}
       `) as Array<{ crew: string; agent_role: string; content: string | null }>)
     : ((await s`
         SELECT crew, agent_role, payload->>'content' AS content
         FROM crew_transcripts
+        WHERE tenant_id = ${tid}
         ORDER BY created_at DESC
         LIMIT ${capped}
       `) as Array<{ crew: string; agent_role: string; content: string | null }>));
@@ -270,10 +285,12 @@ export async function latestMergedDossierMarkdown(project: string): Promise<stri
     SELECT to_regclass('public.dossier_drafts') IS NOT NULL AS ok
   `) as Array<{ ok: boolean }>;
   if (!hasTable[0]?.ok) return null;
+  const tid = await getTenantId();
   const rows = (await s`
     SELECT payload->>'markdown' AS markdown
     FROM dossier_drafts
     WHERE project = ${project} AND status = 'merged'
+      AND tenant_id = ${tid}
     ORDER BY merged_at DESC NULLS LAST, generated_at DESC
     LIMIT 1
   `) as Array<{ markdown: string | null }>;
@@ -285,10 +302,12 @@ export async function lookupDisplayName(args: {
   role: string;
 }): Promise<string | null> {
   const s = sql();
+  const tid = await getTenantId();
   const rows = (await s`
     SELECT payload->>'proposer_display_name' AS display_name
     FROM decisions
     WHERE payload->>'proposer_role' = ${args.role}
+      AND tenant_id = ${tid}
       AND (
         ${args.project}::text IS NULL OR project = ${args.project}
       )

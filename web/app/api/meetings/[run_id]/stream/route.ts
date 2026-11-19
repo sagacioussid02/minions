@@ -1,5 +1,6 @@
 import { sql } from "@/lib/db";
 import { getMeeting } from "@/lib/queries";
+import { getTenantId } from "@/lib/tenant";
 import { MeetingDetailSchema, MeetingTurnSchema } from "@/lib/schemas";
 
 export const runtime = "edge";
@@ -34,6 +35,7 @@ function sse(event: string, data: unknown): Uint8Array {
 }
 
 async function fetchTurnsSince(
+  tenantId: string,
   runId: string,
   lastSequence: number,
 ): Promise<Array<Record<string, unknown>>> {
@@ -42,6 +44,7 @@ async function fetchTurnsSince(
     SELECT payload
     FROM crew_transcripts
     WHERE run_id = ${runId} AND sequence > ${lastSequence}
+      AND tenant_id = ${tenantId}
     ORDER BY sequence ASC
     LIMIT 50
   `) as Array<{ payload: Record<string, unknown> }>;
@@ -70,6 +73,9 @@ export async function GET(
   { params }: { params: Promise<{ run_id: string }> },
 ) {
   const { run_id } = await params;
+  // Resolve the tenant up front: the polling loop below runs after the
+  // request scope, and every poll must stay inside the caller's tenant.
+  const tenantId = await getTenantId();
 
   // Pull the full meeting once at connect time. If the run doesn't exist
   // we return a one-shot SSE error stream so the client gets a clean signal.
@@ -113,7 +119,7 @@ export async function GET(
         await new Promise((r) => setTimeout(r, POLL_MS));
         if (closed) break;
         try {
-          const newPayloads = await fetchTurnsSince(run_id, lastSequence);
+          const newPayloads = await fetchTurnsSince(tenantId, run_id, lastSequence);
           for (const payload of newPayloads) {
             const turn = mapTurnPayload(payload);
             const validated = MeetingTurnSchema.parse(turn);

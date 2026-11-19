@@ -7,13 +7,19 @@
 import { sql } from "./db";
 import { getTenantId } from "./tenant";
 
+/**
+ * Approve a pending decision owned by the caller's tenant. Returns false
+ * when no row changed: the id is unknown, belongs to another tenant, or the
+ * decision is no longer pending (a rejected or executed decision must not
+ * be re-opened from the console).
+ */
 export async function approveDecision(
   decisionId: string,
   reason?: string,
-): Promise<void> {
+): Promise<boolean> {
   const s = sql();
   const tid = await getTenantId();
-  await s`
+  const rows = (await s`
     UPDATE decisions
     SET
       status = 'approved',
@@ -25,16 +31,25 @@ export async function approveDecision(
       )
     WHERE id = ${decisionId}::uuid
       AND tenant_id = ${tid}
-  `;
+      AND status = 'pending'
+    RETURNING id
+  `) as Array<{ id: string }>;
+  return rows.length > 0;
 }
 
+/**
+ * Reject a pending decision owned by the caller's tenant. Returns false
+ * when no row changed: the id is unknown, belongs to another tenant, or the
+ * decision is no longer pending (a rejected or executed decision must not
+ * be re-opened from the console).
+ */
 export async function rejectDecision(
   decisionId: string,
   reason?: string,
-): Promise<void> {
+): Promise<boolean> {
   const s = sql();
   const tid = await getTenantId();
-  await s`
+  const rows = (await s`
     UPDATE decisions
     SET
       status = 'rejected',
@@ -46,7 +61,10 @@ export async function rejectDecision(
       )
     WHERE id = ${decisionId}::uuid
       AND tenant_id = ${tid}
-  `;
+      AND status = 'pending'
+    RETURNING id
+  `) as Array<{ id: string }>;
+  return rows.length > 0;
 }
 
 /**

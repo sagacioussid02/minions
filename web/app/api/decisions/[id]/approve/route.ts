@@ -17,7 +17,13 @@ export async function POST(
     } catch {
       /* no body is fine */
     }
-    await approveDecision(id, body.reason);
+    const changed = await approveDecision(id, body.reason);
+    if (!changed) {
+      return NextResponse.json(
+        { error: "decision not found or no longer pending", id },
+        { status: 404 },
+      );
+    }
 
     // Sandbox/tenant approvals dispatch a tenant-scoped execute-approved
     // sweep immediately, so the real draft PR appears in minutes instead of

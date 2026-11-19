@@ -15,7 +15,13 @@ export async function POST(
     } catch {
       /* no body is fine */
     }
-    await rejectDecision(id, body.reason);
+    const changed = await rejectDecision(id, body.reason);
+    if (!changed) {
+      return NextResponse.json(
+        { error: "decision not found or no longer pending", id },
+        { status: 404 },
+      );
+    }
     return NextResponse.json({ ok: true, id });
   } catch (err) {
     console.error("[reject]", err);

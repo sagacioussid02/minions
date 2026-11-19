@@ -2,8 +2,8 @@
 /**
  * Tenant-scoping tripwire (public-saas-onboarding go-live).
  *
- * The web read/write layer (lib/queries.ts, lib/queries-asof.ts,
- * lib/mutations.ts) must filter every tenant-scoped table by `tenant_id`
+ * Every web query (all of app/ and lib/, route handlers included) must
+ * filter every tenant-scoped table by `tenant_id`
  * (the hybrid web side — Postgres RLS guards the Python side). This guard
  * reports every reference to a scoped table with no `tenant_id` filter
  * within 10 lines and, when enforcing, fails the build on any gap.
@@ -16,7 +16,7 @@
  * openspec/changes/public-saas-onboarding.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -34,10 +34,20 @@ const SCOPED_TABLES = [
   "site_alert_state", "site_health_samples", "sprint_counters", "tasks",
 ];
 
-const FILES = ["lib/queries.ts", "lib/queries-asof.ts", "lib/mutations.ts"];
+// Scan every TypeScript file under app/ and lib/. The guard used to list
+// three lib files only, which let unscoped queries in route handlers and
+// lib/agent-chat/ through.
+function walk(dir) {
+  return readdirSync(join(WEB, dir), { withFileTypes: true }).flatMap((e) => {
+    const rel = `${dir}/${e.name}`;
+    if (e.isDirectory()) return walk(rel);
+    return /\.tsx?$/.test(e.name) ? [rel] : [];
+  });
+}
+const FILES = [...walk("app"), ...walk("lib")].sort();
 const WINDOW = 10;
 const tableAlt = SCOPED_TABLES.join("|");
-const refRe = new RegExp(`\\b(?:FROM|JOIN)\\s+(${tableAlt})\\b`, "i");
+const refRe = new RegExp(`\\b(?:FROM|JOIN|INTO|UPDATE)\\s+(${tableAlt})\\b`, "i");
 
 let refs = 0;
 const gaps = [];
@@ -63,8 +73,10 @@ for (const rel of FILES) {
     const lo = Math.max(0, i - WINDOW);
     const hi = Math.min(lines.length, i + WINDOW + 1);
     const near = lines.slice(lo, hi).join("\n");
-    if (!/tenant_id/.test(near)) {
-      gaps.push(`${rel}:${i + 1}  FROM/JOIN ${m[1]} — no tenant_id within ${WINDOW} lines`);
+    // An intentional cross-tenant query (e.g. a service-wide spend cap) must
+    // say so with a `tenant-scoping: allow-global` comment next to it.
+    if (!/tenant_id|tenant-scoping: allow-global/.test(near)) {
+      gaps.push(`${rel}:${i + 1}  ${m[0]} — no tenant_id within ${WINDOW} lines`);
     }
   });
 }
