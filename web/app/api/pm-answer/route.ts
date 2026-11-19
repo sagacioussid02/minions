@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 import { PMAnswerSchema } from "@/lib/schemas";
+import { getTenantId } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,9 @@ export async function POST(req: NextRequest) {
 
 async function createPmAnswer(project: string, question: string) {
   const s = sql();
+  // Every read and write below stays inside the caller's tenant: a project
+  // name alone must never reach another tenant's decisions or rituals.
+  const tid = await getTenantId();
   await s`
     CREATE TABLE IF NOT EXISTS pm_answers (
       id uuid PRIMARY KEY,
@@ -41,6 +45,7 @@ async function createPmAnswer(project: string, question: string) {
     SELECT payload->>'summary' AS summary, id::text AS id
     FROM decisions
     WHERE project = ${project}
+      AND tenant_id = ${tid}
       AND COALESCE(payload->>'summary', '') NOT LIKE '%[DRY RUN]%'
     ORDER BY created_at DESC
     LIMIT 5
@@ -54,6 +59,7 @@ async function createPmAnswer(project: string, question: string) {
         SELECT payload
         FROM agile_rituals
         WHERE project = ${project}
+          AND tenant_id = ${tid}
         ORDER BY created_at DESC
         LIMIT 3
       `) as Array<{ payload: Record<string, unknown> }>)
@@ -91,14 +97,15 @@ async function createPmAnswer(project: string, question: string) {
   };
 
   await s`
-    INSERT INTO pm_answers (id, project, created_at, payload)
-    VALUES (${id}::uuid, ${project}, NOW(), ${JSON.stringify(payload)}::jsonb)
+    INSERT INTO pm_answers (id, project, created_at, payload, tenant_id)
+    VALUES (${id}::uuid, ${project}, NOW(), ${JSON.stringify(payload)}::jsonb, ${tid})
   `;
   await s`
-    INSERT INTO activity_log (ts, event, project, decision_id, crew, run_id, error, payload)
+    INSERT INTO activity_log (ts, event, project, decision_id, crew, run_id, error, payload, tenant_id)
     VALUES (
       NOW(), 'pm_answered', ${project}, ${id}, 'pm_spokesperson',
-      ${`pm-${project}-${id}`}, NULL, ${JSON.stringify({ agents: ["product_manager"] })}::jsonb
+      ${`pm-${project}-${id}`}, NULL, ${JSON.stringify({ agents: ["product_manager"] })}::jsonb,
+      ${tid}
     )
   `;
   return payload;

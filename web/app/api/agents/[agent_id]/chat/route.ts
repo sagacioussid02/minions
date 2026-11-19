@@ -13,10 +13,15 @@ import { z } from "zod";
 import { buildAgentContext } from "@/lib/agent-chat/context";
 import { respond } from "@/lib/agent-chat/chat";
 import {
+  agentChatSpendTodayAllTenantsUsd,
   agentChatSpendTodayUsd,
-  dailyBudgetCap,
+  chatRatePerMinute,
+  globalDailyBudgetCap,
   recordChatCost,
+  tenantDailyCap,
+  userTurnsLastMinute,
 } from "@/lib/agent-chat/cost";
+import { getCurrentTenant } from "@/lib/tenant";
 import {
   appendMessage,
   createThread,
@@ -65,16 +70,38 @@ export async function POST(req: NextRequest, ctx: RouteParams): Promise<Response
     );
   }
 
-  // Per-day budget cap (X1). Default $1/day across all agents; override
-  // via MINIONS_AGENT_CHAT_DAILY_BUDGET_USD on the deployment.
-  const cap = dailyBudgetCap();
+  // Limits on the shared Anthropic key (see lib/agent-chat/cost.ts):
+  // per-tenant rate, per-tenant daily cap, then a global daily hard cap.
+  const tenant = await getCurrentTenant();
+  const rate = chatRatePerMinute();
+  const recentTurns = await userTurnsLastMinute();
+  if (recentTurns >= rate) {
+    return NextResponse.json(
+      { error: `too many messages: ${rate} per minute. Try again shortly.` },
+      { status: 429, headers: { "Retry-After": "60" } },
+    );
+  }
+
+  const cap = tenantDailyCap(tenant);
   const spentToday = await agentChatSpendTodayUsd();
   if (spentToday >= cap) {
     return NextResponse.json(
       {
-        error: `agent chat is over the daily spend cap ($${spentToday.toFixed(4)} of $${cap.toFixed(2)}). Resets at midnight UTC; raise MINIONS_AGENT_CHAT_DAILY_BUDGET_USD to extend.`,
+        error: `agent chat is over your daily spend cap ($${spentToday.toFixed(4)} of $${cap.toFixed(2)}). Resets at midnight UTC.`,
         spent_today_usd: spentToday,
         cap_usd: cap,
+      },
+      { status: 429 },
+    );
+  }
+
+  const globalCap = globalDailyBudgetCap();
+  const globalSpent = await agentChatSpendTodayAllTenantsUsd();
+  if (globalSpent >= globalCap) {
+    return NextResponse.json(
+      {
+        error:
+          "agent chat is paused for today: the service-wide daily limit is reached. Resets at midnight UTC.",
       },
       { status: 429 },
     );
