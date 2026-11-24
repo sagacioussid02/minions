@@ -8,6 +8,24 @@ This repo hosts two things: the shared `src/minions/` engine (planning/approval/
 
 What this means for contributors: PRs touching the product layer (`web/` app routes under tenant/onboarding/billing concerns, `src/minions/config/portfolio_per_tenant.py`, `src/minions/github/app_auth.py`, `src/minions/notify/clerk_users.py`) are straightforward — normal review, no special coordination needed. PRs making **large or speculative changes to shared engine files** (most of `src/minions/crews/`, `src/minions/scheduled/`, `src/minions/models/`) carry some risk of colliding with an upcoming sync from the private core — not because they're unwelcome, but because a big rewrite there is more to reconcile later. For anything larger than a small, scoped fix in the shared engine, open an issue or comment on an existing one first so we can coordinate timing. Small fixes and `good first issue`/`help wanted` labeled work don't need this — just send the PR.
 
+## Contributor License Agreement
+
+minions is released under the [PolyForm Noncommercial License 1.0.0](LICENSE), and companies can buy a separate commercial license. So that your contribution can ship under both, every pull request needs this agreement.
+
+By submitting a contribution (code, tests, docs or anything else) to this repository, you agree that:
+
+1. **It's yours to give.** You wrote it, or otherwise have the right to submit it under these terms, and it doesn't include material you can't license this way. If your employer has rights in your work, you have their permission.
+2. **You keep your copyright.** This agreement is a license, not a transfer of ownership.
+3. **Copyright license.** You grant Siddharth Shankar, and anyone who receives minions from him, a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable license to use, copy, modify, distribute, sublicense and relicense your contribution, including under the PolyForm Noncommercial License, under commercial licenses, and under any other terms.
+4. **Patent license.** You grant the same parties a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable patent license for any patent claims you can license that your contribution, alone or combined with minions, would otherwise infringe.
+5. **No warranty.** Your contribution is provided as is, and you aren't expected to provide support for it.
+
+To confirm, tick the CLA box in the pull request template, or include this line in your PR description:
+
+> I agree to the Contributor License Agreement in CONTRIBUTING.md.
+
+Pull requests without that confirmation can't be merged. Contributions received before this agreement was added came in under the MIT License (see [`LICENSE-MIT`](LICENSE-MIT)).
+
 ## Quick setup
 
 ```bash
