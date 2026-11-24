@@ -4,7 +4,7 @@
 
 **An autonomous AI engineering *organization* — not a single coding agent, but a whole org of role-based AI agents that plan, build, review, and ship software across a portfolio of projects. You are the only human, and you sit at the top as the approver.**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-purple.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
 [![Next.js](https://img.shields.io/badge/dashboard-Next.js-black.svg)](https://nextjs.org/)
 
@@ -171,10 +171,17 @@ Great first contributions: dashboard/UX polish (`web/`), new CLI commands, more 
 
 One thing that makes this project unusual: **it's a framework for accountable AI engineering, so we hold contributions to the same bar** — AI-assisted PRs are explicitly welcome, but they must be human-reviewed, disclosed, and scoped. Full details (including the safety-critical files that need maintainer review) are in **[`CONTRIBUTING.md`](CONTRIBUTING.md)**.
 
+Every pull request needs a short Contributor License Agreement, explained in [`CONTRIBUTING.md`](CONTRIBUTING.md#contributor-license-agreement).
+
 By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md). Security issues: see [`SECURITY.md`](SECURITY.md) — please don't open public issues for those.
 
 ---
 
 ## License
 
-[MIT](LICENSE) © 2026 Siddharth Shankar and contributors. Use it, fork it, build your own org.
+minions is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE) © 2026 Siddharth Shankar.
+
+- **Free for noncommercial use:** personal projects, hobby use, research and experiments, and use by charities, schools, public research bodies and government institutions.
+- **Companies need a commercial license:** any use for a commercial purpose, including a company running minions for its own team, needs a separate commercial license. To ask about one, contact the maintainer, Siddharth Shankar, through [GitHub](https://github.com/sagacioussid02).
+
+Every version published before this change, including the `pre-p3-multitenant` release, was released under the MIT License and stays available under it. See [`LICENSE-MIT`](LICENSE-MIT).

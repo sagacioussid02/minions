@@ -21,6 +21,7 @@
 - [ ] `mypy src` passes
 - [ ] No new dependencies, OR rationale explained below
 - [ ] No changes to safety-critical files (see list below), OR explicit rationale + maintainer review requested
+- [ ] I agree to the Contributor License Agreement in CONTRIBUTING.md
 
 ## Safety-critical files touched?
 
